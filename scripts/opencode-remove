@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <workspace-name-or-path>"
+  exit 1
+fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$ROOT/lib/opencode/common.sh"
+require_podman
+resolve_workspace "$1"
+if container_exists; then
+  echo "==> Removing container: $CONTAINER_NAME"
+  podman rm -f "$CONTAINER_NAME" >/dev/null
+else
+  echo "==> No container found: $CONTAINER_NAME"
+fi

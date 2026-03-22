@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$ROOT/lib/opencode/common.sh"
+require_podman
+OPENCODE_VERSION="${OPENCODE_VERSION:-1.2.27}"
+echo "==> Building OpenCode image"
+podman build \
+  --platform="$OPENCODE_PLATFORM" \
+  --build-arg "OPENCODE_VERSION=$OPENCODE_VERSION" \
+  -t "$OPENCODE_IMAGE_NAME" \
+  -f "$ROOT/config/container/Dockerfile" \
+  "$ROOT"
+echo "==> Build complete: $OPENCODE_IMAGE_NAME"
+echo "==> OpenCode version: $OPENCODE_VERSION"

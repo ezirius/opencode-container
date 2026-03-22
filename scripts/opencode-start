@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <workspace-name-or-path>"
+  exit 1
+fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$ROOT/lib/opencode/common.sh"
+require_podman
+resolve_workspace "$1"
+ensure_workspace_dirs
+print_workspace_summary
+if ! image_exists; then
+  echo "==> Image not found, building it first"
+  "$SCRIPT_DIR/opencode-build"
+fi
+if container_exists; then
+  if container_running; then
+    echo "==> Container already running: $CONTAINER_NAME"
+    exit 0
+  fi
+  echo "==> Removing existing stopped container: $CONTAINER_NAME"
+  podman rm -f "$CONTAINER_NAME" >/dev/null
+fi
+echo "==> Starting idle OpenCode container"
+podman run -d \
+  --name "$CONTAINER_NAME" \
+  --platform="$OPENCODE_PLATFORM" \
+  -v "$WORKSPACE_ROOT:/workspace" \
+  -v "$CONFIG_DIR:/configurations" \
+  -v "$DATA_DIR:/data" \
+  -w /workspace \
+  "$OPENCODE_IMAGE_NAME" >/dev/null
+echo "==> Container started: $CONTAINER_NAME"
+echo "==> Open OpenCode with: $SCRIPT_DIR/opencode-open \"$WORKSPACE_NAME\""
+echo "==> Open a shell with:  $SCRIPT_DIR/opencode-shell \"$WORKSPACE_NAME\""
