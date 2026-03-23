@@ -44,7 +44,7 @@ The scripts accept either a workspace name or an absolute workspace path.
 
 - If you pass an absolute path, that path is used directly
 - Trailing slashes on workspace paths are normalized away
-- If you pass a workspace name, it is resolved under `OPENCODE_BASE_ROOT`
+- If you pass a workspace name, it is resolved under `OPENCODE_BASE_ROOT` and must be a single directory name, not a relative path
 - If you use different absolute paths that share the same basename, they still get distinct container names
 - If you start a container with an absolute path, use that same absolute path for follow-up commands so they target the same container
 - Default overrides are documented in `docs/shared/usage.md`

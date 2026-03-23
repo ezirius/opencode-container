@@ -19,7 +19,11 @@ grep -q '^OPENCODE_BASE_ROOT="\${OPENCODE_BASE_ROOT:-\$HOME/Documents/Ezirius/.a
 grep -q '^OPENCODE_PLATFORM=' "$ROOT/lib/shell/common.sh"
 grep -q '^OPENCODE_VERSION=' "$ROOT/lib/shell/common.sh"
 grep -q '^require_arm64_host() {$' "$ROOT/lib/shell/common.sh"
+grep -q '^require_workspace_name() {$' "$ROOT/lib/shell/common.sh"
 grep -q '^normalize_path() {$' "$ROOT/lib/shell/common.sh"
+grep -q '^podman_exec_flags() {$' "$ROOT/lib/shell/common.sh"
+grep -q 'EXEC_FLAGS="\$(podman_exec_flags)"' "$ROOT/scripts/shared/opencode-open"
+grep -q 'EXEC_FLAGS="\$(podman_exec_flags)"' "$ROOT/scripts/shared/opencode-shell"
 
 DOCKERFILE_VERSION="$(grep '^ARG OPENCODE_VERSION=' "$ROOT/config/containers/Dockerfile" | cut -d= -f2)"
 COMMON_SCRIPT_VERSION="$(grep '^OPENCODE_VERSION=' "$ROOT/lib/shell/common.sh" | sed -E 's/.*:-([^"}]+).*/\1/')"

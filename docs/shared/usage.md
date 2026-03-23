@@ -26,6 +26,8 @@ Run these in order:
 - Remove the container:
   `./scripts/shared/opencode-remove <workspace-name-or-path>`
 
+`opencode-open` and `opencode-shell` keep TTY mode when run interactively and fall back to stdin-only mode when run from a non-interactive shell.
+
 ## Workspace layout
 
 Each workspace is expected to have this host layout:
@@ -45,6 +47,7 @@ The container mounts them as:
 - `OPENCODE_BASE_ROOT`
   - base directory used when you pass a workspace name instead of an absolute path
   - default: `~/Documents/Ezirius/.applications-data/OpenCode`
+  - named workspaces must be a single directory name such as `general`, not a relative path like `team/general`
 - `OPENCODE_IMAGE_NAME`
   - image name used for build and run commands
 - `OPENCODE_PLATFORM`

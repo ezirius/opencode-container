@@ -9,4 +9,5 @@ fi
 require_podman
 resolve_workspace "$1"
 require_running_container
-exec podman exec -it -w /workspace "$CONTAINER_NAME" /bin/bash
+EXEC_FLAGS="$(podman_exec_flags)"
+exec podman exec "$EXEC_FLAGS" -w /workspace "$CONTAINER_NAME" /bin/bash

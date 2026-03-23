@@ -21,6 +21,22 @@ assert_eq "$OPENCODE_BASE_ROOT/general" "$WORKSPACE_ROOT" "named workspace resol
 assert_eq "general" "$WORKSPACE_NAME" "named workspace keeps its name"
 assert_eq "opencode-general" "$CONTAINER_NAME" "named workspace container name is stable"
 
+OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT/"
+resolve_workspace "general"
+assert_eq "${OPENCODE_BASE_ROOT%/}/general" "$WORKSPACE_ROOT" "named workspace ignores trailing slash in base root"
+
+if resolve_workspace "nested/general" >/dev/null 2>&1; then
+  printf 'assertion failed: named workspace with path separators should fail\n' >&2
+  exit 1
+fi
+
+if resolve_workspace ".." >/dev/null 2>&1; then
+  printf 'assertion failed: parent directory workspace name should fail\n' >&2
+  exit 1
+fi
+
+OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT%/}"
+
 resolve_workspace "/tmp/My Workspace"
 assert_eq "/tmp/My Workspace" "$WORKSPACE_INPUT" "workspace input preserves absolute path"
 assert_eq "/tmp/My Workspace" "$WORKSPACE_ROOT" "absolute workspace uses direct path"

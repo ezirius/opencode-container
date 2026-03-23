@@ -34,6 +34,14 @@ require_workspace_root() {
   [[ -n "$OPENCODE_BASE_ROOT" ]] || fail "OPENCODE_BASE_ROOT is empty"
 }
 
+require_workspace_name() {
+  local name="$1"
+
+  [[ "$name" != */* ]] || fail "workspace name must not contain path separators: $name"
+  [[ "$name" != "." ]] || fail "workspace name must not be '.'"
+  [[ "$name" != ".." ]] || fail "workspace name must not be '..'"
+}
+
 sanitize_name() {
   local raw="$1"
   printf '%s' "$raw" \
@@ -75,8 +83,9 @@ resolve_workspace() {
     WORKSPACE_NAME="$(basename "$WORKSPACE_ROOT")"
   else
     require_workspace_root
+    require_workspace_name "$input"
     WORKSPACE_NAME="$input"
-    WORKSPACE_ROOT="$OPENCODE_BASE_ROOT/$WORKSPACE_NAME"
+    WORKSPACE_ROOT="$(normalize_path "$OPENCODE_BASE_ROOT")/$WORKSPACE_NAME"
   fi
 
   SAFE_WORKSPACE_NAME="$(sanitize_name "$WORKSPACE_NAME")"
@@ -119,6 +128,14 @@ require_container() {
 require_running_container() {
   require_container
   container_running || fail "container is not running: $CONTAINER_NAME"
+}
+
+podman_exec_flags() {
+  if [[ -t 0 && -t 1 ]]; then
+    printf '%s\n' '-it'
+  else
+    printf '%s\n' '-i'
+  fi
 }
 
 print_workspace_summary() {

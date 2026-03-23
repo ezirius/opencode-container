@@ -10,4 +10,5 @@ require_podman
 resolve_workspace "$1"
 shift || true
 require_running_container
-exec podman exec -it -w /workspace "$CONTAINER_NAME" opencode "$@"
+EXEC_FLAGS="$(podman_exec_flags)"
+exec podman exec "$EXEC_FLAGS" -w /workspace "$CONTAINER_NAME" opencode "$@"
