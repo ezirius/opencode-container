@@ -50,8 +50,6 @@ The container mounts them as:
   - named workspaces must be a single directory name such as `general`, not a relative path like `team/general`
 - `OPENCODE_IMAGE_NAME`
   - image name used for build and run commands
-- `OPENCODE_PLATFORM`
-  - container platform, defaulting to `linux/arm64`
 - `OPENCODE_VERSION`
   - version passed to the Docker build for `opencode-ai`
   - default: `1.2.27`
@@ -77,8 +75,10 @@ Example using an absolute workspace path:
 ./scripts/shared/opencode-open "$HOME/work/projects/general"
 ```
 
-When you start a container with an absolute workspace path, reuse that same absolute path for `opencode-open`, `opencode-shell`, `opencode-logs`, `opencode-stop`, and `opencode-remove`.
+Container names are derived from the resolved workspace path. Equivalent absolute paths such as `/tmp/workspace`, `/tmp/./workspace`, and `/tmp/dir/../workspace` resolve to the same container.
 
 Absolute workspace paths with the same basename still get different container names, so `/path/one/general` and `/path/two/general` do not collide.
 
 Trailing slashes on workspace paths are normalized, so `/path/one/general` and `/path/one/general/` resolve to the same workspace and container name.
+
+Named workspaces under different `OPENCODE_BASE_ROOT` values also get different container names because the resolved workspace path is part of the container identity.

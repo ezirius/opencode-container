@@ -7,7 +7,7 @@ require_podman
 require_arm64_host
 echo "==> Building OpenCode image"
 podman build \
-  --platform="$OPENCODE_PLATFORM" \
+  --platform="linux/arm64" \
   --build-arg "OPENCODE_VERSION=$OPENCODE_VERSION" \
   -t "$OPENCODE_IMAGE_NAME" \
   -f "$ROOT/config/containers/Dockerfile" \

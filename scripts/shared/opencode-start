@@ -26,7 +26,7 @@ fi
 echo "==> Starting idle OpenCode container"
 podman run -d \
   --name "$CONTAINER_NAME" \
-  --platform="$OPENCODE_PLATFORM" \
+  --platform="linux/arm64" \
   -v "$WORKSPACE_ROOT:/workspace" \
   -v "$CONFIG_DIR:/configurations" \
   -v "$DATA_DIR:/data" \

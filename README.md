@@ -43,10 +43,11 @@ Useful follow-up commands:
 The scripts accept either a workspace name or an absolute workspace path.
 
 - If you pass an absolute path, that path is used directly
-- Trailing slashes on workspace paths are normalized away
+- Workspace paths are normalized before naming the container, so trailing slashes and lexical segments like `.` and `..` do not create duplicates
 - If you pass a workspace name, it is resolved under `OPENCODE_BASE_ROOT` and must be a single directory name, not a relative path
+- Container names are derived from the resolved workspace path, so the same workspace name under different base roots does not collide
 - If you use different absolute paths that share the same basename, they still get distinct container names
-- If you start a container with an absolute path, use that same absolute path for follow-up commands so they target the same container
+- If you start a container with an absolute path, follow-up commands can use equivalent normalized aliases for that same path and still target the same container
 - Default overrides are documented in `docs/shared/usage.md`
 
 The default workspace base root is `~/Documents/Ezirius/.applications-data/OpenCode`.

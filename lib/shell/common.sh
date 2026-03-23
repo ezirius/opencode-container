@@ -3,7 +3,6 @@ set -euo pipefail
 
 OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/OpenCode}"
 OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-arm64}"
-OPENCODE_PLATFORM="${OPENCODE_PLATFORM:-linux/arm64}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-1.2.27}"
 
 fail() {
@@ -59,6 +58,60 @@ normalize_path() {
   printf '%s' "$raw"
 }
 
+expand_home_path() {
+  local raw="$1"
+
+  case "$raw" in
+    '~')
+      printf '%s' "$HOME"
+      ;;
+    '~/'*)
+      printf '%s' "$HOME/${raw#\~/}"
+      ;;
+    *)
+      printf '%s' "$raw"
+      ;;
+  esac
+}
+
+normalize_absolute_path() {
+  local raw="$1"
+  local segment
+  local -a parts=()
+  local -a normalized=()
+
+  [[ "$raw" = /* ]] || fail "path must be absolute: $raw"
+
+  raw="$(normalize_path "$raw")"
+  IFS='/' read -r -a parts <<< "${raw#/}"
+
+  for segment in "${parts[@]}"; do
+    case "$segment" in
+      ''|.)
+        ;;
+      ..)
+        if ((${#normalized[@]} > 0)); then
+          unset 'normalized[${#normalized[@]}-1]'
+        fi
+        ;;
+      *)
+        normalized+=("$segment")
+        ;;
+    esac
+  done
+
+  if ((${#normalized[@]} == 0)); then
+    printf '/'
+  else
+    local joined=""
+    local item
+    for item in "${normalized[@]}"; do
+      joined+="/$item"
+    done
+    printf '%s' "$joined"
+  fi
+}
+
 hash_workspace_path() {
   local raw="$1"
 
@@ -79,13 +132,16 @@ resolve_workspace() {
   WORKSPACE_INPUT="$input"
 
   if [[ "$input" = /* ]]; then
-    WORKSPACE_ROOT="$input"
+    WORKSPACE_ROOT="$(normalize_absolute_path "$input")"
     WORKSPACE_NAME="$(basename "$WORKSPACE_ROOT")"
   else
+    local workspace_base_root
+
     require_workspace_root
     require_workspace_name "$input"
     WORKSPACE_NAME="$input"
-    WORKSPACE_ROOT="$(normalize_path "$OPENCODE_BASE_ROOT")/$WORKSPACE_NAME"
+    workspace_base_root="$(expand_home_path "$OPENCODE_BASE_ROOT")"
+    WORKSPACE_ROOT="$(normalize_absolute_path "$(normalize_path "$workspace_base_root")/$WORKSPACE_NAME")"
   fi
 
   SAFE_WORKSPACE_NAME="$(sanitize_name "$WORKSPACE_NAME")"
@@ -94,11 +150,7 @@ resolve_workspace() {
   CONFIG_DIR="$WORKSPACE_ROOT/configurations"
   DATA_DIR="$WORKSPACE_ROOT/data"
 
-  if [[ "$input" = /* ]]; then
-    CONTAINER_NAME="opencode-${SAFE_WORKSPACE_NAME}-$(hash_workspace_path "$WORKSPACE_ROOT")"
-  else
-    CONTAINER_NAME="opencode-${SAFE_WORKSPACE_NAME}"
-  fi
+  CONTAINER_NAME="opencode-${SAFE_WORKSPACE_NAME}-$(hash_workspace_path "$WORKSPACE_ROOT")"
 }
 
 ensure_workspace_dirs() {
@@ -130,12 +182,8 @@ require_running_container() {
   container_running || fail "container is not running: $CONTAINER_NAME"
 }
 
-podman_exec_flags() {
-  if [[ -t 0 && -t 1 ]]; then
-    printf '%s\n' '-it'
-  else
-    printf '%s\n' '-i'
-  fi
+use_exec_tty() {
+  [[ -t 0 ]]
 }
 
 print_workspace_summary() {
@@ -146,6 +194,6 @@ print_workspace_summary() {
   echo "==> Workspace name:  $WORKSPACE_NAME"
   echo "==> Container:       $CONTAINER_NAME"
   echo "==> Image:           $OPENCODE_IMAGE_NAME"
-  echo "==> Platform:        $OPENCODE_PLATFORM"
+  echo "==> Platform:        linux/arm64"
   echo "==> OpenCode ver:    $OPENCODE_VERSION"
 }
