@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/OpenCode}"
+OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/OpenCode}"
 OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-arm64}"
 OPENCODE_PLATFORM="${OPENCODE_PLATFORM:-linux/arm64}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-1.2.27}"
@@ -20,6 +20,16 @@ require_podman() {
   command -v podman >/dev/null 2>&1 || fail "podman is not installed or not on PATH"
 }
 
+require_arm64_host() {
+  local machine_arch
+
+  machine_arch="$(uname -m)"
+  case "$machine_arch" in
+    arm64|aarch64) ;;
+    *) fail "unsupported host architecture: $machine_arch (requires ARM64 host)" ;;
+  esac
+}
+
 require_workspace_root() {
   [[ -n "$OPENCODE_BASE_ROOT" ]] || fail "OPENCODE_BASE_ROOT is empty"
 }
@@ -31,8 +41,34 @@ sanitize_name() {
     | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//'
 }
 
+normalize_path() {
+  local raw="$1"
+
+  while [[ "$raw" != "/" && "$raw" = */ ]]; do
+    raw="${raw%/}"
+  done
+
+  printf '%s' "$raw"
+}
+
+hash_workspace_path() {
+  local raw="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$raw" | shasum -a 256 | cut -c1-12
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$raw" | sha256sum | cut -c1-12
+  else
+    fail "requires shasum or sha256sum to derive a unique container name"
+  fi
+}
+
 resolve_workspace() {
   local input="${1:?workspace required}"
+
+  input="$(normalize_path "$input")"
+
+  WORKSPACE_INPUT="$input"
 
   if [[ "$input" = /* ]]; then
     WORKSPACE_ROOT="$input"
@@ -48,7 +84,12 @@ resolve_workspace() {
 
   CONFIG_DIR="$WORKSPACE_ROOT/configurations"
   DATA_DIR="$WORKSPACE_ROOT/data"
-  CONTAINER_NAME="opencode-${SAFE_WORKSPACE_NAME}"
+
+  if [[ "$input" = /* ]]; then
+    CONTAINER_NAME="opencode-${SAFE_WORKSPACE_NAME}-$(hash_workspace_path "$WORKSPACE_ROOT")"
+  else
+    CONTAINER_NAME="opencode-${SAFE_WORKSPACE_NAME}"
+  fi
 }
 
 ensure_workspace_dirs() {
@@ -81,6 +122,7 @@ require_running_container() {
 }
 
 print_workspace_summary() {
+  echo "==> Workspace arg:   $WORKSPACE_INPUT"
   echo "==> Workspace root: $WORKSPACE_ROOT"
   echo "==> Config dir:      $CONFIG_DIR"
   echo "==> Data dir:        $DATA_DIR"

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+test -f "$ROOT/README.md"
+test -f "$ROOT/config/containers/Dockerfile"
+test -f "$ROOT/docs/shared/usage.md"
+test -f "$ROOT/lib/shell/common.sh"
+test -f "$ROOT/tests/shared/test-common.sh"
+test -f "$ROOT/scripts/shared/opencode-build"
+test -f "$ROOT/scripts/shared/opencode-logs"
+test -f "$ROOT/scripts/shared/opencode-open"
+test -f "$ROOT/scripts/shared/opencode-remove"
+test -f "$ROOT/scripts/shared/opencode-shell"
+test -f "$ROOT/scripts/shared/opencode-start"
+test -f "$ROOT/scripts/shared/opencode-stop"
+grep -q '^FROM --platform=linux/arm64 ubuntu:24.04$' "$ROOT/config/containers/Dockerfile"
+grep -q '^ARG OPENCODE_VERSION=' "$ROOT/config/containers/Dockerfile"
+grep -q '^OPENCODE_BASE_ROOT="\${OPENCODE_BASE_ROOT:-\$HOME/Documents/Ezirius/.applications-data/OpenCode}"$' "$ROOT/lib/shell/common.sh"
+grep -q '^OPENCODE_PLATFORM=' "$ROOT/lib/shell/common.sh"
+grep -q '^OPENCODE_VERSION=' "$ROOT/lib/shell/common.sh"
+grep -q '^require_arm64_host() {$' "$ROOT/lib/shell/common.sh"
+grep -q '^normalize_path() {$' "$ROOT/lib/shell/common.sh"
+
+DOCKERFILE_VERSION="$(grep '^ARG OPENCODE_VERSION=' "$ROOT/config/containers/Dockerfile" | cut -d= -f2)"
+COMMON_SCRIPT_VERSION="$(grep '^OPENCODE_VERSION=' "$ROOT/lib/shell/common.sh" | sed -E 's/.*:-([^"}]+).*/\1/')"
+test "$DOCKERFILE_VERSION" = "$COMMON_SCRIPT_VERSION"
+
+echo "Layout checks passed"
