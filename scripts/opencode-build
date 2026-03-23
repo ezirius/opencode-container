@@ -4,7 +4,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$ROOT/lib/opencode/common.sh"
 require_podman
-OPENCODE_VERSION="${OPENCODE_VERSION:-1.2.27}"
 echo "==> Building OpenCode image"
 podman build \
   --platform="$OPENCODE_PLATFORM" \

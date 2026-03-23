@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-/Users/ezirius/Documents/Ezirius/.applications-data/OpenCode}"
+OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/OpenCode}"
 OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-arm64}"
 OPENCODE_PLATFORM="${OPENCODE_PLATFORM:-linux/arm64}"
+OPENCODE_VERSION="${OPENCODE_VERSION:-1.2.27}"
 
 fail() {
   echo "Error: $*" >&2
   exit 1
 }
 
+usage_error() {
+  echo "Usage: $*" >&2
+  exit 1
+}
+
 require_podman() {
   command -v podman >/dev/null 2>&1 || fail "podman is not installed or not on PATH"
+}
+
+require_workspace_root() {
+  [[ -n "$OPENCODE_BASE_ROOT" ]] || fail "OPENCODE_BASE_ROOT is empty"
 }
 
 sanitize_name() {
@@ -28,6 +38,7 @@ resolve_workspace() {
     WORKSPACE_ROOT="$input"
     WORKSPACE_NAME="$(basename "$WORKSPACE_ROOT")"
   else
+    require_workspace_root
     WORKSPACE_NAME="$input"
     WORKSPACE_ROOT="$OPENCODE_BASE_ROOT/$WORKSPACE_NAME"
   fi
@@ -77,4 +88,5 @@ print_workspace_summary() {
   echo "==> Container:       $CONTAINER_NAME"
   echo "==> Image:           $OPENCODE_IMAGE_NAME"
   echo "==> Platform:        $OPENCODE_PLATFORM"
+  echo "==> OpenCode ver:    $OPENCODE_VERSION"
 }
