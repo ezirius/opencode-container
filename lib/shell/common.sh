@@ -3,7 +3,8 @@ set -euo pipefail
 
 OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/OpenCode}"
 OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-arm64}"
-OPENCODE_VERSION="${OPENCODE_VERSION:-1.2.27}"
+UBUNTU_VERSION="${UBUNTU_VERSION:-latest-lts}"
+OPENCODE_VERSION="${OPENCODE_VERSION:-latest}"
 
 fail() {
   echo "Error: $*" >&2
@@ -17,6 +18,10 @@ usage_error() {
 
 require_podman() {
   command -v podman >/dev/null 2>&1 || fail "podman is not installed or not on PATH"
+}
+
+require_python3() {
+  command -v python3 >/dev/null 2>&1 || fail "python3 is required to resolve latest versions"
 }
 
 require_arm64_host() {
@@ -161,8 +166,16 @@ image_exists() {
   podman image exists "$OPENCODE_IMAGE_NAME"
 }
 
+image_id() {
+  podman image inspect -f '{{.Id}}' "$OPENCODE_IMAGE_NAME" 2>/dev/null
+}
+
 container_exists() {
   podman container exists "$CONTAINER_NAME"
+}
+
+container_image_id() {
+  podman inspect -f '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null
 }
 
 container_running() {
@@ -186,6 +199,58 @@ use_exec_tty() {
   [[ -t 0 ]]
 }
 
+resolve_latest_ubuntu_lts_version() {
+  python3 - <<'PY'
+from urllib.request import urlopen
+
+url = 'https://changelogs.ubuntu.com/meta-release-lts'
+text = urlopen(url, timeout=15).read().decode('utf-8', 'replace')
+blocks = [b.strip() for b in text.split('\n\n') if b.strip()]
+latest = None
+for block in blocks:
+    data = {}
+    for line in block.splitlines():
+        if ': ' in line:
+            key, value = line.split(': ', 1)
+            data[key] = value
+    if data.get('Supported') == '1' and 'Version' in data:
+        latest = data['Version'].split()[0]
+if not latest:
+    raise SystemExit('failed to resolve latest Ubuntu LTS version')
+print(latest)
+PY
+}
+
+resolve_latest_opencode_version() {
+  python3 - <<'PY'
+import json
+from urllib.request import urlopen
+
+url = 'https://registry.npmjs.org/opencode-ai/latest'
+data = json.load(urlopen(url, timeout=15))
+version = data.get('version')
+if not version:
+    raise SystemExit('failed to resolve latest opencode-ai version')
+print(version)
+PY
+}
+
+resolve_ubuntu_version() {
+  if [[ "$UBUNTU_VERSION" == "latest-lts" ]]; then
+    resolve_latest_ubuntu_lts_version
+  else
+    printf '%s\n' "$UBUNTU_VERSION"
+  fi
+}
+
+resolve_opencode_version() {
+  if [[ "$OPENCODE_VERSION" == "latest" ]]; then
+    resolve_latest_opencode_version
+  else
+    printf '%s\n' "$OPENCODE_VERSION"
+  fi
+}
+
 print_workspace_summary() {
   echo "==> Workspace arg:   $WORKSPACE_INPUT"
   echo "==> Workspace root: $WORKSPACE_ROOT"
@@ -195,5 +260,6 @@ print_workspace_summary() {
   echo "==> Container:       $CONTAINER_NAME"
   echo "==> Image:           $OPENCODE_IMAGE_NAME"
   echo "==> Platform:        linux/arm64"
-  echo "==> OpenCode ver:    $OPENCODE_VERSION"
+  echo "==> Ubuntu ver cfg:  $UBUNTU_VERSION"
+  echo "==> OpenCode ver cfg:$OPENCODE_VERSION"
 }

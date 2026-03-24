@@ -2,7 +2,28 @@
 
 ## Workflow
 
-Run these in order:
+Recommended one-step workflow:
+
+1. Start or reuse the workspace container and open OpenCode:
+   `./scripts/shared/bootstrap <workspace-name-or-path>`
+
+`bootstrap` runs `opencode-build`, then `opencode-start`, then `opencode-open`, so it will:
+
+- refresh the image to the latest configured versions
+- start the container if it is not running yet
+- leave the container alone if it is already running on the current image
+- recreate the container if the local image changed since the current container was created
+- then open OpenCode in that running container
+
+Any extra arguments after the workspace are forwarded to `opencode`.
+
+Example:
+
+```bash
+./scripts/shared/bootstrap general --help
+```
+
+Manual workflow:
 
 1. Build the shared image:
    `./scripts/shared/opencode-build`
@@ -11,7 +32,10 @@ Run these in order:
 3. Open OpenCode interactively:
    `./scripts/shared/opencode-open <workspace-name-or-path>`
 
-`opencode-start` automatically builds the image first when it is missing.
+`opencode-start` does not build the image.
+If the image is missing, it fails and tells you to run `./scripts/shared/opencode-build` first.
+If the container is already running on the current local image, it leaves it alone.
+If the current local image differs from the running container image, it recreates the container from the local image.
 
 `opencode-build` and `opencode-start` require an ARM64 host.
 
@@ -52,27 +76,45 @@ The container mounts them as:
   - image name used for build and run commands
 - `OPENCODE_VERSION`
   - version passed to the Docker build for `opencode-ai`
-  - default: `1.2.27`
+  - default: `latest`
+- `UBUNTU_VERSION`
+  - Ubuntu release passed to the Docker build
+  - default: `latest-lts`
+
+## Version behaviour
+
+- By default, `UBUNTU_VERSION=latest-lts` and `OPENCODE_VERSION=latest` in `lib/shell/common.sh`.
+- `opencode-build` resolves the current Ubuntu LTS version at build time and resolves the latest `opencode-ai` release from npm.
+- `opencode-build` uses `--pull=always`, so the latest matching Ubuntu base image is pulled before building.
+- `opencode-build` requires network access to resolve the latest Ubuntu LTS release and the latest `opencode-ai` release.
+- `opencode-start` uses the current local image only and does not rebuild it.
+- `bootstrap` performs the full `build -> start -> open` flow.
+- You can pin versions explicitly by setting `UBUNTU_VERSION` or `OPENCODE_VERSION` in your shell before running the scripts.
+
+Example pinned build:
+
+```bash
+UBUNTU_VERSION=24.04 OPENCODE_VERSION=1.2.27 ./scripts/shared/bootstrap general
+```
 
 Example portable setup with a custom base root:
 
 ```bash
 export OPENCODE_BASE_ROOT="$HOME/workspaces/opencode"
-./scripts/shared/opencode-start general
+./scripts/shared/bootstrap general
 ```
 
 Example matching the built-in default:
 
 ```bash
 export OPENCODE_BASE_ROOT="$HOME/Documents/Ezirius/.applications-data/OpenCode"
-./scripts/shared/opencode-start general
+./scripts/shared/bootstrap general
 ```
 
 Example using an absolute workspace path:
 
 ```bash
-./scripts/shared/opencode-start "$HOME/work/projects/general"
-./scripts/shared/opencode-open "$HOME/work/projects/general"
+./scripts/shared/bootstrap "$HOME/work/projects/general"
 ```
 
 Container names are derived from the resolved workspace path. Equivalent absolute paths such as `/tmp/workspace`, `/tmp/./workspace`, and `/tmp/dir/../workspace` resolve to the same container.

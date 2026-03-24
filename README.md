@@ -7,18 +7,32 @@ This repository builds and manages a workspace-scoped OpenCode container for ARM
 - `config/containers/Dockerfile` defines the shared ARM64 image
 - `docs/shared/usage.md` documents the shared container workflow and environment overrides
 - `lib/shell/common.sh` contains shared shell helpers and defaults
-- `scripts/shared/` contains the shared build, start, open, shell, logs, stop, and remove commands
+- `scripts/shared/` contains the shared `bootstrap`, build, start, open, shell, logs, stop, and remove commands
 - `tests/shared/test-layout.sh` contains lightweight repository checks
 
 ## Quickstart
 
-Run these in order:
+Recommended:
+
+1. `./scripts/shared/bootstrap <workspace-name-or-path>`
+
+`bootstrap` builds the image, starts the workspace container if needed, recreates it if the local image changed, and then opens OpenCode.
+Any extra arguments after the workspace are forwarded to `opencode`.
+
+Example:
+
+`./scripts/shared/bootstrap general --help`
+
+Manual flow:
 
 1. `./scripts/shared/opencode-build`
 2. `./scripts/shared/opencode-start <workspace-name-or-path>`
 3. `./scripts/shared/opencode-open <workspace-name-or-path>`
 
-`opencode-start` also builds the image automatically if it does not exist yet.
+`opencode-start` only starts or reuses a container from the existing local image.
+If the container is already running on that same image, it exits cleanly.
+If the local image has changed since the container was started, it recreates the container from the current local image.
+If the image does not exist, `opencode-start` fails and tells you to run `opencode-build` first.
 
 Useful follow-up commands:
 
@@ -35,6 +49,22 @@ Useful follow-up commands:
 - Workspace is mounted to `/workspace`
 - Workspace `configurations/` is mounted to `/configurations`
 - Workspace `data/` is mounted to `/data`
+
+## Versioning
+
+- By default, the build resolves the latest Ubuntu LTS release and the latest `opencode-ai` release at build time.
+- `opencode-build` uses `--pull=always`, so it refreshes the base image tag before building.
+- `opencode-build` requires network access to resolve the latest Ubuntu LTS release and the latest `opencode-ai` release.
+- `opencode-start` does not rebuild the image.
+- `bootstrap` performs the full `build -> start -> open` flow.
+- The Dockerfile keeps fallback defaults for `UBUNTU_VERSION=24.04` and `OPENCODE_VERSION=latest`, but the scripts resolve current values dynamically.
+- You can still pin versions manually by setting `UBUNTU_VERSION` or `OPENCODE_VERSION` in the environment before running the scripts.
+
+Example pinned build:
+
+```bash
+UBUNTU_VERSION=24.04 OPENCODE_VERSION=1.2.27 ./scripts/shared/bootstrap general
+```
 
 `opencode-build` and `opencode-start` now fail fast on non-ARM64 hosts.
 
@@ -54,4 +84,6 @@ The default workspace base root is `~/Documents/Ezirius/.applications-data/OpenC
 
 For a portable setup, prefer setting `OPENCODE_BASE_ROOT` explicitly in your shell profile rather than relying on the default path.
 
-The default OpenCode package version is controlled by `OPENCODE_VERSION` in `lib/shell/common.sh` and can be overridden at runtime.
+The default OpenCode package version policy is controlled by `OPENCODE_VERSION` in `lib/shell/common.sh` and can be overridden at runtime.
+
+The default Ubuntu release policy is controlled by `UBUNTU_VERSION` in `lib/shell/common.sh` and can also be overridden at runtime.

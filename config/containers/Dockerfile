@@ -1,11 +1,12 @@
-FROM --platform=linux/arm64 ubuntu:24.04
+ARG UBUNTU_VERSION=24.04
+FROM --platform=linux/arm64 ubuntu:${UBUNTU_VERSION}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-ARG OPENCODE_VERSION=1.2.27
+ARG OPENCODE_VERSION=latest
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \

@@ -4,13 +4,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 require_podman
+require_python3
 require_arm64_host
+RESOLVED_UBUNTU_VERSION="$(resolve_ubuntu_version)"
+RESOLVED_OPENCODE_VERSION="$(resolve_opencode_version)"
 echo "==> Building OpenCode image"
 podman build \
+  --pull=always \
   --platform="linux/arm64" \
-  --build-arg "OPENCODE_VERSION=$OPENCODE_VERSION" \
+  --build-arg "UBUNTU_VERSION=$RESOLVED_UBUNTU_VERSION" \
+  --build-arg "OPENCODE_VERSION=$RESOLVED_OPENCODE_VERSION" \
   -t "$OPENCODE_IMAGE_NAME" \
   -f "$ROOT/config/containers/Dockerfile" \
   "$ROOT"
 echo "==> Build complete: $OPENCODE_IMAGE_NAME"
-echo "==> OpenCode version: $OPENCODE_VERSION"
+echo "==> Ubuntu version:   $RESOLVED_UBUNTU_VERSION"
+echo "==> OpenCode version: $RESOLVED_OPENCODE_VERSION"
