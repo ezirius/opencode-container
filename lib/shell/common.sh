@@ -214,7 +214,7 @@ for block in blocks:
             key, value = line.split(': ', 1)
             data[key] = value
     if data.get('Supported') == '1' and 'Version' in data:
-        latest = data['Version'].split()[0]
+        latest = '.'.join(data['Version'].split()[0].split('.')[:2])
 if not latest:
     raise SystemExit('failed to resolve latest Ubuntu LTS version')
 print(latest)

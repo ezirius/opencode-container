@@ -52,9 +52,9 @@ Useful follow-up commands:
 
 ## Versioning
 
-- By default, the build resolves the latest Ubuntu LTS release and the latest `opencode-ai` release at build time.
+- By default, the build resolves the latest supported Ubuntu LTS Docker tag series and the latest `opencode-ai` release at build time.
 - `opencode-build` uses `--pull=always`, so it refreshes the base image tag before building.
-- `opencode-build` requires network access to resolve the latest Ubuntu LTS release and the latest `opencode-ai` release.
+- `opencode-build` requires network access to resolve the latest Ubuntu LTS series and the latest `opencode-ai` release.
 - `opencode-start` does not rebuild the image.
 - `bootstrap` performs the full `build -> start -> open` flow.
 - The Dockerfile keeps fallback defaults for `UBUNTU_VERSION=24.04` and `OPENCODE_VERSION=latest`, but the scripts resolve current values dynamically.

@@ -56,6 +56,12 @@ assert_eq "/tmp/opencode-home/workspace-root/general" "$WORKSPACE_ROOT" "named w
 HOME="$ORIGINAL_HOME"
 OPENCODE_BASE_ROOT="$ORIGINAL_BASE_ROOT"
 
+UBUNTU_VERSION="24.04"
+assert_eq "24.04" "$(resolve_ubuntu_version)" "explicit Ubuntu version is returned unchanged"
+
+OPENCODE_VERSION="1.2.27"
+assert_eq "1.2.27" "$(resolve_opencode_version)" "explicit OpenCode version is returned unchanged"
+
 resolve_workspace "/tmp/My Workspace"
 assert_eq "/tmp/My Workspace" "$WORKSPACE_INPUT" "workspace input preserves absolute path"
 assert_eq "/tmp/My Workspace" "$WORKSPACE_ROOT" "absolute workspace uses direct path"

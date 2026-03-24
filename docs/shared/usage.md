@@ -84,9 +84,9 @@ The container mounts them as:
 ## Version behaviour
 
 - By default, `UBUNTU_VERSION=latest-lts` and `OPENCODE_VERSION=latest` in `lib/shell/common.sh`.
-- `opencode-build` resolves the current Ubuntu LTS version at build time and resolves the latest `opencode-ai` release from npm.
+- `opencode-build` resolves the current Ubuntu LTS Docker tag series at build time and resolves the latest `opencode-ai` release from npm.
 - `opencode-build` uses `--pull=always`, so the latest matching Ubuntu base image is pulled before building.
-- `opencode-build` requires network access to resolve the latest Ubuntu LTS release and the latest `opencode-ai` release.
+- `opencode-build` requires network access to resolve the latest Ubuntu LTS series and the latest `opencode-ai` release.
 - `opencode-start` uses the current local image only and does not rebuild it.
 - `bootstrap` performs the full `build -> start -> open` flow.
 - You can pin versions explicitly by setting `UBUNTU_VERSION` or `OPENCODE_VERSION` in your shell before running the scripts.
