@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 if [[ $# -ne 1 ]]; then
-  usage_error "$(basename "$0") <workspace-name-or-path>"
+  usage_error "$(basename "$0") requires exactly 1 argument: <workspace-name-or-path>"
 fi
 require_podman
 require_arm64_host
@@ -26,8 +26,12 @@ if container_exists; then
     echo "==> Removing existing container with old image: $CONTAINER_NAME"
     podman rm -f "$CONTAINER_NAME" >/dev/null
   else
-    echo "==> Removing existing stopped container: $CONTAINER_NAME"
-    podman rm -f "$CONTAINER_NAME" >/dev/null
+    echo "==> Starting existing stopped container: $CONTAINER_NAME"
+    podman start "$CONTAINER_NAME" >/dev/null
+    echo "==> Container started: $CONTAINER_NAME"
+    printf '==> Open OpenCode with: %q %q\n' "$SCRIPT_DIR/opencode-open" "$WORKSPACE_INPUT"
+    printf '==> Open a shell with:  %q %q\n' "$SCRIPT_DIR/opencode-shell" "$WORKSPACE_INPUT"
+    exit 0
   fi
 fi
 echo "==> Starting idle OpenCode container"

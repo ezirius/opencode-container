@@ -3,15 +3,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
+
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
 require_podman
+
+if image_exists; then
+  echo "==> OpenCode image already exists: $OPENCODE_IMAGE_NAME"
+  echo "==> Skipping rebuild"
+  exit 0
+fi
+
 require_python3
 require_arm64_host
+
 RESOLVED_UBUNTU_VERSION="$(resolve_ubuntu_version)"
 RESOLVED_OPENCODE_VERSION="$(resolve_opencode_version)"
 echo "==> Building OpenCode image"
 podman build \
   --pull=always \
   --platform="linux/arm64" \
+  --label "opencode.ubuntu_version=$RESOLVED_UBUNTU_VERSION" \
+  --label "opencode.version=$RESOLVED_OPENCODE_VERSION" \
   --build-arg "UBUNTU_VERSION=$RESOLVED_UBUNTU_VERSION" \
   --build-arg "OPENCODE_VERSION=$RESOLVED_OPENCODE_VERSION" \
   -t "$OPENCODE_IMAGE_NAME" \

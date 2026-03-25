@@ -7,9 +7,10 @@ Recommended one-step workflow:
 1. Start or reuse the workspace container and open OpenCode:
    `./scripts/shared/bootstrap <workspace-name-or-path>`
 
-`bootstrap` runs `opencode-build`, then `opencode-start`, then `opencode-open`, so it will:
+`bootstrap` runs `opencode-build`, then `opencode-upgrade`, then `opencode-start`, then `opencode-open`, so it will:
 
-- refresh the image to the latest configured versions
+- build the image only if it does not already exist
+- upgrade the image only if the requested Ubuntu or OpenCode version has changed
 - start the container if it is not running yet
 - leave the container alone if it is already running on the current image
 - recreate the container if the local image changed since the current container was created
@@ -27,17 +28,25 @@ Manual workflow:
 
 1. Build the shared image:
    `./scripts/shared/opencode-build`
-2. Start a workspace container:
+2. Upgrade the shared image if newer configured versions are available:
+   `./scripts/shared/opencode-upgrade`
+3. Start a workspace container:
    `./scripts/shared/opencode-start <workspace-name-or-path>`
-3. Open OpenCode interactively:
+4. Open OpenCode interactively:
    `./scripts/shared/opencode-open <workspace-name-or-path>`
 
 `opencode-start` does not build the image.
 If the image is missing, it fails and tells you to run `./scripts/shared/opencode-build` first.
 If the container is already running on the current local image, it leaves it alone.
+If a stopped container already exists on the current local image, it starts that container again.
 If the current local image differs from the running container image, it recreates the container from the local image.
 
-`opencode-build` and `opencode-start` require an ARM64 host.
+`opencode-upgrade` compares the current image metadata with the requested Ubuntu and OpenCode versions.
+If they already match, it exits without making changes.
+If they differ, it removes the shared image and rebuilds it.
+
+`opencode-start` requires an ARM64 host.
+`opencode-build` and `opencode-upgrade` require an ARM64 host only when a build or rebuild is actually needed.
 
 ## Other commands
 
@@ -50,7 +59,11 @@ If the current local image differs from the running container image, it recreate
 - Remove the container:
   `./scripts/shared/opencode-remove <workspace-name-or-path>`
 
+`opencode-stop` exits cleanly if the container is already stopped, and `opencode-remove` exits cleanly if the container does not exist.
+
 `opencode-open` and `opencode-shell` keep TTY mode when run interactively and fall back to stdin-only mode when run from a non-interactive shell.
+
+The repository test entry point is `./tests/shared/test-all.sh`.
 
 ## Workspace layout
 
@@ -84,12 +97,17 @@ The container mounts them as:
 ## Version behaviour
 
 - By default, `UBUNTU_VERSION=latest-lts` and `OPENCODE_VERSION=latest` in `lib/shell/common.sh`.
-- `opencode-build` resolves the current Ubuntu LTS Docker tag series at build time and resolves the latest `opencode-ai` release from npm.
-- `opencode-build` uses `--pull=always`, so the latest matching Ubuntu base image is pulled before building.
-- `opencode-build` requires network access to resolve the latest Ubuntu LTS series and the latest `opencode-ai` release.
+- `opencode-build` resolves the current Ubuntu LTS Docker tag series at build time and resolves the latest `opencode-ai` release from npm when the image is missing.
+- `opencode-build` uses `--pull=always` when a build is needed, so the latest matching Ubuntu base image is pulled before building.
+- `opencode-build` requires network access only when the image is missing and a build is needed.
+- `opencode-build` labels the image with the resolved Ubuntu and OpenCode versions.
+- `opencode-upgrade` compares those labels to the currently requested versions and rebuilds only when they differ.
 - `opencode-start` uses the current local image only and does not rebuild it.
-- `bootstrap` performs the full `build -> start -> open` flow.
+- If the image already exists, `opencode-build` reports that and exits without rebuilding.
+- `bootstrap` performs the `build -> upgrade -> start -> open` flow.
 - You can pin versions explicitly by setting `UBUNTU_VERSION` or `OPENCODE_VERSION` in your shell before running the scripts.
+- `opencode-build` only enforces the ARM64 host requirement when it is about to build.
+- `opencode-upgrade` only enforces the ARM64 host requirement when it is about to rebuild.
 
 Example pinned build:
 

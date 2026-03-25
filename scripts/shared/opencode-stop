@@ -4,13 +4,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 if [[ $# -ne 1 ]]; then
-  usage_error "$(basename "$0") <workspace-name-or-path>"
+  usage_error "$(basename "$0") requires exactly 1 argument: <workspace-name-or-path>"
 fi
 require_podman
 resolve_workspace "$1"
 if container_exists; then
-  echo "==> Stopping container: $CONTAINER_NAME"
-  podman stop "$CONTAINER_NAME" >/dev/null
+  if container_running; then
+    echo "==> Stopping container: $CONTAINER_NAME"
+    podman stop "$CONTAINER_NAME" >/dev/null
+  else
+    echo "==> Container already stopped: $CONTAINER_NAME"
+  fi
 else
   echo "==> No container found: $CONTAINER_NAME"
 fi

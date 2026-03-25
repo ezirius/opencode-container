@@ -170,6 +170,17 @@ image_id() {
   podman image inspect -f '{{.Id}}' "$OPENCODE_IMAGE_NAME" 2>/dev/null
 }
 
+image_label() {
+  local key="$1"
+  local value
+
+  value="$(podman image inspect -f "{{ index .Labels \"$key\" }}" "$OPENCODE_IMAGE_NAME" 2>/dev/null || true)"
+  if [[ "$value" == "<no value>" ]]; then
+    value=""
+  fi
+  printf '%s' "$value"
+}
+
 container_exists() {
   podman container exists "$CONTAINER_NAME"
 }
