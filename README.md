@@ -14,7 +14,7 @@ This repository builds and manages a workspace-scoped OpenCode container for ARM
 
 Recommended:
 
-1. `./scripts/shared/bootstrap <workspace-name-or-path>`
+1. `./scripts/shared/bootstrap <workspace-name>`
 
 `bootstrap` ensures the image exists, upgrades it if newer configured versions are available, starts the workspace container if needed, recreates it if the local image changed, and then opens OpenCode.
 Any extra arguments after the workspace are forwarded to `opencode`.
@@ -27,8 +27,8 @@ Manual flow:
 
 1. `./scripts/shared/opencode-build`
 2. `./scripts/shared/opencode-upgrade`
-3. `./scripts/shared/opencode-start <workspace-name-or-path>`
-4. `./scripts/shared/opencode-open <workspace-name-or-path>`
+3. `./scripts/shared/opencode-start <workspace-name>`
+4. `./scripts/shared/opencode-open <workspace-name>`
 
 `opencode-start` only starts or reuses a container from the existing local image.
 If the container is already running on that same image, it exits cleanly.
@@ -42,12 +42,14 @@ If they differ, it removes the shared image and rebuilds it with the current req
 
 Useful follow-up commands:
 
-- `./scripts/shared/opencode-shell <workspace-name-or-path>`
-- `./scripts/shared/opencode-logs <workspace-name-or-path>`
-- `./scripts/shared/opencode-stop <workspace-name-or-path>`
-- `./scripts/shared/opencode-remove <workspace-name-or-path>`
+- `./scripts/shared/opencode-shell <workspace-name>`
+- `./scripts/shared/opencode-logs <workspace-name>`
+- `./scripts/shared/opencode-stop <workspace-name>`
+- `./scripts/shared/opencode-remove <workspace-name>`
 
 `opencode-stop` is also idempotent: if the container is already stopped, it reports that and exits cleanly.
+
+The scripts create the workspace root, `configurations/`, and `data/` automatically when needed.
 
 ## Container rules
 
@@ -83,16 +85,13 @@ UBUNTU_VERSION=24.04 OPENCODE_VERSION=1.2.27 ./scripts/shared/bootstrap general
 
 `opencode-start` always fails fast on non-ARM64 hosts.
 
-## Portability
+## Workspace names
 
-The scripts accept either a workspace name or an absolute workspace path.
+The scripts accept a workspace name only.
 
-- If you pass an absolute path, that path is used directly
-- Workspace paths are normalized before naming the container, so trailing slashes and lexical segments like `.` and `..` do not create duplicates
-- If you pass a workspace name, it is resolved under `OPENCODE_BASE_ROOT` and must be a single directory name, not a relative path
+- The workspace name is resolved under `OPENCODE_BASE_ROOT`
+- It must be a single directory name, not a path
 - Container names are derived from the resolved workspace path, so the same workspace name under different base roots does not collide
-- If you use different absolute paths that share the same basename, they still get distinct container names
-- If you start a container with an absolute path, follow-up commands can use equivalent normalized aliases for that same path and still target the same container
 - Default overrides are documented in `docs/shared/usage.md`
 
 The default workspace base root is `~/Documents/Ezirius/.applications-data/OpenCode`.
@@ -102,3 +101,23 @@ For a portable setup, prefer setting `OPENCODE_BASE_ROOT` explicitly in your she
 The default OpenCode package version policy is controlled by `OPENCODE_VERSION` in `lib/shell/common.sh` and can be overridden at runtime.
 
 The default Ubuntu release policy is controlled by `UBUNTU_VERSION` in `lib/shell/common.sh` and can also be overridden at runtime.
+
+## GitHub setup on Maldoria
+
+This repo is configured to use the repo-specific SSH alias:
+
+- `github-maldoria-opencode-container`
+
+If `git push` says it cannot resolve that hostname, the repo remote is already correct but your host SSH config has not been materialised yet. On Maldoria, run the managed setup from inside this repo:
+
+`/workspace/Development/OpenCode/installations-configurations/scripts/macos/git-configure`
+
+That workflow writes the matching `Host github-maldoria-opencode-container` block into `~/.ssh/config`, exports the public key file `~/.ssh/maldoria-github-ezirius-opencode-container.pub`, and points the repo remote at the alias.
+
+After that, test SSH auth with:
+
+`ssh -T git@github-maldoria-opencode-container`
+
+## Verification
+
+Run `tests/shared/test-all.sh` to execute the repository shell checks in one command.

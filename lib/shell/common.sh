@@ -41,6 +41,7 @@ require_workspace_root() {
 require_workspace_name() {
   local name="$1"
 
+  [[ -n "$name" ]] || fail "workspace name must not be empty"
   [[ "$name" != */* ]] || fail "workspace name must not contain path separators: $name"
   [[ "$name" != "." ]] || fail "workspace name must not be '.'"
   [[ "$name" != ".." ]] || fail "workspace name must not be '..'"
@@ -131,23 +132,17 @@ hash_workspace_path() {
 
 resolve_workspace() {
   local input="${1:?workspace required}"
+  local workspace_base_root
 
   input="$(normalize_path "$input")"
 
   WORKSPACE_INPUT="$input"
 
-  if [[ "$input" = /* ]]; then
-    WORKSPACE_ROOT="$(normalize_absolute_path "$input")"
-    WORKSPACE_NAME="$(basename "$WORKSPACE_ROOT")"
-  else
-    local workspace_base_root
-
-    require_workspace_root
-    require_workspace_name "$input"
-    WORKSPACE_NAME="$input"
-    workspace_base_root="$(expand_home_path "$OPENCODE_BASE_ROOT")"
-    WORKSPACE_ROOT="$(normalize_absolute_path "$(normalize_path "$workspace_base_root")/$WORKSPACE_NAME")"
-  fi
+  require_workspace_root
+  require_workspace_name "$input"
+  WORKSPACE_NAME="$input"
+  workspace_base_root="$(expand_home_path "$OPENCODE_BASE_ROOT")"
+  WORKSPACE_ROOT="$(normalize_absolute_path "$(normalize_path "$workspace_base_root")/$WORKSPACE_NAME")"
 
   SAFE_WORKSPACE_NAME="$(sanitize_name "$WORKSPACE_NAME")"
   [[ -n "$SAFE_WORKSPACE_NAME" ]] || fail "workspace name resolved to an empty container-safe name"
@@ -212,10 +207,16 @@ use_exec_tty() {
 
 resolve_latest_ubuntu_lts_version() {
   python3 - <<'PY'
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 url = 'https://changelogs.ubuntu.com/meta-release-lts'
-text = urlopen(url, timeout=15).read().decode('utf-8', 'replace')
+try:
+    text = urlopen(url, timeout=15).read().decode('utf-8', 'replace')
+except HTTPError as exc:
+    raise SystemExit(f'failed to resolve latest Ubuntu LTS version: HTTP {exc.code}')
+except URLError as exc:
+    raise SystemExit(f'failed to resolve latest Ubuntu LTS version: {exc.reason}')
 blocks = [b.strip() for b in text.split('\n\n') if b.strip()]
 latest = None
 for block in blocks:
@@ -235,10 +236,16 @@ PY
 resolve_latest_opencode_version() {
   python3 - <<'PY'
 import json
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 url = 'https://registry.npmjs.org/opencode-ai/latest'
-data = json.load(urlopen(url, timeout=15))
+try:
+    data = json.load(urlopen(url, timeout=15))
+except HTTPError as exc:
+    raise SystemExit(f'failed to resolve latest opencode-ai version: HTTP {exc.code}')
+except URLError as exc:
+    raise SystemExit(f'failed to resolve latest opencode-ai version: {exc.reason}')
 version = data.get('version')
 if not version:
     raise SystemExit('failed to resolve latest opencode-ai version')

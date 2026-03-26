@@ -5,7 +5,7 @@
 Recommended one-step workflow:
 
 1. Start or reuse the workspace container and open OpenCode:
-   `./scripts/shared/bootstrap <workspace-name-or-path>`
+   `./scripts/shared/bootstrap <workspace-name>`
 
 `bootstrap` runs `opencode-build`, then `opencode-upgrade`, then `opencode-start`, then `opencode-open`, so it will:
 
@@ -31,9 +31,9 @@ Manual workflow:
 2. Upgrade the shared image if newer configured versions are available:
    `./scripts/shared/opencode-upgrade`
 3. Start a workspace container:
-   `./scripts/shared/opencode-start <workspace-name-or-path>`
+   `./scripts/shared/opencode-start <workspace-name>`
 4. Open OpenCode interactively:
-   `./scripts/shared/opencode-open <workspace-name-or-path>`
+   `./scripts/shared/opencode-open <workspace-name>`
 
 `opencode-start` does not build the image.
 If the image is missing, it fails and tells you to run `./scripts/shared/opencode-build` first.
@@ -51,13 +51,13 @@ If they differ, it removes the shared image and rebuilds it.
 ## Other commands
 
 - Open a shell in the running container:
-  `./scripts/shared/opencode-shell <workspace-name-or-path>`
+  `./scripts/shared/opencode-shell <workspace-name>`
 - Show container logs:
-  `./scripts/shared/opencode-logs <workspace-name-or-path>`
+  `./scripts/shared/opencode-logs <workspace-name>`
 - Stop the container:
-  `./scripts/shared/opencode-stop <workspace-name-or-path>`
+  `./scripts/shared/opencode-stop <workspace-name>`
 - Remove the container:
-  `./scripts/shared/opencode-remove <workspace-name-or-path>`
+  `./scripts/shared/opencode-remove <workspace-name>`
 
 `opencode-stop` exits cleanly if the container is already stopped, and `opencode-remove` exits cleanly if the container does not exist.
 
@@ -82,7 +82,7 @@ The container mounts them as:
 ## Environment overrides
 
 - `OPENCODE_BASE_ROOT`
-  - base directory used when you pass a workspace name instead of an absolute path
+  - base directory used when you pass a workspace name
   - default: `~/Documents/Ezirius/.applications-data/OpenCode`
   - named workspaces must be a single directory name such as `general`, not a relative path like `team/general`
 - `OPENCODE_IMAGE_NAME`
@@ -128,17 +128,5 @@ Example matching the built-in default:
 export OPENCODE_BASE_ROOT="$HOME/Documents/Ezirius/.applications-data/OpenCode"
 ./scripts/shared/bootstrap general
 ```
-
-Example using an absolute workspace path:
-
-```bash
-./scripts/shared/bootstrap "$HOME/work/projects/general"
-```
-
-Container names are derived from the resolved workspace path. Equivalent absolute paths such as `/tmp/workspace`, `/tmp/./workspace`, and `/tmp/dir/../workspace` resolve to the same container.
-
-Absolute workspace paths with the same basename still get different container names, so `/path/one/general` and `/path/two/general` do not collide.
-
-Trailing slashes on workspace paths are normalized, so `/path/one/general` and `/path/one/general/` resolve to the same workspace and container name.
 
 Named workspaces under different `OPENCODE_BASE_ROOT` values also get different container names because the resolved workspace path is part of the container identity.

@@ -62,35 +62,8 @@ assert_eq "24.04" "$(resolve_ubuntu_version)" "explicit Ubuntu version is return
 OPENCODE_VERSION="1.2.27"
 assert_eq "1.2.27" "$(resolve_opencode_version)" "explicit OpenCode version is returned unchanged"
 
-resolve_workspace "/tmp/My Workspace"
-assert_eq "/tmp/My Workspace" "$WORKSPACE_INPUT" "workspace input preserves absolute path"
-assert_eq "/tmp/My Workspace" "$WORKSPACE_ROOT" "absolute workspace uses direct path"
-assert_eq "My Workspace" "$WORKSPACE_NAME" "absolute workspace derives basename"
-
-EXPECTED_HASH="$(hash_workspace_path "/tmp/My Workspace")"
-assert_eq "opencode-my-workspace-$EXPECTED_HASH" "$CONTAINER_NAME" "absolute workspace container name is unique and sanitized"
-
-resolve_workspace "/tmp/My Workspace/"
-assert_eq "/tmp/My Workspace" "$WORKSPACE_INPUT" "absolute workspace input is normalized"
-assert_eq "/tmp/My Workspace" "$WORKSPACE_ROOT" "absolute workspace root drops trailing slash"
-assert_eq "opencode-my-workspace-$EXPECTED_HASH" "$CONTAINER_NAME" "absolute workspace trailing slash does not change container name"
-
-resolve_workspace "/tmp/./My Workspace"
-assert_eq "/tmp/My Workspace" "$WORKSPACE_ROOT" "absolute workspace root normalizes current directory segments"
-assert_eq "opencode-my-workspace-$EXPECTED_HASH" "$CONTAINER_NAME" "absolute workspace current directory alias keeps container name"
-
-resolve_workspace "/tmp/folder/../My Workspace"
-assert_eq "/tmp/My Workspace" "$WORKSPACE_ROOT" "absolute workspace root normalizes parent directory segments"
-assert_eq "opencode-my-workspace-$EXPECTED_HASH" "$CONTAINER_NAME" "absolute workspace parent directory alias keeps container name"
-
-resolve_workspace "/var/tmp/My Workspace"
-assert_eq "/var/tmp/My Workspace" "$WORKSPACE_ROOT" "second absolute workspace uses direct path"
-
-SECOND_HASH="$(hash_workspace_path "/var/tmp/My Workspace")"
-assert_eq "opencode-my-workspace-$SECOND_HASH" "$CONTAINER_NAME" "second absolute workspace gets its own hashed container name"
-
-if [[ "$EXPECTED_HASH" == "$SECOND_HASH" ]]; then
-  printf 'assertion failed: absolute workspace hashes should differ\n' >&2
+if (resolve_workspace "/tmp/My Workspace") >/dev/null 2>&1; then
+  printf 'assertion failed: absolute workspace path should fail\n' >&2
   exit 1
 fi
 

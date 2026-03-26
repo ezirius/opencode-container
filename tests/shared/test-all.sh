@@ -14,10 +14,12 @@ bash -n \
   "$ROOT/scripts/shared/opencode-remove" \
   "$ROOT/scripts/shared/opencode-logs" \
   "$ROOT/lib/shell/common.sh" \
+  "$ROOT/tests/shared/test-args.sh" \
   "$ROOT/tests/shared/test-layout.sh" \
   "$ROOT/tests/shared/test-common.sh" \
   "$ROOT/tests/shared/test-runtime.sh"
 
+"$ROOT/tests/shared/test-args.sh"
 "$ROOT/tests/shared/test-layout.sh"
 "$ROOT/tests/shared/test-common.sh"
 "$ROOT/tests/shared/test-runtime.sh"
