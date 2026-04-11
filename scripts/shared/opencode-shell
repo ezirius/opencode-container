@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
-if [[ $# -ne 1 ]]; then
-  usage_error "$(basename "$0") requires exactly 1 argument: <workspace-name-or-path>"
+
+if [[ ${1-} == "--help" ]]; then
+  show_help "Usage: $(basename "$0") <workspace> [command args...]
+       $(basename "$0") <workspace> <production|test> <upstream> [command args...]
+
+Open a shell or run a command in the running OpenCode workspace container."
 fi
+
+[[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [command args...]"
+WORKSPACE="$1"
+shift
+require_workspace_name "$WORKSPACE"
 require_podman
-resolve_workspace "$1"
-require_running_container
-if use_exec_tty; then
-  exec podman exec -it -w /workspace "$CONTAINER_NAME" /bin/bash
+
+if [[ $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+  CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$1" "$2")"
+  shift 2
 else
-  exec podman exec -i -w /workspace "$CONTAINER_NAME" /bin/bash
+  CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")"
 fi
+
+container_running "$CONTAINER_NAME" || fail "container is not running: $CONTAINER_NAME"
+exec_shell_in_container "$CONTAINER_NAME" "$@"

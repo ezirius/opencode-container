@@ -1,48 +1,60 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
-if [[ $# -ne 1 ]]; then
-  usage_error "$(basename "$0") requires exactly 1 argument: <workspace-name-or-path>"
+
+if [[ ${1-} == "--help" ]]; then
+  show_help "Usage: $(basename "$0") <workspace> [opencode args...]
+       $(basename "$0") <workspace> <production|test> <upstream> [opencode args...]
+
+Start or reuse a persistent OpenCode workspace container.
+
+The mounted .config/opencode/config.env file is snapshotted when the container starts.
+Optional .config/opencode/secrets.env is snapshotted second.
+If you change either file, restart the container to apply the new values."
 fi
+
+[[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [<production|test> <upstream>] [opencode args...]"
+
+WORKSPACE="$1"
+shift
+require_workspace_name "$WORKSPACE"
 require_podman
-require_arm64_host
-resolve_workspace "$1"
-ensure_workspace_dirs
-print_workspace_summary
-if ! image_exists; then
-  fail "image not found: $OPENCODE_IMAGE_NAME (run $SCRIPT_DIR/opencode-build first)"
-fi
-if container_exists; then
-  if container_running; then
-    if [[ "$(container_image_id)" == "$(image_id)" ]]; then
-      echo "==> Container already running: $CONTAINER_NAME"
-      exit 0
+ensure_workspace_layout "$WORKSPACE"
+seed_workspace_config_env_file "$WORKSPACE"
+
+if [[ $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+  LANE="$1"
+  UPSTREAM_SELECTOR="$2"
+  shift 2
+  validate_lane "$LANE"
+  validate_upstream_selector "$UPSTREAM_SELECTOR"
+  WRAPPER_CONTEXT="$(current_wrapper_context)"
+  UPSTREAM_RESOLVED="$(resolve_upstream_selector "$UPSTREAM_SELECTOR")"
+  IMAGE_REF="$(newest_matching_image_ref "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" 2>/dev/null || true)"
+  [[ -n "$IMAGE_REF" ]] || fail "no local image found for lane=$LANE upstream=$UPSTREAM_RESOLVED wrapper=$WRAPPER_CONTEXT (run opencode-build first)"
+  COMMITSTAMP="$(image_label "$IMAGE_REF" "$OPENCODE_LABEL_COMMITSTAMP")"
+  CONTAINER_NAME="$(container_name "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT")"
+
+  if container_exists "$CONTAINER_NAME"; then
+    if [[ "$(container_image_ref "$CONTAINER_NAME" 2>/dev/null || true)" != "$IMAGE_REF" ]]; then
+      create_or_replace_container "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
+    elif ! container_running "$CONTAINER_NAME"; then
+      podman start "$CONTAINER_NAME" >/dev/null
     fi
-    echo "==> Recreating running container with updated local image: $CONTAINER_NAME"
-    podman rm -f "$CONTAINER_NAME" >/dev/null
-  elif [[ "$(container_image_id)" != "$(image_id)" ]]; then
-    echo "==> Removing existing container with old image: $CONTAINER_NAME"
-    podman rm -f "$CONTAINER_NAME" >/dev/null
   else
-    echo "==> Starting existing stopped container: $CONTAINER_NAME"
-    podman start "$CONTAINER_NAME" >/dev/null
-    echo "==> Container started: $CONTAINER_NAME"
-    printf '==> Open OpenCode with: %q %q\n' "$SCRIPT_DIR/opencode-open" "$WORKSPACE_INPUT"
-    printf '==> Open a shell with:  %q %q\n' "$SCRIPT_DIR/opencode-shell" "$WORKSPACE_INPUT"
-    exit 0
+    create_or_replace_container "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
   fi
+else
+  TARGET_ROW="$(resolve_target_details_for_workspace "$WORKSPACE")"
+  IFS=$'\t' read -r TARGET_KIND TARGET_REF LANE UPSTREAM_RESOLVED WRAPPER_CONTEXT COMMITSTAMP _STATUS _IMAGE_REF <<< "$TARGET_ROW"
+  CONTAINER_NAME="$(start_or_reuse_target "$WORKSPACE" "$TARGET_KIND" "$TARGET_REF" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP")"
 fi
-echo "==> Starting idle OpenCode container"
-podman run -d \
-  --name "$CONTAINER_NAME" \
-  --platform="linux/arm64" \
-  -v "$WORKSPACE_ROOT:/workspace" \
-  -v "$CONFIG_DIR:/configurations" \
-  -v "$DATA_DIR:/data" \
-  -w /workspace \
-  "$OPENCODE_IMAGE_NAME" >/dev/null
-echo "==> Container started: $CONTAINER_NAME"
-printf '==> Open OpenCode with: %q %q\n' "$SCRIPT_DIR/opencode-open" "$WORKSPACE_INPUT"
-printf '==> Open a shell with:  %q %q\n' "$SCRIPT_DIR/opencode-shell" "$WORKSPACE_INPUT"
+
+if [[ $# -gt 0 ]]; then
+  exec env OPENCODE_WRAPPER_CONTEXT_OVERRIDE="$WRAPPER_CONTEXT" "$SCRIPT_DIR/opencode-open" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$@"
+fi
+
+print_container_summary "$WORKSPACE" "$CONTAINER_NAME"

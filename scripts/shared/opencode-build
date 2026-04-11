@@ -1,37 +1,59 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
-if [[ $# -ne 0 ]]; then
-  usage_error "$(basename "$0") takes no arguments"
+if [[ ${1-} == "--help" ]]; then
+  show_help "Usage: $(basename "$0") <production|test> [upstream]
+
+Build an immutable local OpenCode wrapper image.
+
+If [upstream] is omitted, the wrapper prompts with:
+- main
+- upstream release tags, newest to oldest"
 fi
 
-require_podman
+[[ $# -ge 1 && $# -le 2 ]] || usage_error "$(basename "$0") <production|test> [upstream]"
 
-if image_exists; then
-  echo "==> OpenCode image already exists: $OPENCODE_IMAGE_NAME"
-  echo "==> Skipping rebuild"
+LANE="$1"
+UPSTREAM_SELECTOR="${2:-}"
+
+require_podman
+validate_lane "$LANE"
+validate_build_context "$LANE"
+
+if [[ -z "$UPSTREAM_SELECTOR" ]]; then
+  UPSTREAM_SELECTOR="$(select_upstream_selector)"
+fi
+
+validate_upstream_selector "$UPSTREAM_SELECTOR"
+
+WRAPPER_CONTEXT="$(current_wrapper_context)"
+COMMITSTAMP="$(git_commitstamp)"
+UPSTREAM_RESOLVED="$(resolve_upstream_selector "$UPSTREAM_SELECTOR")"
+UPSTREAM_REF="$(upstream_ref_for_selector "$UPSTREAM_SELECTOR")"
+TARGET_IMAGE="$(image_ref "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP")"
+
+if image_exists "$TARGET_IMAGE"; then
+  printf 'Image already exists: %s\n' "$TARGET_IMAGE"
   exit 0
 fi
 
-require_python3
-require_arm64_host
+if [[ "$UPSTREAM_RESOLVED" == "main" ]]; then
+  build_source_image "$UPSTREAM_REF" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
+  printf 'Build source: upstream source ref %s\n' "$UPSTREAM_REF"
+else
+  BASE_IMAGE="$(official_image_ref_for_upstream "$UPSTREAM_SELECTOR" 2>/dev/null || true)"
+  if [[ -n "$BASE_IMAGE" ]]; then
+    podman pull "$BASE_IMAGE" >/dev/null
+    build_wrapper_image_from_base "$BASE_IMAGE" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$UPSTREAM_REF" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
+    printf 'Build source: official image %s\n' "$BASE_IMAGE"
+  else
+    build_source_image "$UPSTREAM_REF" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
+    printf 'Build source: upstream source ref %s\n' "$UPSTREAM_REF"
+  fi
+fi
 
-RESOLVED_UBUNTU_VERSION="$(resolve_ubuntu_version)"
-RESOLVED_OPENCODE_VERSION="$(resolve_opencode_version)"
-echo "==> Building OpenCode image"
-podman build \
-  --pull=always \
-  --platform="linux/arm64" \
-  --label "opencode.ubuntu_version=$RESOLVED_UBUNTU_VERSION" \
-  --label "opencode.version=$RESOLVED_OPENCODE_VERSION" \
-  --build-arg "UBUNTU_VERSION=$RESOLVED_UBUNTU_VERSION" \
-  --build-arg "OPENCODE_VERSION=$RESOLVED_OPENCODE_VERSION" \
-  -t "$OPENCODE_IMAGE_NAME" \
-  -f "$ROOT/config/containers/Dockerfile" \
-  "$ROOT"
-echo "==> Build complete: $OPENCODE_IMAGE_NAME"
-echo "==> Ubuntu version:   $RESOLVED_UBUNTU_VERSION"
-echo "==> OpenCode version: $RESOLVED_OPENCODE_VERSION"
+printf 'Built image: %s\n' "$TARGET_IMAGE"

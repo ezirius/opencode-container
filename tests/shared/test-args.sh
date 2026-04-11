@@ -21,15 +21,15 @@ assert_rejects() {
   assert_contains "$err" "$expected" "script reports invalid usage clearly"
 }
 
-assert_rejects "$ROOT/scripts/shared/opencode-build" 'takes no arguments' unexpected
-assert_rejects "$ROOT/scripts/shared/opencode-upgrade" 'takes no arguments' unexpected
-assert_rejects "$ROOT/scripts/shared/opencode-start" 'requires exactly 1 argument'
-assert_rejects "$ROOT/scripts/shared/opencode-start" 'requires exactly 1 argument' one two
-assert_rejects "$ROOT/scripts/shared/opencode-open" 'requires at least 1 argument'
-assert_rejects "$ROOT/scripts/shared/opencode-shell" 'requires exactly 1 argument'
-assert_rejects "$ROOT/scripts/shared/opencode-stop" 'requires exactly 1 argument'
-assert_rejects "$ROOT/scripts/shared/opencode-remove" 'requires exactly 1 argument'
-assert_rejects "$ROOT/scripts/shared/opencode-logs" 'requires exactly 1 argument'
-assert_rejects "$ROOT/scripts/shared/bootstrap" 'requires at least 1 argument'
+assert_rejects "$ROOT/scripts/shared/opencode-build" '<production|test> [upstream]'
+assert_rejects "$ROOT/scripts/shared/opencode-start" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-open" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-shell" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-stop" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-status" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-remove" '<container|image>'
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'container' or 'image'" wrong
+assert_rejects "$ROOT/scripts/shared/opencode-logs" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-bootstrap" '<workspace>'
 
 echo "Argument contract checks passed"

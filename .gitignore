@@ -1,1 +1,15 @@
 .DS_Store
+__pycache__/
+*.pyc
+*.swp
+*.swo
+
+# local editor and shell noise
+.idea/
+.vscode/
+
+# test and temp output
+.tmp/
+tmp/
+dist/
+coverage/

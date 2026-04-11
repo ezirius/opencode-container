@@ -1,123 +1,133 @@
-# OpenCode container
+# OpenCode Container
 
-This repository builds and manages a workspace-scoped OpenCode container for ARM64 hosts, including Apple Silicon systems, using Podman.
+This repository wraps upstream OpenCode in the same local-container model used by `hindsight-container`:
+
+- immutable local wrapper images
+- deterministic workspace container names
+- picker-based workspace commands
+- persistent upstream-owned home under `/home/opencode`
+- wrapper-owned workspace config under `/workspace/opencode-workspace/.config/opencode`
 
 ## Layout
 
-- `config/containers/Dockerfile` defines the shared ARM64 image
-- `docs/shared/usage.md` documents the shared container workflow and environment overrides
-- `lib/shell/common.sh` contains shared shell helpers and defaults
-- `scripts/shared/` contains the shared `bootstrap`, build, upgrade, start, open, shell, logs, stop, and remove commands
-- `tests/shared/` contains layout, helper, runtime-behaviour, and aggregate test runners
+- `config/shared/opencode.conf` contains wrapper defaults
+- `config/containers/Containerfile.wrapper` wraps upstream OpenCode images or source-built base images
+- `config/containers/entrypoint.sh` snapshots wrapper runtime env on container start
+- `docs/shared/usage.md` documents the command surface and workspace model
+- `docs/shared/implementation-plan.md` is the source of truth for the architecture
+- `lib/shell/common.sh` contains shared wrapper helpers
+- `scripts/shared/` contains the shared commands
+- `tests/shared/` contains the shell test suite
 
-## Quickstart
+## Commands
 
-Recommended:
+Build immutable images:
 
-1. `./scripts/shared/bootstrap <workspace-name>`
+1. `./scripts/shared/opencode-build <production|test> [upstream]`
 
-`bootstrap` ensures the image exists, upgrades it if newer configured versions are available, starts the workspace container if needed, recreates it if the local image changed, and then opens OpenCode.
-Any extra arguments after the workspace are forwarded to `opencode`.
+Workspace commands:
 
-Example:
+1. `./scripts/shared/opencode-bootstrap <workspace> [opencode args...]`
+2. `./scripts/shared/opencode-start <workspace>`
+3. `./scripts/shared/opencode-open <workspace> [opencode args...]`
+4. `./scripts/shared/opencode-shell <workspace> [command args...]`
+5. `./scripts/shared/opencode-logs <workspace> [podman logs args...]`
+6. `./scripts/shared/opencode-status <workspace>`
+7. `./scripts/shared/opencode-stop <workspace>`
+8. `./scripts/shared/opencode-remove <container|image>`
 
-`./scripts/shared/bootstrap general --help`
+## Version Model
 
-Manual flow:
+Accepted upstream selectors:
 
-1. `./scripts/shared/opencode-build`
-2. `./scripts/shared/opencode-upgrade`
-3. `./scripts/shared/opencode-start <workspace-name>`
-4. `./scripts/shared/opencode-open <workspace-name>`
+- `main`
+- `latest`
+- exact release tags such as `1.4.3`
 
-`opencode-start` only starts or reuses a container from the existing local image.
-If the container is already running on that same image, it exits cleanly.
-If a stopped container already exists on that same image, it starts it again.
-If the local image has changed since the container was started, it recreates the container from the current local image.
-If the image does not exist, `opencode-start` fails and tells you to run `opencode-build` first.
+Rules:
 
-`opencode-upgrade` checks the current image metadata against the requested Ubuntu and OpenCode versions.
-If they already match, it makes no changes and exits cleanly.
-If they differ, it removes the shared image and rebuilds it with the current requested versions.
+- `main` builds from upstream source
+- exact releases prefer `ghcr.io/anomalyco/opencode:<exact-tag>`
+- if an exact release image is unavailable, the wrapper falls back to a source build
+- `latest` resolves to the newest exact release before naming
 
-Useful follow-up commands:
+Image identity:
 
-- `./scripts/shared/opencode-shell <workspace-name>`
-- `./scripts/shared/opencode-logs <workspace-name>`
-- `./scripts/shared/opencode-stop <workspace-name>`
-- `./scripts/shared/opencode-remove <workspace-name>`
+- `opencode-local:<lane>-<upstream>-<wrapper>-<commitstamp>`
 
-`opencode-stop` is also idempotent: if the container is already stopped, it reports that and exits cleanly.
+Container identity:
 
-The scripts create the workspace root, `configurations/`, and `data/` automatically when needed.
+- `opencode-<workspace>-<lane>-<upstream>-<wrapper>`
 
-## Container rules
+## Workspace Layout
 
-- ARM64 host -> ARM64 container only
-- No AMD64 fallback
-- Shared image, separate container per workspace
-- Workspace is mounted to `/workspace`
-- Workspace `configurations/` is mounted to `/configurations`
-- Workspace `data/` is mounted to `/data`
+Each workspace lives under:
 
-## Versioning
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-home`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode`
 
-- By default, the first build resolves the latest supported Ubuntu LTS Docker tag series and the latest `opencode-ai` release at build time.
-- `opencode-build` uses `--pull=always` when a build is needed, so the latest matching Ubuntu base image is pulled before building.
-- `opencode-build` requires network access only when the image is missing and a build is needed.
-- `opencode-build` labels the image with the resolved Ubuntu and OpenCode versions so `opencode-upgrade` can detect changes later.
-- `opencode-upgrade` compares the current image labels with the currently requested Ubuntu and OpenCode versions.
-- If the versions already match, `opencode-upgrade` exits without making changes.
-- If the versions differ, `opencode-upgrade` removes the shared image and rebuilds it.
-- `opencode-start` does not rebuild the image.
-- If the image already exists, `opencode-build` reports that and exits without rebuilding.
-- `bootstrap` performs the `build -> upgrade -> start -> open` flow.
-- The Dockerfile keeps fallback defaults for `UBUNTU_VERSION=24.04` and `OPENCODE_VERSION=latest`, but the scripts resolve current values dynamically.
-- You can still pin versions manually by setting `UBUNTU_VERSION` or `OPENCODE_VERSION` in the environment before running the scripts.
-- `opencode-build` requires an ARM64 host only when an actual build is needed.
-- `opencode-upgrade` requires an ARM64 host only when an actual rebuild is needed.
+Container mounts:
 
-Example pinned build:
+- `opencode-home` -> the upstream image runtime home, such as `/root` or `/home/opencode`
+- `opencode-workspace` -> `/workspace/opencode-workspace`
+- `$HOME/Documents/Ezirius/Development/OpenCode` -> `/workspace/opencode-development`
 
-```bash
-UBUNTU_VERSION=24.04 OPENCODE_VERSION=1.2.27 ./scripts/shared/bootstrap general
-```
+OpenCode-native state remains upstream-owned inside that runtime home, including locations such as:
 
-`opencode-start` always fails fast on non-ARM64 hosts.
+- `~/.config/opencode`
+- `~/.local/share/opencode`
+- `~/.local/state/opencode`
+- `~/.cache/opencode`
 
-## Workspace names
+## Wrapper Config
 
-The scripts accept a workspace name only.
+Wrapper defaults live in `config/shared/opencode.conf`.
 
-- The workspace name is resolved under `OPENCODE_BASE_ROOT`
-- It must be a single directory name, not a path
-- Container names are derived from the resolved workspace path, so the same workspace name under different base roots does not collide
-- Default overrides are documented in `docs/shared/usage.md`
+Wrapper runtime files live in:
 
-The default workspace base root is `~/Documents/Ezirius/.applications-data/OpenCode`.
+- `opencode-workspace/.config/opencode/config.env`
+- `opencode-workspace/.config/opencode/secrets.env`
 
-For a portable setup, prefer setting `OPENCODE_BASE_ROOT` explicitly in your shell profile rather than relying on the default path.
+Rules:
 
-The default OpenCode package version policy is controlled by `OPENCODE_VERSION` in `lib/shell/common.sh` and can be overridden at runtime.
+- `opencode.conf` is wrapper-only, not OpenCode app config
+- `config.env` is seeded automatically as an optional starter file
+- `secrets.env` is optional
+- changing wrapper config or secrets requires stop/start only
+- changing wrapper config or secrets must not require rebuild
 
-The default Ubuntu release policy is controlled by `UBUNTU_VERSION` in `lib/shell/common.sh` and can also be overridden at runtime.
+If you run `opencode serve` or `opencode web` inside the container, the wrapper publishes container port `4096` to `127.0.0.1` on the host.
 
-## GitHub setup on Maldoria
+- if `OPENCODE_HOST_SERVER_PORT` is set, that exact host port is used
+- if `OPENCODE_HOST_SERVER_PORT` is unset, Podman assigns a random available host port
 
-This repo is configured to use the repo-specific SSH alias:
+`opencode-open` forwards trailing args into the in-container `opencode` command.
 
-- `github-maldoria-opencode-container`
+## Defaults
 
-If `git push` says it cannot resolve that hostname, the repo remote is already correct but your host SSH config has not been materialised yet. On Maldoria, run the managed setup from inside this repo:
+Default base root:
 
-`/workspace/Development/OpenCode/installations-configurations/scripts/macos/git-configure`
+- `~/Documents/Ezirius/.applications-data/.containers-artificial-intelligence`
 
-That workflow writes the matching `Host github-maldoria-opencode-container` block into `~/.ssh/config`, exports the public key file `~/.ssh/maldoria-github-ezirius-opencode-container.pub`, and points the repo remote at the alias.
-
-After that, test SSH auth with:
-
-`ssh -T git@github-maldoria-opencode-container`
+Environment variables override `config/shared/opencode.conf` at runtime.
 
 ## Verification
 
-Run `tests/shared/test-all.sh` to execute the repository shell checks in one command.
+Run:
+
+- `tests/shared/test-all.sh`
+
+## GitHub Setup On Maldoria
+
+This repo uses the repo-specific SSH alias:
+
+- `github-maldoria-opencode-container`
+
+If `git push` says it cannot resolve that hostname, run:
+
+- `/workspace/Development/OpenCode/installations-configurations/scripts/macos/git-configure`
+
+Then verify with:
+
+- `ssh -T git@github-maldoria-opencode-container`

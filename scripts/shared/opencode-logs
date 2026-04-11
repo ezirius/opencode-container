@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
-if [[ $# -ne 1 ]]; then
-  usage_error "$(basename "$0") requires exactly 1 argument: <workspace-name-or-path>"
-fi
+
+[[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [podman logs args...]"
+WORKSPACE="$1"
+shift
+require_workspace_name "$WORKSPACE"
 require_podman
-resolve_workspace "$1"
-require_container
-exec podman logs "$CONTAINER_NAME"
+
+CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")"
+exec podman logs "$@" "$CONTAINER_NAME"

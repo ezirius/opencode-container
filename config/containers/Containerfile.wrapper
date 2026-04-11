@@ -1,0 +1,19 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG OPENCODE_WRAPPER_LANE
+ARG OPENCODE_WRAPPER_UPSTREAM
+ARG OPENCODE_WRAPPER_UPSTREAM_REF
+ARG OPENCODE_WRAPPER_CONTEXT
+ARG OPENCODE_WRAPPER_COMMITSTAMP
+
+LABEL opencode.wrapper.lane="${OPENCODE_WRAPPER_LANE}"
+LABEL opencode.wrapper.upstream="${OPENCODE_WRAPPER_UPSTREAM}"
+LABEL opencode.wrapper.upstream_ref="${OPENCODE_WRAPPER_UPSTREAM_REF}"
+LABEL opencode.wrapper.context="${OPENCODE_WRAPPER_CONTEXT}"
+LABEL opencode.wrapper.commitstamp="${OPENCODE_WRAPPER_COMMITSTAMP}"
+
+COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/opencode-wrapper-entrypoint"]
+CMD ["sleep", "infinity"]

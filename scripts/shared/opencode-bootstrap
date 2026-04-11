@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$ROOT/lib/shell/common.sh"
+
+if [[ ${1-} == "--help" ]]; then
+  show_help "Usage: $(basename "$0") <workspace> [opencode args...]
+
+Select a workspace target once, start or reuse it, then open OpenCode in that same container."
+fi
+
+[[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [opencode args...]"
+WORKSPACE="$1"
+shift
+require_workspace_name "$WORKSPACE"
+require_podman
+ensure_workspace_layout "$WORKSPACE"
+seed_workspace_config_env_file "$WORKSPACE"
+
+TARGET_ROW="$(resolve_target_details_for_workspace "$WORKSPACE")"
+IFS=$'\t' read -r TARGET_KIND TARGET_REF LANE UPSTREAM_RESOLVED WRAPPER_CONTEXT COMMITSTAMP _STATUS _IMAGE_REF <<< "$TARGET_ROW"
+CONTAINER_NAME="$(start_or_reuse_target "$WORKSPACE" "$TARGET_KIND" "$TARGET_REF" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP")"
+
+exec_opencode_in_container "$CONTAINER_NAME" "$@"
