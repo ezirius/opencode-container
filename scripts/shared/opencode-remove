@@ -142,17 +142,17 @@ remove_images_keep_newest() {
 
 remove_containers() {
   local rows selection choice_index
-  local targets=()
-  local name keep_names
+  local options=()
+  local name keep_names selected
   rows="$(sorted_project_container_rows)"
   [[ -n "$rows" ]] || fail "no OpenCode project containers found"
 
-  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+  while IFS= read -r name; do
     [[ -n "$name" ]] || continue
-    targets+=("$name")
-  done <<< "$rows"
+    options+=("$name")
+  done < <(container_picker_options "$rows")
 
-  selection="$(select_menu_option "Select containers to remove" "All, but newest" "All" "${targets[@]}")"
+  selection="$(select_menu_option "Select containers to remove" "All, but newest" "All" "${options[@]}")"
   choice_index=$((selection - 1))
 
   if (( choice_index == 0 )); then
@@ -166,24 +166,25 @@ remove_containers() {
     return 0
   fi
 
-  name="${targets[$((choice_index - 2))]}"
+  selected="${options[$((choice_index - 2))]}"
+  name="$(selected_option_id "$selected")"
   podman rm -f "$name" >/dev/null
   printf 'Removed container: %s\n' "$name"
 }
 
 remove_images() {
   local rows selection choice_index
-  local targets=()
-  local ref keep_refs
+  local options=()
+  local ref keep_refs selected
   rows="$(sorted_project_image_rows)"
   [[ -n "$rows" ]] || fail "no OpenCode project images found"
 
-  while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
+  while IFS= read -r ref; do
     [[ -n "$ref" ]] || continue
-    targets+=("$ref")
-  done <<< "$rows"
+    options+=("$ref")
+  done < <(image_picker_options "$rows")
 
-  selection="$(select_menu_option "Select images to remove" "All, but newest" "All" "${targets[@]}")"
+  selection="$(select_menu_option "Select images to remove" "All, but newest" "All" "${options[@]}")"
   choice_index=$((selection - 1))
 
   if (( choice_index == 0 )); then
@@ -197,7 +198,8 @@ remove_images() {
     return 0
   fi
 
-  ref="${targets[$((choice_index - 2))]}"
+  selected="${options[$((choice_index - 2))]}"
+  ref="$(selected_option_id "$selected")"
   podman rmi "$ref" >/dev/null
   printf 'Removed image: %s\n' "$ref"
 }

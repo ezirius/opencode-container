@@ -678,9 +678,17 @@ podman rm -f opencode-branchy-test-1.4.3-feature-xyz >/dev/null
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >> "$STATE_DIR/containers.tsv"
+printf '4\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" containers > "$STATE_DIR/remove-container-ui.out" 2>&1
+assert_contains "$STATE_DIR/remove-container-ui.out" 'container | opencode-general-test-1.4.3-main | general | test | 1.4.3 | main | 20260410-163440-ab12cd3 | running' 'remove containers uses the same formatted container rows as mixed mode'
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >> "$STATE_DIR/containers.tsv"
 OPENCODE_SELECT_INDEX=4 "$ROOT/scripts/shared/opencode-remove" containers > "$STATE_DIR/remove-container.out"
 assert_contains "$STATE_DIR/remove-container.out" 'Removed container: opencode-general-test-1.4.3-main' 'remove container removes selected container'
 
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
+printf '3\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" images > "$STATE_DIR/remove-image-ui.out" 2>&1
+assert_contains "$STATE_DIR/remove-image-ui.out" 'image | opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 | test | 1.4.3 | main | 20260410-163440-ab12cd3' 'remove images uses the same formatted image rows as mixed mode'
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
 OPENCODE_SELECT_INDEX=3 "$ROOT/scripts/shared/opencode-remove" images > "$STATE_DIR/remove-image.out"
 assert_contains "$STATE_DIR/remove-image.out" 'Removed image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'remove image removes selected image'
