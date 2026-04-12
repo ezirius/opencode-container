@@ -6,25 +6,148 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") <container|image>
+  show_help "Usage: $(basename "$0") [containers|images]
 
-Remove OpenCode project containers or images."
+Remove OpenCode project containers and images.
+
+With no argument, show a mixed picker with containers first and then images."
 fi
 
-[[ $# -eq 1 ]] || usage_error "$(basename "$0") <container|image>"
-MODE="$1"
-[[ "$MODE" == "container" || "$MODE" == "image" ]] || fail "mode must be 'container' or 'image'"
+[[ $# -le 1 ]] || usage_error "$(basename "$0") [containers|images]"
+MODE="${1:-mixed}"
+[[ "$MODE" == "mixed" || "$MODE" == "containers" || "$MODE" == "images" ]] || fail "mode must be 'containers' or 'images'"
 require_podman
 
+container_lane_rank() {
+  local lane="$1"
+  if [[ "$lane" == "production" ]]; then
+    printf '0'
+  else
+    printf '1'
+  fi
+}
+
+sorted_container_rows_for_retention() {
+  project_container_rows | while IFS=$'\t' read -r name workspace lane upstream wrapper commitstamp status image_ref; do
+    [[ -n "$name" && -n "$workspace" ]] || continue
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$workspace" "$(container_lane_rank "$lane")" "$commitstamp" "$name" "$lane" "$upstream" "$wrapper" "$status" "$image_ref"
+  done | sort -t $'\t' -k1,1 -k2,2n -k3,3r
+}
+
+kept_container_rows() {
+  local current_workspace=""
+  sorted_container_rows_for_retention | while IFS=$'\t' read -r workspace _lane_rank commitstamp name lane upstream wrapper status image_ref; do
+    [[ -n "$name" ]] || continue
+    if [[ "$workspace" != "$current_workspace" ]]; then
+      current_workspace="$workspace"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
+    fi
+  done
+}
+
+kept_container_names() {
+  kept_container_rows | while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+    [[ -n "$name" ]] || continue
+    printf '%s\n' "$name"
+  done
+}
+
+kept_image_refs() {
+  kept_container_rows | while IFS=$'\t' read -r _name _workspace _lane _upstream _wrapper _commitstamp _status image_ref; do
+    [[ -n "$image_ref" ]] || continue
+    printf '%s\n' "$image_ref"
+  done | sort -u
+}
+
+line_in_list() {
+  local line="$1"
+  local list="$2"
+  contains_line "$list" "$line"
+}
+
+container_picker_options() {
+  local rows="$1"
+  while IFS=$'\t' read -r name workspace lane upstream wrapper commitstamp status _image_ref; do
+    [[ -n "$name" ]] || continue
+    printf 'container | %s | %s | %s | %s | %s | %s | %s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+  done <<< "$rows"
+}
+
+image_picker_options() {
+  local rows="$1"
+  while IFS=$'\t' read -r ref lane upstream wrapper commitstamp; do
+    [[ -n "$ref" ]] || continue
+    printf 'image | %s | %s | %s | %s | %s\n' "$ref" "$lane" "$upstream" "$wrapper" "$commitstamp"
+  done <<< "$rows"
+}
+
+selected_option_id() {
+  local option="$1"
+  local _type _id
+  IFS='|' read -r _type _id _rest <<< "$option"
+  _id="${_id# }"
+  _id="${_id% }"
+  printf '%s' "$_id"
+}
+
+remove_all_containers() {
+  local rows="$1"
+  local name
+  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+    [[ -n "$name" ]] || continue
+    podman rm -f "$name" >/dev/null
+    printf 'Removed container: %s\n' "$name"
+  done <<< "$rows"
+}
+
+remove_all_images() {
+  local rows="$1"
+  local ref
+  while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
+    [[ -n "$ref" ]] || continue
+    podman rmi "$ref" >/dev/null
+    printf 'Removed image: %s\n' "$ref"
+  done <<< "$rows"
+}
+
+remove_containers_keep_newest() {
+  local rows="$1"
+  local keep_names="$2"
+  local name
+  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+    [[ -n "$name" ]] || continue
+    if line_in_list "$name" "$keep_names"; then
+      printf 'Keeping container: %s\n' "$name"
+    else
+      podman rm -f "$name" >/dev/null
+      printf 'Removed container: %s\n' "$name"
+    fi
+  done <<< "$rows"
+}
+
+remove_images_keep_newest() {
+  local rows="$1"
+  local keep_refs="$2"
+  local ref
+  while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
+    [[ -n "$ref" ]] || continue
+    if line_in_list "$ref" "$keep_refs"; then
+      printf 'Keeping image: %s\n' "$ref"
+    else
+      podman rmi "$ref" >/dev/null
+      printf 'Removed image: %s\n' "$ref"
+    fi
+  done <<< "$rows"
+}
+
 remove_containers() {
-  local rows
+  local rows selection choice_index
   local targets=()
-  local line name workspace choice_index selection
-  local kept_workspaces=""
+  local name keep_names
   rows="$(sorted_project_container_rows)"
   [[ -n "$rows" ]] || fail "no OpenCode project containers found"
 
-  while IFS=$'\t' read -r name workspace _lane _upstream _wrapper _commit _status _image_ref; do
+  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
     [[ -n "$name" ]] || continue
     targets+=("$name")
   done <<< "$rows"
@@ -33,28 +156,13 @@ remove_containers() {
   choice_index=$((selection - 1))
 
   if (( choice_index == 0 )); then
-    while IFS=$'\t' read -r name workspace _lane _upstream _wrapper _commit _status _image_ref; do
-      [[ -n "$name" ]] || continue
-      if contains_line "$kept_workspaces" "$workspace"; then
-        podman rm -f "$name" >/dev/null
-        printf 'Removed container: %s\n' "$name"
-      else
-        if [[ -z "$kept_workspaces" ]]; then
-          kept_workspaces="$workspace"
-        else
-          kept_workspaces+=$'\n'"$workspace"
-        fi
-        printf 'Keeping container: %s\n' "$name"
-      fi
-    done <<< "$rows"
+    keep_names="$(kept_container_names)"
+    remove_containers_keep_newest "$rows" "$keep_names"
     return 0
   fi
 
   if (( choice_index == 1 )); then
-    for name in "${targets[@]}"; do
-      podman rm -f "$name" >/dev/null
-      printf 'Removed container: %s\n' "$name"
-    done
+    remove_all_containers "$rows"
     return 0
   fi
 
@@ -64,34 +172,13 @@ remove_containers() {
 }
 
 remove_images() {
-  local rows container_rows ref lane upstream wrapper commitstamp image_ref name workspace choice_index selection workspaces associated_count=0 first_ref
+  local rows selection choice_index
   local targets=()
-  local kept_refs=()
-  local workspace_markers=""
-
-  image_associated_workspaces() {
-    local wanted_image="$1"
-    while IFS=$'\t' read -r name workspace lane upstream wrapper commitstamp _status image_ref; do
-      [[ -n "$name" ]] || continue
-      [[ "$image_ref" == "$wanted_image" ]] || continue
-      [[ -n "$workspace" ]] || continue
-      printf '%s\n' "$workspace"
-    done <<< "$container_rows" | sort -u
-  }
-
-  image_is_kept() {
-    local wanted="$1" item
-    for item in "${kept_refs[@]}"; do
-      [[ "$item" == "$wanted" ]] && return 0
-    done
-    return 1
-  }
-
+  local ref keep_refs
   rows="$(sorted_project_image_rows)"
   [[ -n "$rows" ]] || fail "no OpenCode project images found"
-  container_rows="$(sorted_project_container_rows)"
 
-  while IFS=$'\t' read -r ref lane upstream wrapper commitstamp; do
+  while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
     [[ -n "$ref" ]] || continue
     targets+=("$ref")
   done <<< "$rows"
@@ -100,48 +187,13 @@ remove_images() {
   choice_index=$((selection - 1))
 
   if (( choice_index == 0 )); then
-    while IFS=$'\t' read -r ref lane upstream wrapper commitstamp; do
-      [[ -n "$ref" ]] || continue
-      workspaces="$(image_associated_workspaces "$ref")"
-      if [[ -n "$workspaces" ]]; then
-        associated_count=$((associated_count + 1))
-        while IFS= read -r workspace; do
-          [[ -n "$workspace" ]] || continue
-          if ! contains_line "$workspace_markers" "$workspace"; then
-            if [[ -z "$workspace_markers" ]]; then
-              workspace_markers="$workspace"
-            else
-              workspace_markers+=$'\n'"$workspace"
-            fi
-            if ! image_is_kept "$ref"; then
-              kept_refs+=("$ref")
-            fi
-          fi
-        done <<< "$workspaces"
-      fi
-    done <<< "$rows"
-
-    if (( associated_count == 0 )); then
-      first_ref="${targets[0]}"
-      [[ -n "$first_ref" ]] && kept_refs=("$first_ref")
-    fi
-
-    for ref in "${targets[@]}"; do
-      if image_is_kept "$ref"; then
-        printf 'Keeping image: %s\n' "$ref"
-      else
-        podman rmi "$ref" >/dev/null
-        printf 'Removed image: %s\n' "$ref"
-      fi
-    done
+    keep_refs="$(kept_image_refs)"
+    remove_images_keep_newest "$rows" "$keep_refs"
     return 0
   fi
 
   if (( choice_index == 1 )); then
-    for ref in "${targets[@]}"; do
-      podman rmi "$ref" >/dev/null
-      printf 'Removed image: %s\n' "$ref"
-    done
+    remove_all_images "$rows"
     return 0
   fi
 
@@ -150,8 +202,73 @@ remove_images() {
   printf 'Removed image: %s\n' "$ref"
 }
 
-if [[ "$MODE" == "container" ]]; then
+remove_mixed() {
+  local container_rows image_rows prompt selection choice_index
+  local options=()
+  local line keep_names keep_refs selected
+
+  container_rows="$(sorted_project_container_rows)"
+  image_rows="$(sorted_project_image_rows)"
+  [[ -n "$container_rows$image_rows" ]] || fail "no OpenCode project containers or images found"
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    options+=("$line")
+  done < <(container_picker_options "$container_rows")
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    options+=("$line")
+  done < <(image_picker_options "$image_rows")
+
+  prompt="Select containers or images to remove"
+  selection="$(select_menu_option "$prompt" "All, but newest" "All" "${options[@]}")"
+  choice_index=$((selection - 1))
+
+  if (( choice_index == 0 )); then
+    keep_names="$(kept_container_names)"
+    keep_refs="$(kept_image_refs)"
+    [[ -n "$container_rows" ]] && remove_containers_keep_newest "$container_rows" "$keep_names"
+    [[ -n "$image_rows" ]] && remove_images_keep_newest "$image_rows" "$keep_refs"
+    return 0
+  fi
+
+  if (( choice_index == 1 )); then
+    [[ -n "$container_rows" ]] && remove_all_containers "$container_rows"
+    [[ -n "$image_rows" ]] && remove_all_images "$image_rows"
+    return 0
+  fi
+
+  selected="${options[$((choice_index - 2))]}"
+  if [[ "$selected" == container* ]]; then
+    selected="$(selected_option_id "$selected")"
+    while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+      [[ -n "$name" ]] || continue
+      if [[ "$selected" == "$name" ]]; then
+        podman rm -f "$name" >/dev/null
+        printf 'Removed container: %s\n' "$name"
+        return 0
+      fi
+    done <<< "$container_rows"
+  else
+    selected="$(selected_option_id "$selected")"
+    while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
+      [[ -n "$ref" ]] || continue
+      if [[ "$selected" == "$ref" ]]; then
+        podman rmi "$ref" >/dev/null
+        printf 'Removed image: %s\n' "$ref"
+        return 0
+      fi
+    done <<< "$image_rows"
+  fi
+
+  fail "failed to resolve selected removal target"
+}
+
+if [[ "$MODE" == "containers" ]]; then
   remove_containers
-else
+elif [[ "$MODE" == "images" ]]; then
   remove_images
+else
+  remove_mixed
 fi

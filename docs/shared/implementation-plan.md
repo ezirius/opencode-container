@@ -40,7 +40,7 @@ This plan applies to the OpenCode container wrapper itself, not to upstream Open
 
 The wrapper must:
 
-- preserve upstream state under `/home/opencode`
+- preserve upstream state under the upstream image runtime home, such as `/root` or `/home/opencode`
 - keep wrapper-owned config and metadata out of upstream-owned state
 - use Hindsight-style immutable image and container identity
 - use Hindsight-style workspace target selection and removal flows
@@ -189,7 +189,7 @@ Use the same base-root philosophy as Hindsight.
 
 Recommended default base root:
 
-- `$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence`
+- `$HOME/.local/share/opencode-container`
 
 Each workspace is a first-level child directory, for example:
 
@@ -214,13 +214,13 @@ The wrapper must never treat `opencode-home` as wrapper-owned storage.
 
 Each workspace container mounts exactly:
 
-- `"$BASE/<workspace>/opencode-home:/home/opencode"`
+- `"$BASE/<workspace>/opencode-home:<upstream-runtime-home>"`
 - `"$BASE/<workspace>/opencode-workspace:/workspace/opencode-workspace"`
-- `"$HOME/Documents/Ezirius/Development/OpenCode:/workspace/opencode-development"`
+- `"$OPENCODE_DEVELOPMENT_ROOT:/workspace/opencode-development"`
 
 In-container meaning:
 
-- `/home/opencode` = official upstream OpenCode home, config, storage, and cache behavior
+- `<upstream-runtime-home>` = the upstream image runtime home, such as `/root` or `/home/opencode`
 - `/workspace/opencode-workspace` = wrapper-owned workspace mount
 - `/workspace/opencode-workspace/.config/opencode` = wrapper env/config area
 - `/workspace/opencode-development` = extra host development mount required by operator policy
@@ -259,6 +259,7 @@ Wrapper-owned config should consist of:
 - `config/shared/opencode.conf`
 - `opencode-workspace/.config/opencode/config.env`
 - optionally `opencode-workspace/.config/opencode/secrets.env`
+- `config/containers/entrypoint.sh` as the runtime loader for those env files
 
 `config/shared/opencode.conf` is only for wrapper defaults and wrapper metadata. It is not an OpenCode application config file.
 
@@ -270,6 +271,7 @@ It should contain only wrapper-level settings such as:
 - upstream repo URL
 - upstream GHCR image reference
 - GitHub API base URL
+- development root mount source
 
 It must not contain OpenCode-native settings such as:
 
@@ -288,7 +290,9 @@ Rules:
 - OpenCode-native config stays in upstream-native JSON or JSONC files under `/home/opencode/.config/opencode`
 - wrapper config or secrets changes must be applied by container restart only
 - wrapper config or secrets changes must not require image rebuild
-- wrapper config or secrets changes must not require container recreate unless a mount or image identity itself changed
+- wrapper config or secrets changes must not require container recreate unless a mount, published server port, or image identity itself changed
+- `secrets.env` must override matching keys from `config.env`
+- env files must be parsed as assignments only and must never be executed as shell code
 
 The wrapper should seed a starter `config.env` comment file, but it should remain optional and startup must not depend on it being populated.
 
@@ -305,6 +309,8 @@ Target runtime behavior:
 - the container is long-lived
 - the container starts with a thin wrapper entrypoint or command that loads wrapper env files if present
 - the container then runs a simple keepalive process
+- if `OPENCODE_HOST_SERVER_PORT` is configured for the workspace, the wrapper starts and verifies a managed `opencode serve --hostname 0.0.0.0 --port 4096` process
+- the wrapper-managed server contract is always host `<configured-port>` to container `4096`
 - `opencode-open` uses `podman exec`
 - `opencode-shell` uses `podman exec`
 
@@ -317,7 +323,7 @@ Runtime config loading must behave like Hindsight in the operational sense:
 - start the container
 - new config takes effect
 
-That flow must not require rebuild or recreate.
+That flow must not require rebuild. It may require container recreate when the effective runtime config changes the published server port or mount layout.
 
 ## Command Model
 
@@ -342,15 +348,23 @@ Match Hindsight's command shapes as closely as possible:
 - `opencode-build <lane> [upstream]`
 - `opencode-bootstrap <workspace> [opencode args...]`
 - `opencode-start <workspace>`
+- `opencode-start <workspace> -- [opencode args...]`
 - `opencode-start <workspace> <lane> <upstream> [opencode args...]`
+- `opencode-start <workspace> <lane> <upstream> -- [opencode args...]`
 - `opencode-open <workspace> [opencode args...]`
+- `opencode-open <workspace> -- [opencode args...]`
 - `opencode-open <workspace> <lane> <upstream> [opencode args...]`
+- `opencode-open <workspace> <lane> <upstream> -- [opencode args...]`
 - `opencode-shell <workspace> [command args...]`
+- `opencode-shell <workspace> -- [command args...]`
+- `opencode-shell <workspace> <lane> <upstream> [command args...]`
+- `opencode-shell <workspace> <lane> <upstream> -- [command args...]`
 - `opencode-logs <workspace> [podman logs args...]`
 - `opencode-status <workspace>`
 - `opencode-stop <workspace>`
-- `opencode-remove container`
-- `opencode-remove image`
+- `opencode-remove`
+- `opencode-remove containers`
+- `opencode-remove images`
 
 `opencode-open` should match Hermes-style behavior and forward trailing arguments into the exec'd `opencode` command.
 
@@ -358,6 +372,7 @@ This means:
 
 - no extra args: run `opencode`
 - extra args: run `opencode "$@"`
+- use `--` when the first forwarded argument would otherwise look like a wrapper lane selector such as `test` or `production`
 
 If `opencode-start` receives trailing OpenCode args, it should start or reuse the selected target and then delegate to `opencode-open` against that same resolved target.
 
@@ -397,7 +412,6 @@ Status values are:
 
 - mixed target picker: `running`, `stopped`, `image only`
 - container picker: `running`, `stopped`
-- image removal picker: `in use`, `unused`
 
 ## Status
 
@@ -421,26 +435,30 @@ It should not invent Hindsight-style service URLs unless the selected runtime ta
 
 Use Hindsight-style project-scoped removal:
 
-- `opencode-remove container`
-- `opencode-remove image`
+- `opencode-remove`
+- `opencode-remove containers`
+- `opencode-remove images`
 
 The remove picker should show:
 
 1. `All, but newest`
 2. `All`
-3. individual targets newest to oldest
+3. individual targets
+
+With no mode argument, the mixed remove picker should show containers first and then images.
 
 Remove display columns:
 
 - container removal: `workspace`, `lane`, `upstream`, `wrapper`, `commit`, `status`
-- image removal: `used by`, `lane`, `upstream`, `wrapper`, `commit`, `status`
-
-`used by` should be inferred from current project containers and may contain a comma-separated workspace list or `unassigned`.
+- image removal: `image-ref`, `lane`, `upstream`, `wrapper`, `commit`
 
 `All, but newest` means:
 
 - for containers: leave the newest container per workspace
-- for images: leave the newest image per inferred workspace where a workspace association exists through existing containers; if no image can be associated to any workspace through current containers, keep the newest image overall
+- for images: leave the image serving each kept newest container
+- for mixed mode: leave the newest container per workspace and the image serving it
+
+`All` in mixed mode means remove all containers first and then all images.
 
 ## Labels and Discovery
 
@@ -543,7 +561,7 @@ Do not copy Hindsight's port and HTTP-ready assertions into OpenCode tests unles
 9. Rename and remove scripts to the Hindsight-aligned set.
 10. Add picker-driven target and container selection.
 11. Add `opencode-status`.
-12. Rework `opencode-remove` into project-scoped image and container removal.
+12. Rework `opencode-remove` into project-scoped images and containers removal.
 13. Rewrite `README.md` and `docs/shared/usage.md`.
 14. Rewrite mocked tests.
 15. Add a gated live test.

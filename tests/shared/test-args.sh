@@ -27,8 +27,9 @@ assert_rejects "$ROOT/scripts/shared/opencode-open" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-shell" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-stop" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-status" '<workspace>'
-assert_rejects "$ROOT/scripts/shared/opencode-remove" '<container|image>'
-assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'container' or 'image'" wrong
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'containers' or 'images'" container
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'containers' or 'images'" image
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'containers' or 'images'" wrong
 assert_rejects "$ROOT/scripts/shared/opencode-logs" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-bootstrap" '<workspace>'
 

@@ -8,12 +8,32 @@ trap 'rm -rf "$TMPDIR"' EXIT
 MOCK_BIN="$TMPDIR/bin"
 STATE_DIR="$TMPDIR/state"
 SOURCE_DIR="$TMPDIR/source"
-mkdir -p "$MOCK_BIN" "$STATE_DIR" "$SOURCE_DIR/packages/opencode"
+DEVELOPMENT_ROOT="$TMPDIR/opencode-development"
+mkdir -p "$MOCK_BIN" "$STATE_DIR" "$SOURCE_DIR/packages/opencode" "$DEVELOPMENT_ROOT"
 
 assert_contains() {
   local file="$1" needle="$2" message="$3"
   if ! grep -Fq -- "$needle" "$file"; then
     printf 'assertion failed: %s\nmissing: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
+    exit 1
+  fi
+}
+
+assert_not_contains() {
+  local file="$1" needle="$2" message="$3"
+  if grep -Fq -- "$needle" "$file"; then
+    printf 'assertion failed: %s\nunexpected: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
+    exit 1
+  fi
+}
+
+assert_line_order() {
+  local file="$1" first="$2" second="$3" message="$4"
+  local first_line second_line
+  first_line="$(grep -Fn -- "$first" "$file" | cut -d: -f1 | head -n 1)"
+  second_line="$(grep -Fn -- "$second" "$file" | cut -d: -f1 | head -n 1)"
+  if [[ -z "$first_line" || -z "$second_line" || "$first_line" -ge "$second_line" ]]; then
+    printf 'assertion failed: %s\nfirst: %s\nsecond: %s\nfile: %s\n' "$message" "$first" "$second" "$file" >&2
     exit 1
   fi
 }
@@ -24,6 +44,27 @@ assert_eq() {
     printf 'assertion failed: %s\nexpected: %s\nactual:   %s\n' "$message" "$expected" "$actual" >&2
     exit 1
   fi
+}
+
+assert_rejects() {
+  local command="$1" expected="$2" output_file="$3"
+  if sh -lc "$command" > "$output_file" 2>&1; then
+    printf 'assertion failed: command should have failed\ncommand: %s\n' "$command" >&2
+    exit 1
+  fi
+  assert_contains "$output_file" "$expected" "command reports the expected failure"
+}
+
+assert_command_fails() {
+  local command="$1" output_file="$2"
+  if sh -lc "$command" > "$output_file" 2>&1; then
+    printf 'assertion failed: command should have failed\ncommand: %s\n' "$command" >&2
+    exit 1
+  fi
+}
+
+reset_git_mock_state() {
+  unset GIT_MOCK_DIFF_STATE GIT_MOCK_UNTRACKED GIT_MOCK_GIT_DIR GIT_MOCK_COMMON_DIR GIT_MOCK_BRANCH GIT_MOCK_HAS_UPSTREAM GIT_MOCK_AHEAD GIT_MOCK_BEHIND GIT_MOCK_TOPLEVEL
 }
 
 cat > "$MOCK_BIN/git" <<'EOF'
@@ -37,9 +78,28 @@ fi
 
 case "$1" in
   diff)
-    exit 0
+    case "${GIT_MOCK_DIFF_STATE:-clean}" in
+      unstaged)
+        if [[ "${2-}" != "--cached" ]]; then
+          exit 1
+        fi
+        exit 0
+        ;;
+      staged)
+        if [[ "${2-}" == "--cached" ]]; then
+          exit 1
+        fi
+        exit 0
+        ;;
+      *)
+        exit 0
+        ;;
+    esac
     ;;
   ls-files)
+    if [[ "${GIT_MOCK_UNTRACKED:-0}" == "1" ]]; then
+      printf 'untracked.txt\n'
+    fi
     exit 0
     ;;
   log)
@@ -48,16 +108,24 @@ case "$1" in
   rev-parse)
     case "$2" in
       --git-dir)
-        printf '.git\n'
+        printf '%s\n' "${GIT_MOCK_GIT_DIR:-.git}"
         ;;
       --git-common-dir)
-        printf '.git\n'
+        printf '%s\n' "${GIT_MOCK_COMMON_DIR:-.git}"
         ;;
       --abbrev-ref)
-        printf 'origin/main\n'
+        if [[ "$*" == *"@{upstream}"* || "$*" == *"@{u}"* ]]; then
+          if [[ "${GIT_MOCK_HAS_UPSTREAM:-1}" == "1" ]]; then
+            printf 'origin/main\n'
+          else
+            exit 1
+          fi
+        else
+          printf '%s\n' "${GIT_MOCK_BRANCH:-main}"
+        fi
         ;;
       --show-toplevel)
-        pwd
+        printf '%s' "${GIT_MOCK_TOPLEVEL:-$(pwd)}"
         printf '\n'
         ;;
       *)
@@ -66,7 +134,15 @@ case "$1" in
     esac
     ;;
   rev-list)
-    printf '0\t0\n'
+    if [[ "$*" == *"--left-right --count @{upstream}...HEAD"* ]]; then
+      printf '%s\t%s\n' "${GIT_MOCK_BEHIND:-0}" "${GIT_MOCK_AHEAD:-0}"
+    elif [[ "$*" == *"--count @{u}..HEAD"* ]]; then
+      printf '%s\n' "${GIT_MOCK_AHEAD:-0}"
+    elif [[ "$*" == *"--count HEAD..@{u}"* ]]; then
+      printf '%s\n' "${GIT_MOCK_BEHIND:-0}"
+    else
+      printf '0\t0\n'
+    fi
     ;;
   *)
     printf 'unexpected git command: %s\n' "$*" >&2
@@ -79,8 +155,24 @@ chmod +x "$MOCK_BIN/git"
 cat > "$MOCK_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+STATE_DIR="${STATE_DIR:?}"
 url="${@: -1}"
 case "$url" in
+  http://127.0.0.1:*/global/health)
+    port_part="${url#http://127.0.0.1:}"
+    port="${port_part%%/*}"
+    for mapping_file in "$STATE_DIR"/port_4096_*; do
+      [[ -e "$mapping_file" ]] || continue
+      if [[ "$(cat "$mapping_file")" == "127.0.0.1:$port" ]]; then
+        container_name="${mapping_file##*/port_4096_}"
+        if [[ -f "$STATE_DIR/server_active_$container_name" ]]; then
+          printf '{"healthy":true}'
+          exit 0
+        fi
+      fi
+    done
+    exit 1
+    ;;
   */releases/latest)
     printf '{"tag_name":"v1.4.3"}'
     ;;
@@ -160,6 +252,7 @@ remove_container_record() {
   local name="$1"
   grep -Fv "${name}"$'\t' "$CONTAINERS_FILE" > "$CONTAINERS_FILE.tmp" || true
   mv "$CONTAINERS_FILE.tmp" "$CONTAINERS_FILE"
+  rm -f "$STATE_DIR/port_4096_$name" "$STATE_DIR/server_active_$name"
 }
 
 subcommand="${1:?}"
@@ -296,7 +389,7 @@ case "$subcommand" in
     wrapper=""
     commitstamp=""
     image_ref=""
-    server_port="64096"
+    server_port=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --name)
@@ -331,7 +424,9 @@ case "$subcommand" in
     done
     remove_container_record "$name"
     printf '%s\t%s\t%s\t%s\t%s\t%s\ttrue\t%s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$image_ref" >> "$CONTAINERS_FILE"
-    printf '%s\n' "127.0.0.1:$server_port" > "$STATE_DIR/port_4096_$name"
+    if [[ -n "$server_port" ]]; then
+      printf '%s\n' "127.0.0.1:$server_port" > "$STATE_DIR/port_4096_$name"
+    fi
     ;;
   start)
     log_call "start $*"
@@ -372,6 +467,11 @@ case "$subcommand" in
     ;;
   exec)
     log_call "exec $*"
+    container_name="$1"
+    shift || true
+    if [[ "$*" == *'opencode serve --hostname 0.0.0.0 --port 4096'* ]]; then
+      : > "$STATE_DIR/server_active_$container_name"
+    fi
     printf 'mock exec\n'
     ;;
   *)
@@ -385,7 +485,9 @@ chmod +x "$MOCK_BIN/podman"
 export PATH="$MOCK_BIN:$PATH"
 export STATE_DIR
 export OPENCODE_BASE_ROOT="$TMPDIR/workspaces"
+export OPENCODE_DEVELOPMENT_ROOT="$DEVELOPMENT_ROOT"
 export OPENCODE_IMAGE_NAME="opencode-local"
+export OPENCODE_HOST_SERVER_PORT="6553"
 export OPENCODE_SELECT_INDEX=1
 export OPENCODE_COMMITSTAMP_OVERRIDE="20260410-163440-ab12cd3"
 export OPENCODE_SOURCE_OVERRIDE_DIR="$SOURCE_DIR"
@@ -399,6 +501,9 @@ assert_eq '1.4.3' "$(latest_release_tag)" 'latest release resolves from GitHub A
 assert_contains "$STATE_DIR/build.out" 'Build source: official image ghcr.io/anomalyco/opencode:1.4.3' 'build prefers official image for exact tag'
 assert_contains "$STATE_DIR/build.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'build creates immutable image ref'
 
+(cd "$TMPDIR" && "$ROOT/scripts/shared/opencode-build" test 1.4.3 > "$STATE_DIR/build-outside-repo.out")
+assert_contains "$STATE_DIR/build-outside-repo.out" 'Image already exists: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'build uses repository workdir even when launched from outside the repo'
+
 "$ROOT/scripts/shared/opencode-build" test main > "$STATE_DIR/build-main.out"
 assert_contains "$STATE_DIR/build-main.out" 'Build source: upstream source ref dev' 'main build uses upstream source ref'
 assert_contains "$STATE_DIR/build-main.out" 'Built image: opencode-local:test-main-main-20260410-163440-ab12cd3' 'main build creates immutable image ref'
@@ -409,14 +514,29 @@ assert_contains "$STATE_DIR/podman.log" 'config/containers/Containerfile.wrapper
 assert_contains "$STATE_DIR/build-fallback.out" 'Build source: upstream source ref v1.4.2' 'release fallback uses source when no official image is available'
 assert_contains "$STATE_DIR/podman.log" 'Containerfile.source-base' 'release fallback uses source-base containerfile'
 
+reset_git_mock_state
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_DIFF_STATE=unstaged '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has unstaged changes' "$STATE_DIR/build-production-unstaged.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_DIFF_STATE=staged '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has staged changes' "$STATE_DIR/build-production-staged.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_UNTRACKED=1 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has untracked files' "$STATE_DIR/build-production-untracked.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_BRANCH=feature '$ROOT/scripts/shared/opencode-build' production 1.4.3" "production builds must run from branch 'main'" "$STATE_DIR/build-production-branch.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_HAS_UPSTREAM=0 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds require a tracking branch' "$STATE_DIR/build-production-upstream.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_AHEAD=1 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds require the canonical main checkout to be in sync with its upstream' "$STATE_DIR/build-production-ahead.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_BEHIND=1 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds require the canonical main checkout to be in sync with its upstream' "$STATE_DIR/build-production-behind.out"
+assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_GIT_DIR='.git/worktrees/feat' GIT_MOCK_COMMON_DIR='.git' '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds must run from the canonical main checkout' "$STATE_DIR/build-production-worktree.out"
+env PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK= "$ROOT/scripts/shared/opencode-build" production 1.4.3 > "$STATE_DIR/build-production-clean.out"
+assert_contains "$STATE_DIR/build-production-clean.out" 'Built image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'production build succeeds only when the checkout is clean and in sync'
+reset_git_mock_state
+
 "$ROOT/scripts/shared/opencode-start" general test 1.4.3 > "$STATE_DIR/start.out"
 assert_contains "$STATE_DIR/start.out" 'Container: opencode-general-test-1.4.3-main' 'start prints deterministic container name'
-assert_contains "$STATE_DIR/start.out" 'Server: http://127.0.0.1:64096' 'start reports random mapped server port when unset'
+assert_not_contains "$STATE_DIR/start.out" 'Server: http://127.0.0.1:' 'start does not report a server URL when host server port is unset'
 assert_contains "$STATE_DIR/start.out" 'Workspace Dir: /workspace/opencode-workspace' 'start prints container workspace dir'
 assert_contains "$STATE_DIR/podman.log" '--name opencode-general-test-1.4.3-main' 'run uses deterministic container name'
-assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1::4096' 'start uses random host server port when unset'
+assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1::4096' 'start does not publish a random host server port when unset'
 assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-home:/root" 'official image run mounts workspace home at the upstream root home'
 assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-workspace:/workspace/opencode-workspace" 'run mounts workspace dir'
+assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT:/workspace/opencode-development" 'run mounts configured development root'
+assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:6553:4096' 'global OPENCODE_HOST_SERVER_PORT environment does not override per-workspace server config'
 
 "$ROOT/scripts/shared/opencode-start" sourcey test 1.4.2 > "$STATE_DIR/start-source.out"
 assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/sourcey/opencode-home:/home/opencode" 'source-built run mounts workspace home at the upstream opencode home'
@@ -429,15 +549,122 @@ EOF
 "$ROOT/scripts/shared/opencode-start" fixed test 1.4.3 > "$STATE_DIR/start-fixed-port.out"
 assert_contains "$STATE_DIR/start-fixed-port.out" 'Server: http://127.0.0.1:5096' 'start reports fixed mapped server port when configured'
 assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5096:4096' 'start uses configured fixed host server port'
+assert_contains "$STATE_DIR/podman.log" 'exec opencode-fixed-test-1.4.3-main /bin/sh -lc' 'start launches managed server inside the configured-port container'
+
+mkdir -p "$TMPDIR/workspaces/safe/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/safe/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=5097
+MALICIOUS=$(touch /tmp/should-not-run)
+EOF
+"$ROOT/scripts/shared/opencode-start" safe test 1.4.3 > "$STATE_DIR/start-safe-port.out"
+assert_contains "$STATE_DIR/start-safe-port.out" 'Server: http://127.0.0.1:5097' 'start reads configured server port from assignment-only env parsing'
+test ! -e /tmp/should-not-run
+
+mkdir -p "$TMPDIR/workspaces/lastwins/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/lastwins/opencode-workspace/.config/opencode/config.env" <<'EOF'
+export   OPENCODE_HOST_SERVER_PORT=5088
+OPENCODE_HOST_SERVER_PORT=5089
+EOF
+"$ROOT/scripts/shared/opencode-start" lastwins test 1.4.3 > "$STATE_DIR/start-lastwins.out"
+assert_contains "$STATE_DIR/start-lastwins.out" 'Server: http://127.0.0.1:5089' 'start uses the last matching assignment and accepts spaced export syntax in config env'
+
+mkdir -p "$TMPDIR/workspaces/quoted/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/quoted/opencode-workspace/.config/opencode/config.env" <<'EOF'
+export OPENCODE_HOST_SERVER_PORT="5087" # comment
+EOF
+"$ROOT/scripts/shared/opencode-start" quoted test 1.4.3 > "$STATE_DIR/start-quoted.out"
+assert_contains "$STATE_DIR/start-quoted.out" 'Server: http://127.0.0.1:5087' 'start accepts quoted host server ports with inline comments'
+
+mkdir -p "$TMPDIR/workspaces/badport/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/badport/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=abc
+EOF
+assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-start' badport test 1.4.3" "$STATE_DIR/start-badport.out"
+assert_not_contains "$STATE_DIR/podman.log" '--name opencode-badport-test-1.4.3-main' 'invalid port values fail before podman run'
+
+mkdir -p "$TMPDIR/workspaces/portzero/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/portzero/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=0
+EOF
+assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-start' portzero test 1.4.3" "$STATE_DIR/start-portzero.out"
+
+mkdir -p "$TMPDIR/workspaces/portbig/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/portbig/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=65536
+EOF
+assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-start' portbig test 1.4.3" "$STATE_DIR/start-portbig.out"
+
+mkdir -p "$TMPDIR/workspaces/secretive/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/secretive/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=5091
+EOF
+cat > "$TMPDIR/workspaces/secretive/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=5099
+EOF
+"$ROOT/scripts/shared/opencode-start" secretive test 1.4.3 > "$STATE_DIR/start-secretive.out"
+assert_contains "$STATE_DIR/start-secretive.out" 'Server: http://127.0.0.1:5099' 'secrets env overrides config env for the managed server port'
+assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5099:4096' 'secrets env override is used for published server port'
+
+mkdir -p "$TMPDIR/workspaces/disabled/opencode-workspace/.config/opencode"
+cat > "$TMPDIR/workspaces/disabled/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=5094
+EOF
+cat > "$TMPDIR/workspaces/disabled/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=
+EOF
+"$ROOT/scripts/shared/opencode-start" disabled test 1.4.3 > "$STATE_DIR/start-disabled.out"
+assert_not_contains "$STATE_DIR/start-disabled.out" 'Server: http://127.0.0.1:' 'empty secrets env assignment disables a configured server port'
+
+mkdir -p "$TMPDIR/workspaces/second/opencode-workspace/.config/opencode"
+"$ROOT/scripts/shared/opencode-start" second test 1.4.3 > "$STATE_DIR/start-second.out"
+assert_not_contains "$STATE_DIR/start-second.out" 'Server: http://127.0.0.1:' 'server port does not leak from one workspace to the next'
+
+cat > "$TMPDIR/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=5098
+EOF
+"$ROOT/scripts/shared/opencode-start" general test 1.4.3 > "$STATE_DIR/start-general-fixed.out"
+assert_contains "$STATE_DIR/start-general-fixed.out" 'Server: http://127.0.0.1:5098' 'restarting after adding a configured host server port recreates the container and starts the managed server'
+assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5098:4096' 'reconfigured workspace recreates container with the configured host server port'
+
 podman rm -f opencode-fixed-test-1.4.3-main >/dev/null
 
 "$ROOT/scripts/shared/opencode-open" general test 1.4.3 --help > "$STATE_DIR/open.out"
 assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-general-test-1.4.3-main /bin/sh -lc' 'open execs through wrapper shell'
 assert_contains "$STATE_DIR/podman.log" 'exec opencode "$@"' 'open forwards OpenCode arguments'
 
-"$ROOT/scripts/shared/opencode-status" general > "$STATE_DIR/status.out"
+OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-open" general test 1.4.3 -- --help > "$STATE_DIR/open-explicit-context.out"
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-general-test-1.4.3-main /bin/sh -lc' 'explicit open resolves existing containers independently of the caller wrapper context'
+
+"$ROOT/scripts/shared/opencode-shell" second -- test arg > "$STATE_DIR/shell-delimiter.out"
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-second-test-1.4.3-main /bin/sh -lc' 'shell accepts -- to separate wrapper arguments from command arguments'
+
+"$ROOT/scripts/shared/opencode-bootstrap" second --version > "$STATE_DIR/bootstrap.out"
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-second-test-1.4.3-main /bin/sh -lc' 'bootstrap reuses the resolved target and opens OpenCode in the same container'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' test 1.4.3 v1.4.3 main 20260409-120000-deadbee > "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >> "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-picker-test-1.4.3-main' picker test 1.4.3 main 20260409-120000-deadbee true 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' > "$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-start" picker > "$STATE_DIR/start-picker.out"
+assert_contains "$STATE_DIR/start-picker.out" 'Container: opencode-picker-test-1.4.3-main' 'start can select an image row and create the matching workspace container'
+assert_contains "$STATE_DIR/podman.log" 'rm -f opencode-picker-test-1.4.3-main' 'selecting a newer image row replaces the stale workspace container'
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+
+"$ROOT/scripts/shared/opencode-logs" second --tail 5 > "$STATE_DIR/logs.out"
+assert_contains "$STATE_DIR/podman.log" 'logs --tail 5 opencode-second-test-1.4.3-main' 'logs forwards podman log arguments to the resolved workspace container'
+
+"$ROOT/scripts/shared/opencode-status" second > "$STATE_DIR/status.out"
 assert_contains "$STATE_DIR/status.out" 'Lane: test' 'status reports lane'
 assert_contains "$STATE_DIR/status.out" 'Upstream: 1.4.3' 'status reports upstream'
+assert_not_contains "$STATE_DIR/status.out" 'Server: http://127.0.0.1:' 'status does not report a server URL for workspaces without configured host server ports'
+
+"$ROOT/scripts/shared/opencode-status" general > "$STATE_DIR/status-general.out"
+assert_contains "$STATE_DIR/status-general.out" 'Server: http://127.0.0.1:5098' 'status reports the verified server URL for workspaces with configured host server ports'
+
+rm -f "$STATE_DIR/server_active_opencode-general-test-1.4.3-main"
+"$ROOT/scripts/shared/opencode-status" general > "$STATE_DIR/status-general-recovered.out"
+assert_contains "$STATE_DIR/status-general-recovered.out" 'Server: http://127.0.0.1:5098' 'status restarts the managed server when the configured-port container is still running but the server is down'
+assert_contains "$STATE_DIR/podman.log" 'exec opencode-general-test-1.4.3-main /bin/sh -lc' 'status triggers managed server recovery inside the configured-port container'
 
 "$ROOT/scripts/shared/opencode-stop" general > "$STATE_DIR/stop.out"
 assert_contains "$STATE_DIR/stop.out" 'Stopped container: opencode-general-test-1.4.3-main' 'stop stops running container'
@@ -448,11 +675,14 @@ assert_contains "$STATE_DIR/podman.log" '--name opencode-branchy-test-1.4.3-feat
 assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-branchy-test-1.4.3-feature-xyz /bin/sh -lc' 'start with args preserves selected wrapper context when delegating to open'
 podman rm -f opencode-branchy-test-1.4.3-feature-xyz >/dev/null
 
-OPENCODE_SELECT_INDEX=3 "$ROOT/scripts/shared/opencode-remove" container > "$STATE_DIR/remove-container.out"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >> "$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=4 "$ROOT/scripts/shared/opencode-remove" containers > "$STATE_DIR/remove-container.out"
 assert_contains "$STATE_DIR/remove-container.out" 'Removed container: opencode-general-test-1.4.3-main' 'remove container removes selected container'
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
-OPENCODE_SELECT_INDEX=3 "$ROOT/scripts/shared/opencode-remove" image > "$STATE_DIR/remove-image.out"
+OPENCODE_SELECT_INDEX=3 "$ROOT/scripts/shared/opencode-remove" images > "$STATE_DIR/remove-image.out"
 assert_contains "$STATE_DIR/remove-image.out" 'Removed image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'remove image removes selected image'
 
 IMG_EZ_NEW='opencode-local:production-1.4.3-main-20260410-163440-ab12cd3'
@@ -463,15 +693,38 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_EZ_OLD" production 1.4.2 v1.4.2 main 202
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_NA" test 1.4.3 v1.4.3 main 20260408-090000-cafebabe >> "$STATE_DIR/images.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_EZ_NEW" >> "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false "$IMG_NA" >> "$STATE_DIR/containers.tsv"
-OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" image > "$STATE_DIR/remove-image-all-but-newest.out"
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" images > "$STATE_DIR/remove-image-all-but-newest.out"
 assert_contains "$STATE_DIR/remove-image-all-but-newest.out" 'Keeping image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'remove image all-but-newest keeps newest associated ezirius image'
 assert_contains "$STATE_DIR/remove-image-all-but-newest.out" 'Keeping image: opencode-local:test-1.4.3-main-20260408-090000-cafebabe' 'remove image all-but-newest keeps newest associated nala image'
 assert_contains "$STATE_DIR/remove-image-all-but-newest.out" 'Removed image: opencode-local:production-1.4.2-main-20260409-120000-deadbee' 'remove image all-but-newest removes older associated image'
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.2-main' general test 1.4.2 main 20260409-120000-deadbee false "$IMG_EZ_OLD" >> "$STATE_DIR/containers.tsv"
-OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" container > "$STATE_DIR/remove-container-all-but-newest.out"
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" containers > "$STATE_DIR/remove-container-all-but-newest.out"
 assert_contains "$STATE_DIR/remove-container-all-but-newest.out" 'Keeping container: opencode-general-production-1.4.3-main' 'remove container all-but-newest keeps newest container for general'
 assert_contains "$STATE_DIR/remove-container-all-but-newest.out" 'Removed container: opencode-general-test-1.4.2-main' 'remove container all-but-newest removes older general container'
 assert_contains "$STATE_DIR/remove-container-all-but-newest.out" 'Keeping container: opencode-nala-test-1.4.3-main' 'remove container all-but-newest keeps newest container for nala'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_EZ_NEW" production 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_EZ_OLD" production 1.4.2 v1.4.2 main 20260409-120000-deadbee >> "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_NA" test 1.4.3 v1.4.3 main 20260408-090000-cafebabe >> "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_EZ_NEW" > "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.2-main' general test 1.4.2 main 20260409-120000-deadbee false "$IMG_EZ_OLD" >> "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false "$IMG_NA" >> "$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" > "$STATE_DIR/remove-mixed-all-but-newest.out"
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest.out" 'Keeping container: opencode-general-production-1.4.3-main' 'mixed remove keeps newest general container'
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest.out" 'Keeping container: opencode-nala-test-1.4.3-main' 'mixed remove keeps newest nala container'
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest.out" 'Keeping image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'mixed remove keeps image serving kept general container'
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest.out" 'Keeping image: opencode-local:test-1.4.3-main-20260408-090000-cafebabe' 'mixed remove keeps image serving kept nala container'
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest.out" 'Removed image: opencode-local:production-1.4.2-main-20260409-120000-deadbee' 'mixed remove removes image not serving kept containers'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_EZ_NEW" production 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_NA" test 1.4.3 v1.4.3 main 20260408-090000-cafebabe >> "$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_EZ_NEW" > "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false "$IMG_NA" >> "$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-remove" > "$STATE_DIR/remove-mixed-all.out"
+assert_contains "$STATE_DIR/remove-mixed-all.out" 'Removed container: opencode-general-production-1.4.3-main' 'mixed remove all removes containers first'
+assert_contains "$STATE_DIR/remove-mixed-all.out" 'Removed container: opencode-nala-test-1.4.3-main' 'mixed remove all removes all containers'
+assert_contains "$STATE_DIR/remove-mixed-all.out" 'Removed image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'mixed remove all removes images after containers'
+assert_line_order "$STATE_DIR/remove-mixed-all.out" 'Removed container: opencode-general-production-1.4.3-main' 'Removed image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'mixed remove all removes containers before images'
 
 echo "Runtime checks passed"

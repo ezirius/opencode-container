@@ -7,7 +7,9 @@ source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <workspace> [command args...]
+       $(basename "$0") <workspace> -- [command args...]
        $(basename "$0") <workspace> <production|test> <upstream> [command args...]
+       $(basename "$0") <workspace> <production|test> <upstream> -- [command args...]
 
 Open a shell or run a command in the running OpenCode workspace container."
 fi
@@ -17,10 +19,19 @@ WORKSPACE="$1"
 shift
 require_workspace_name "$WORKSPACE"
 require_podman
+PAYLOAD_ONLY=0
 
-if [[ $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+if [[ ${1-} == "--" ]]; then
+  shift
+  PAYLOAD_ONLY=1
+fi
+
+if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
   CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$1" "$2")"
   shift 2
+  if [[ ${1-} == "--" ]]; then
+    shift
+  fi
 else
   CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")"
 fi

@@ -53,11 +53,17 @@ The workspace-facing commands are:
 
 - `./scripts/shared/opencode-bootstrap <workspace> [opencode args...]`
 - `./scripts/shared/opencode-start <workspace>`
+- `./scripts/shared/opencode-start <workspace> -- [opencode args...]`
 - `./scripts/shared/opencode-start <workspace> <lane> <upstream> [opencode args...]`
+- `./scripts/shared/opencode-start <workspace> <lane> <upstream> -- [opencode args...]`
 - `./scripts/shared/opencode-open <workspace> [opencode args...]`
+- `./scripts/shared/opencode-open <workspace> -- [opencode args...]`
 - `./scripts/shared/opencode-open <workspace> <lane> <upstream> [opencode args...]`
+- `./scripts/shared/opencode-open <workspace> <lane> <upstream> -- [opencode args...]`
 - `./scripts/shared/opencode-shell <workspace> [command args...]`
+- `./scripts/shared/opencode-shell <workspace> -- [command args...]`
 - `./scripts/shared/opencode-shell <workspace> <lane> <upstream> [command args...]`
+- `./scripts/shared/opencode-shell <workspace> <lane> <upstream> -- [command args...]`
 - `./scripts/shared/opencode-logs <workspace> [podman logs args...]`
 - `./scripts/shared/opencode-status <workspace>`
 - `./scripts/shared/opencode-stop <workspace>`
@@ -69,13 +75,15 @@ Behavior:
 - `opencode-open`, `opencode-shell`, `opencode-logs`, `opencode-status`, and `opencode-stop` operate on existing containers only
 - `opencode-open` forwards trailing args into `opencode`
 - `opencode-shell` runs commands in `/workspace/opencode-workspace`
+- use `--` when the first application or shell argument would otherwise look like a wrapper lane selector such as `test` or `production`
 
 ## Remove
 
 Use:
 
-- `./scripts/shared/opencode-remove container`
-- `./scripts/shared/opencode-remove image`
+- `./scripts/shared/opencode-remove`
+- `./scripts/shared/opencode-remove containers`
+- `./scripts/shared/opencode-remove images`
 
 The menu supports:
 
@@ -83,10 +91,15 @@ The menu supports:
 2. `All`
 3. individual targets
 
+With no argument, the mixed picker shows containers first and then images.
+
 `All, but newest` means:
 
 - for containers: keep the newest container per workspace
-- for images: keep the newest image per workspace association inferred from current containers, or keep the newest image overall if no workspace association exists
+- for images: keep the image serving each kept newest container
+- in mixed mode: keep the newest container per workspace and the image serving it
+
+`All` in mixed mode removes all containers first and then all images.
 
 ## Workspace State
 
@@ -96,11 +109,12 @@ Each workspace uses:
 - `<workspace-root>/opencode-workspace`
 - `<workspace-root>/opencode-workspace/.config/opencode`
 
-Container mounts are:
+Directory mappings are:
 
-- `opencode-home` -> the upstream image runtime home, such as `/root` or `/home/opencode`
-- `opencode-workspace` -> `/workspace/opencode-workspace`
-- `$HOME/Documents/Ezirius/Development/OpenCode` -> `/workspace/opencode-development`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> the upstream image runtime home, such as `/root` or `/home/opencode`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace` -> `/workspace/opencode-workspace`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode` -> `/workspace/opencode-workspace/.config/opencode`
+- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development`
 
 OpenCode remains responsible for its own home/state layout under that runtime home.
 
@@ -110,22 +124,44 @@ Wrapper defaults are defined in `config/shared/opencode.conf`.
 
 Workspace runtime files are:
 
+- `config/shared/opencode.conf`
 - `config.env`
 - `secrets.env`
+
+File roles are:
+
+- `config/shared/opencode.conf` for wrapper-wide defaults
+- `config.env` for workspace-scoped non-secret wrapper settings
+- `secrets.env` for workspace-scoped secret wrapper settings
+
+Wrapper files used at runtime are:
+
+- `config/shared/opencode.conf`
+- `config/containers/entrypoint.sh`
+- `<workspace-root>/opencode-workspace/.config/opencode/config.env`
+- `<workspace-root>/opencode-workspace/.config/opencode/secrets.env`
 
 Rules:
 
 - `config/shared/opencode.conf` is wrapper-only and not OpenCode-native config
+- `config/shared/opencode.conf` is for wrapper-wide defaults, not workspace runtime overrides
 - `config.env` is seeded automatically as a commented starter file
 - `secrets.env` is optional
+- `config.env` and `secrets.env` are parsed as environment assignments and are not executed as shell scripts
+- `secrets.env` overrides matching keys from `config.env`
 - changes to wrapper config or secrets require stop/start only
 - changes to wrapper config or secrets must not require rebuild
 
-If you run `opencode serve` or `opencode web` inside the container, the wrapper publishes container port `4096` to host `127.0.0.1`.
+Example intent:
+
+- `config.env`: non-secret values such as `OPENCODE_HOST_SERVER_PORT=4096`
+- `secrets.env`: API keys, tokens, passwords, and other secrets only
+
+If `OPENCODE_HOST_SERVER_PORT` is set for a workspace, the wrapper starts `opencode serve --hostname 0.0.0.0 --port 4096` inside the container and publishes that internal port to host `127.0.0.1`.
 
 - `OPENCODE_HOST_SERVER_PORT=<port>` uses a fixed host port
-- if `OPENCODE_HOST_SERVER_PORT` is unset, Podman assigns a random available host port
-- `opencode-status` shows the mapped server URL
+- if `OPENCODE_HOST_SERVER_PORT` is unset, the wrapper does not start a managed server and `opencode-status` does not show a server URL
+- the wrapper-managed server contract is always host `<configured-port>` to container `4096`
 
 ## Environment Overrides
 
@@ -135,7 +171,9 @@ If you run `opencode serve` or `opencode web` inside the container, the wrapper 
 - `OPENCODE_REPO_URL`
 - `OPENCODE_GHCR_IMAGE`
 - `OPENCODE_GITHUB_API_BASE`
-- `OPENCODE_HOST_SERVER_PORT`
+- `OPENCODE_DEVELOPMENT_ROOT`
+
+`OPENCODE_HOST_SERVER_PORT` is configured per workspace in `config.env` or `secrets.env`, not as a wrapper-global environment override.
 
 For tests and automation, the wrapper also honors:
 

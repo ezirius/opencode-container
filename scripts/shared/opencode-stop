@@ -5,6 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
+if [[ ${1-} == "--help" ]]; then
+  show_help "Usage: $(basename "$0") <workspace>
+
+Stop the selected workspace container if it is running."
+fi
+
 [[ $# -eq 1 ]] || usage_error "$(basename "$0") <workspace>"
 WORKSPACE="$1"
 require_workspace_name "$WORKSPACE"

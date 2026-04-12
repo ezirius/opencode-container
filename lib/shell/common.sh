@@ -7,7 +7,7 @@ __env_OPENCODE_REPO_URL="${OPENCODE_REPO_URL-}"
 __env_OPENCODE_GHCR_IMAGE="${OPENCODE_GHCR_IMAGE-}"
 __env_OPENCODE_GITHUB_API_BASE="${OPENCODE_GITHUB_API_BASE-}"
 __env_OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT-}"
-__env_OPENCODE_HOST_SERVER_PORT="${OPENCODE_HOST_SERVER_PORT-}"
+__env_OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT-}"
 __env_OPENCODE_VERSION="${OPENCODE_VERSION-}"
 __env_OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX-}"
 __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE="${OPENCODE_WRAPPER_CONTEXT_OVERRIDE-}"
@@ -26,14 +26,14 @@ fi
 [[ -z "$__env_OPENCODE_GHCR_IMAGE" ]] || OPENCODE_GHCR_IMAGE="$__env_OPENCODE_GHCR_IMAGE"
 [[ -z "$__env_OPENCODE_GITHUB_API_BASE" ]] || OPENCODE_GITHUB_API_BASE="$__env_OPENCODE_GITHUB_API_BASE"
 [[ -z "$__env_OPENCODE_BASE_ROOT" ]] || OPENCODE_BASE_ROOT="$__env_OPENCODE_BASE_ROOT"
-[[ -z "$__env_OPENCODE_HOST_SERVER_PORT" ]] || OPENCODE_HOST_SERVER_PORT="$__env_OPENCODE_HOST_SERVER_PORT"
+[[ -z "$__env_OPENCODE_DEVELOPMENT_ROOT" ]] || OPENCODE_DEVELOPMENT_ROOT="$__env_OPENCODE_DEVELOPMENT_ROOT"
 [[ -z "$__env_OPENCODE_VERSION" ]] || OPENCODE_VERSION="$__env_OPENCODE_VERSION"
 [[ -z "$__env_OPENCODE_SELECT_INDEX" ]] || OPENCODE_SELECT_INDEX="$__env_OPENCODE_SELECT_INDEX"
 [[ -z "$__env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE" ]] || OPENCODE_WRAPPER_CONTEXT_OVERRIDE="$__env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE"
 [[ -z "$__env_OPENCODE_COMMITSTAMP_OVERRIDE" ]] || OPENCODE_COMMITSTAMP_OVERRIDE="$__env_OPENCODE_COMMITSTAMP_OVERRIDE"
 [[ -z "$__env_OPENCODE_SOURCE_OVERRIDE_DIR" ]] || OPENCODE_SOURCE_OVERRIDE_DIR="$__env_OPENCODE_SOURCE_OVERRIDE_DIR"
 [[ -z "$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK" ]] || OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK"
-unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_REPO_URL __env_OPENCODE_GHCR_IMAGE __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_BASE_ROOT __env_OPENCODE_VERSION __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
+unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_REPO_URL __env_OPENCODE_GHCR_IMAGE __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_VERSION __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
 
 OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-local}"
 OPENCODE_PROJECT_PREFIX="${OPENCODE_PROJECT_PREFIX:-opencode}"
@@ -41,7 +41,7 @@ OPENCODE_REPO_URL="${OPENCODE_REPO_URL:-https://github.com/anomalyco/opencode.gi
 OPENCODE_GHCR_IMAGE="${OPENCODE_GHCR_IMAGE:-ghcr.io/anomalyco/opencode}"
 OPENCODE_GITHUB_API_BASE="${OPENCODE_GITHUB_API_BASE:-https://api.github.com}"
 OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence}"
-OPENCODE_HOST_SERVER_PORT="${OPENCODE_HOST_SERVER_PORT:-}"
+OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT:-$HOME/Documents/Ezirius/Development/OpenCode}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-latest}"
 OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX:-}"
 
@@ -219,9 +219,11 @@ seed_workspace_config_env_file() {
 
   mkdir -p "$(dirname "$config_file")"
   cat > "$config_file" <<'EOF'
-# Wrapper-managed environment for the OpenCode container.
+# Wrapper-managed non-secret environment for the OpenCode container.
 #
-# Examples:
+# Use secrets.env for tokens, keys, passwords, and other secrets.
+#
+# Non-secret examples:
 # OPENCODE_CONFIG=/home/opencode/.config/opencode/opencode.json
 # OPENCODE_CONFIG_DIR=/workspace/opencode-workspace/.opencode
 # OPENCODE_MODEL=anthropic/claude-sonnet-4-5
@@ -229,18 +231,90 @@ seed_workspace_config_env_file() {
 EOF
 }
 
-load_workspace_server_port_config() {
-  local workspace="$1"
-  local config_file
-
-  config_file="$(workspace_config_env_file "$workspace")"
-
-  if [[ -f "$config_file" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$config_file"
-    set +a
+parse_env_assignment_line() {
+  local line="$1"
+  line="${line%$'\r'}"
+  [[ -n "${line//[[:space:]]/}" ]] || return 1
+  [[ "$line" =~ ^[[:space:]]*# ]] && return 1
+  line="${line#${line%%[![:space:]]*}}"
+  if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
+    line="${line#export}"
+    line="${line#${line%%[![:space:]]*}}"
   fi
+  [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || return 1
+  printf '%s' "$line"
+}
+
+env_file_value() {
+  local env_file="$1"
+  local wanted_key="$2"
+  local line parsed key value matched_value="" found=0
+
+  [[ -f "$env_file" ]] || return 1
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    parsed="$(parse_env_assignment_line "$line" 2>/dev/null || true)"
+    [[ -n "$parsed" ]] || continue
+    key="${parsed%%=*}"
+    value="${parsed#*=}"
+    if [[ "$key" == "$wanted_key" ]]; then
+      matched_value="$value"
+      found=1
+    fi
+  done < "$env_file"
+
+  [[ "$found" == "1" ]] || return 1
+  printf '%s' "$matched_value"
+}
+
+workspace_env_value() {
+  local workspace="$1"
+  local wanted_key="$2"
+  local value
+
+  if value="$(env_file_value "$(workspace_secrets_env_file "$workspace")" "$wanted_key" 2>/dev/null)"; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  if value="$(env_file_value "$(workspace_config_env_file "$workspace")" "$wanted_key" 2>/dev/null)"; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  return 1
+}
+
+workspace_server_port() {
+  local workspace="$1"
+  local value
+
+  value="$(workspace_env_value "$workspace" 'OPENCODE_HOST_SERVER_PORT' 2>/dev/null || true)"
+  [[ -n "$value" ]] || return 1
+  value="$(normalize_host_port_env_value "$value")"
+  [[ -n "$value" ]] || return 1
+  validate_host_port "$value" 'OPENCODE_HOST_SERVER_PORT'
+  printf '%s' "$value"
+}
+
+normalize_host_port_env_value() {
+  local value="$1"
+  value="${value#${value%%[![:space:]]*}}"
+  value="${value%${value##*[![:space:]]}}"
+
+  if [[ $value =~ ^\"([0-9]+)\"([[:space:]]*#.*)?$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  if [[ $value =~ ^\'([0-9]+)\'([[:space:]]*#.*)?$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  value="${value%%#*}"
+  value="${value%${value##*[![:space:]]}}"
+  printf '%s' "$value"
 }
 
 validate_host_port() {
@@ -267,7 +341,9 @@ container_port_publish_spec() {
 }
 
 opencode_server_port_publish_spec() {
-  container_port_publish_spec "$OPENCODE_HOST_SERVER_PORT" 4096 'OPENCODE_HOST_SERVER_PORT'
+  local configured_port="$1"
+  [[ -n "$configured_port" ]] || return 1
+  container_port_publish_spec "$configured_port" 4096 'OPENCODE_HOST_SERVER_PORT'
 }
 
 container_workspace_dir() {
@@ -294,7 +370,13 @@ workspace_home_mount_spec() {
 }
 
 development_mount_spec() {
-  printf '%s:%s' "$HOME/Documents/Ezirius/Development/OpenCode" "/workspace/opencode-development"
+  printf '%s:%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "/workspace/opencode-development"
+}
+
+require_development_root() {
+  local development_root
+  development_root="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+  [[ -d "$development_root" ]] || fail "configured development root does not exist: $development_root"
 }
 
 validate_lane() {
@@ -379,12 +461,13 @@ select_upstream_selector() {
 }
 
 git_commitstamp() {
+  local workdir="${1:-${ROOT:-$(pwd)}}"
   if [[ -n "${OPENCODE_COMMITSTAMP_OVERRIDE:-}" ]]; then
     printf '%s' "$OPENCODE_COMMITSTAMP_OVERRIDE"
     return 0
   fi
   require_git
-  git log -1 --format='%cd-%h' --date=format:'%Y%m%d-%H%M%S'
+  git -C "$workdir" log -1 --format='%cd-%h' --date=format:'%Y%m%d-%H%M%S'
 }
 
 git_is_primary_worktree() {
@@ -438,13 +521,14 @@ current_wrapper_context() {
   require_git
   local workdir="${1:-${ROOT:-$(pwd)}}"
   local toplevel base fallback_repo
+  if git_is_primary_worktree "$workdir"; then
+    printf 'main'
+    return 0
+  fi
+
   toplevel="$(git_toplevel "$workdir" 2>/dev/null || true)"
   if [[ -n "$toplevel" ]]; then
     base="$(basename "$toplevel")"
-    if [[ "$base" == "opencode-container" ]] && git_is_primary_worktree "$workdir"; then
-      printf 'main'
-      return 0
-    fi
     printf '%s' "$(sanitize_name "$base")"
     return 0
   fi
@@ -452,11 +536,7 @@ current_wrapper_context() {
   fallback_repo="$(fallback_repo_root "$workdir" 2>/dev/null || true)"
   if [[ -n "$fallback_repo" ]]; then
     base="$(basename "$workdir")"
-    if [[ "$base" == "opencode-container" ]]; then
-      printf 'main'
-    else
-      printf '%s' "$(sanitize_name "$base")"
-    fi
+    printf '%s' "$(sanitize_name "$base")"
     return 0
   fi
 
@@ -468,17 +548,19 @@ current_wrapper_context() {
 }
 
 require_clean_worktree() {
+  local workdir="${1:-${ROOT:-$(pwd)}}"
   require_git
-  git diff --quiet || fail "working tree has unstaged changes"
-  git diff --cached --quiet || fail "working tree has staged changes"
-  [[ -z "$(git ls-files --others --exclude-standard)" ]] || fail "working tree has untracked files"
+  git -C "$workdir" diff --quiet || fail "working tree has unstaged changes"
+  git -C "$workdir" diff --cached --quiet || fail "working tree has staged changes"
+  [[ -z "$(git -C "$workdir" ls-files --others --exclude-standard)" ]] || fail "working tree has untracked files"
 }
 
 require_no_unpushed_commits() {
+  local workdir="${1:-${ROOT:-$(pwd)}}"
   require_git
-  git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1 || fail "current branch does not track an upstream branch"
+  git -C "$workdir" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1 || fail "current branch does not track an upstream branch"
   local counts ahead behind
-  counts="$(git rev-list --left-right --count '@{upstream}'...HEAD)"
+  counts="$(git -C "$workdir" rev-list --left-right --count '@{upstream}'...HEAD)"
   behind="${counts%%[[:space:]]*}"
   ahead="${counts##*[[:space:]]}"
   [[ "$behind" == "0" ]] || fail "branch is behind its upstream"
@@ -509,7 +591,7 @@ validate_build_context() {
   local workdir="${2:-${ROOT:-$(pwd)}}"
   validate_lane "$lane"
   [[ "${OPENCODE_SKIP_BUILD_CONTEXT_CHECK:-}" == "1" ]] && return 0
-  require_clean_worktree
+  require_clean_worktree "$workdir"
   if [[ "$lane" == "production" ]]; then
     git_is_primary_worktree "$workdir" || fail "production builds must run from the canonical main checkout"
     [[ "$(git_current_branch "$workdir")" == "main" ]] || fail "production builds must run from branch 'main'"
@@ -823,6 +905,44 @@ workspace_target_rows() {
   done < <(sorted_project_image_rows)
 }
 
+container_picker_display_rows() {
+  local rows="$1"
+  while IFS=$'\t' read -r name _workspace lane upstream wrapper commitstamp status _image_ref; do
+    [[ -n "$name" ]] || continue
+    picker_display_row_from_target "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+  done <<< "$rows"
+}
+
+resolve_row_from_picker() {
+  local prompt="$1"
+  local rows="$2"
+  local selection selection_line
+  local display_rows=() formatted_options=()
+
+  [[ -n "$rows" ]] || fail "no options available"
+
+  while IFS= read -r selection_line; do
+    [[ -n "$selection_line" ]] || continue
+    display_rows+=("$selection_line")
+  done < <(container_picker_display_rows "$rows")
+
+  if [[ ${#display_rows[@]} -eq 1 ]]; then
+    printf '%s' "$rows"
+    return 0
+  fi
+
+  while IFS= read -r selection_line; do
+    formatted_options+=("$selection_line")
+  done < <(format_picker_table "${display_rows[@]}")
+
+  prompt+=$'\n'"${formatted_options[0]}"
+  prompt+=$'\n'"${formatted_options[1]}"
+  selection="$(select_menu_option "$prompt" "${formatted_options[@]:2}")"
+  selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
+  [[ -n "$selection_line" ]] || fail "failed to resolve selected container target"
+  printf '%s' "$selection_line"
+}
+
 resolve_target_details_for_workspace() {
   local workspace="$1"
   local rows selection selection_line
@@ -856,21 +976,34 @@ resolve_target_details_for_workspace() {
 
 resolve_existing_explicit_container() {
   local workspace="$1" lane="$2" upstream_selector="$3"
-  local wrapper resolved_upstream name
-  wrapper="$(current_wrapper_context)"
+  local rows row name row_workspace row_lane row_upstream row_wrapper commitstamp status image_ref resolved_upstream
   validate_lane "$lane"
   resolved_upstream="$(resolve_upstream_selector "$upstream_selector")"
-  name="$(container_name "$workspace" "$lane" "$resolved_upstream" "$wrapper")"
-  container_exists "$name" || fail "no matching container exists: $name"
+
+  rows="$(project_container_rows | while IFS=$'\t' read -r name row_workspace row_lane row_upstream row_wrapper commitstamp status image_ref; do
+    [[ -n "$name" ]] || continue
+    [[ "$row_workspace" == "$workspace" && "$row_lane" == "$lane" && "$row_upstream" == "$resolved_upstream" ]] || continue
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$row_workspace" "$row_lane" "$row_upstream" "$row_wrapper" "$commitstamp" "$status" "$image_ref"
+  done)"
+  [[ -n "$rows" ]] || fail "no matching container exists for workspace=$workspace lane=$lane upstream=$resolved_upstream"
+
+  if [[ $(printf '%s\n' "$rows" | sed '/^$/d' | wc -l | tr -d ' ') != "1" ]]; then
+    row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
+  else
+    row="$rows"
+  fi
+
+  IFS=$'\t' read -r name _row_workspace _row_lane _row_upstream _row_wrapper _commitstamp _status _image_ref <<< "$row"
   printf '%s' "$name"
 }
 
 resolve_container_for_workspace() {
-  local workspace="$1" target_row kind ref lane upstream wrapper commitstamp status image_ref
-  target_row="$(resolve_target_details_for_workspace "$workspace")"
-  IFS=$'\t' read -r kind ref lane upstream wrapper commitstamp status image_ref <<< "$target_row"
-  [[ "$kind" == "container" ]] || fail "selected target is not an existing container for workspace '$workspace'"
-  printf '%s' "$ref"
+  local workspace="$1" rows row name
+  rows="$(workspace_container_rows "$workspace")"
+  [[ -n "$rows" ]] || fail "no existing container found for workspace '$workspace'"
+  row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
+  IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref <<< "$row"
+  printf '%s' "$name"
 }
 
 print_container_summary() {
@@ -878,6 +1011,9 @@ print_container_summary() {
   local server_url
   status="stopped"
   container_running "$container_name" && status="running"
+  if [[ "$status" == "running" ]]; then
+    ensure_managed_server_for_container "$container_name"
+  fi
   image="$(container_image_ref "$container_name")"
   server_url="$(server_url_for_container "$container_name" 2>/dev/null || true)"
   printf 'Container: %s\n' "$container_name"
@@ -892,32 +1028,42 @@ print_container_summary() {
   [[ -n "$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")" ]] && printf 'Commit Stamp: %s\n' "$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")"
   printf 'Home Mount: %s\n' "$(workspace_home_dir "$workspace")"
   printf 'Workspace Mount: %s\n' "$(workspace_dir "$workspace")"
-  printf 'Development Mount: %s\n' "$HOME/Documents/Ezirius/Development/OpenCode"
+  printf 'Development Mount: %s\n' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
 }
 
 create_or_replace_container() {
   local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
-  local server_publish_spec
+  local server_port server_publish_spec
+  local -a run_args
   if container_exists "$container_name"; then
     podman rm -f "$container_name" >/dev/null
   fi
 
-  load_workspace_server_port_config "$workspace"
-  server_publish_spec="$(opencode_server_port_publish_spec)"
+  require_development_root
+  server_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
+  server_publish_spec="$(opencode_server_port_publish_spec "$server_port" 2>/dev/null || true)"
 
-  podman run -d \
-    --name "$container_name" \
-    --restart unless-stopped \
-    --label "$OPENCODE_LABEL_WORKSPACE=$workspace" \
-    --label "$OPENCODE_LABEL_LANE=$lane" \
-    --label "$OPENCODE_LABEL_UPSTREAM=$upstream" \
-    --label "$OPENCODE_LABEL_WRAPPER=$wrapper" \
-    --label "$OPENCODE_LABEL_COMMITSTAMP=$commitstamp" \
-    -p "$server_publish_spec" \
-    -v "$(workspace_home_mount_spec "$workspace" "$image_ref")" \
-    -v "$(workspace_mount_spec "$workspace")" \
-    -v "$(development_mount_spec)" \
-    "$image_ref" >/dev/null
+  run_args=(
+    run -d
+    --name "$container_name"
+    --restart unless-stopped
+    --label "$OPENCODE_LABEL_WORKSPACE=$workspace"
+    --label "$OPENCODE_LABEL_LANE=$lane"
+    --label "$OPENCODE_LABEL_UPSTREAM=$upstream"
+    --label "$OPENCODE_LABEL_WRAPPER=$wrapper"
+    --label "$OPENCODE_LABEL_COMMITSTAMP=$commitstamp"
+  )
+  if [[ -n "$server_publish_spec" ]]; then
+    run_args+=( -p "$server_publish_spec" )
+  fi
+  run_args+=(
+    -v "$(workspace_home_mount_spec "$workspace" "$image_ref")"
+    -v "$(workspace_mount_spec "$workspace")"
+    -v "$(development_mount_spec)"
+    "$image_ref"
+  )
+
+  podman "${run_args[@]}" >/dev/null
 }
 
 host_port_for_container_port() {
@@ -929,7 +1075,71 @@ host_port_for_container_port() {
   printf '%s' "${mapped##*:}"
 }
 
+container_server_port_matches_workspace_config() {
+  local container_name="$1"
+  local workspace="$2"
+  local desired_port actual_port
+
+  desired_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
+  actual_port="$(host_port_for_container_port "$container_name" 4096 2>/dev/null || true)"
+
+  if [[ -z "$desired_port" ]]; then
+    [[ -z "$actual_port" ]]
+    return
+  fi
+
+  [[ "$desired_port" == "$actual_port" ]]
+}
+
+container_matches_workspace_runtime_config() {
+  local container_name="$1"
+  local workspace="$2"
+  container_server_port_matches_workspace_config "$container_name" "$workspace"
+}
+
+ensure_running_container_matches_image_and_runtime() {
+  local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
+
+  if container_exists "$container_name"; then
+    if [[ "$(container_image_ref "$container_name" 2>/dev/null || true)" != "$image_ref" ]]; then
+      create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+    elif ! container_matches_workspace_runtime_config "$container_name" "$workspace"; then
+      create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+    elif ! container_running "$container_name"; then
+      podman start "$container_name" >/dev/null
+    fi
+  else
+    create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+  fi
+
+  ensure_managed_server_for_container "$container_name"
+}
+
 server_url_for_container() {
+  local container_name="$1"
+  local workspace port
+  workspace="$(container_label "$container_name" "$OPENCODE_LABEL_WORKSPACE")"
+  [[ -n "$workspace" ]] || return 1
+  workspace_server_port "$workspace" >/dev/null 2>&1 || return 1
+  server_active_for_container "$container_name" || return 1
+  port="$(host_port_for_container_port "$container_name" 4096 2>/dev/null || true)"
+  [[ -n "$port" ]] || return 1
+  printf 'http://127.0.0.1:%s' "$port"
+}
+
+server_healthcheck_path() {
+  printf '%s' '/global/health'
+}
+
+server_healthcheck_url() {
+  local container_name="$1"
+  local base_url
+  base_url="$(server_url_for_container_base "$container_name" 2>/dev/null || true)"
+  [[ -n "$base_url" ]] || return 1
+  printf '%s%s' "$base_url" "$(server_healthcheck_path)"
+}
+
+server_url_for_container_base() {
   local container_name="$1"
   local port
   port="$(host_port_for_container_port "$container_name" 4096 2>/dev/null || true)"
@@ -937,28 +1147,58 @@ server_url_for_container() {
   printf 'http://127.0.0.1:%s' "$port"
 }
 
+start_managed_server_in_container() {
+  local container_name="$1"
+  podman exec "$container_name" /bin/sh -lc '. /tmp/opencode-wrapper-runtime.env 2>/dev/null || true; cd /workspace/opencode-workspace; mkdir -p /tmp/opencode-wrapper; if [ -f /tmp/opencode-wrapper/server.pid ] && kill -0 "$(cat /tmp/opencode-wrapper/server.pid)" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname 0.0.0.0 --port 4096 >/tmp/opencode-wrapper/server.log 2>&1 & echo $! >/tmp/opencode-wrapper/server.pid' >/dev/null
+}
+
+server_active_for_container() {
+  local container_name="$1"
+  local health_url
+  require_curl
+  health_url="$(server_healthcheck_url "$container_name" 2>/dev/null || true)"
+  [[ -n "$health_url" ]] || return 1
+  curl -fsSL "$health_url" >/dev/null 2>&1
+}
+
+wait_for_server_for_container() {
+  local container_name="$1"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if server_active_for_container "$container_name"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+ensure_managed_server_for_container() {
+  local container_name="$1"
+  local workspace server_port
+  workspace="$(container_label "$container_name" "$OPENCODE_LABEL_WORKSPACE")"
+  [[ -n "$workspace" ]] || return 0
+  server_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
+  [[ -n "$server_port" ]] || return 0
+  container_running "$container_name" || return 0
+  if ! server_active_for_container "$container_name"; then
+    start_managed_server_in_container "$container_name"
+    wait_for_server_for_container "$container_name" || fail "managed server failed to start for container: $container_name"
+  fi
+}
+
 start_or_reuse_target() {
   local workspace="$1" kind="$2" ref="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
   local resolved_container_name
 
   if [[ "$kind" == "container" ]]; then
-    if ! container_running "$ref"; then
-      podman start "$ref" >/dev/null
-    fi
+    ensure_running_container_matches_image_and_runtime "$ref" "$(container_image_ref "$ref")" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
     printf '%s' "$ref"
     return 0
   fi
 
   resolved_container_name="$(container_name "$workspace" "$lane" "$upstream" "$wrapper")"
-  if container_exists "$resolved_container_name"; then
-    if [[ "$(container_image_ref "$resolved_container_name" 2>/dev/null || true)" != "$ref" ]]; then
-      create_or_replace_container "$resolved_container_name" "$ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
-    elif ! container_running "$resolved_container_name"; then
-      podman start "$resolved_container_name" >/dev/null
-    fi
-  else
-    create_or_replace_container "$resolved_container_name" "$ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
-  fi
+  ensure_running_container_matches_image_and_runtime "$resolved_container_name" "$ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
   printf '%s' "$resolved_container_name"
 }
 
@@ -1040,7 +1280,7 @@ clone_upstream_source() {
 
   require_git
   if [[ "$ref" == "dev" || "$ref" == "main" ]]; then
-    git clone --depth 1 --branch dev "$OPENCODE_REPO_URL" "$destination" >/dev/null 2>&1 || fail "failed to clone upstream main"
+    git clone --depth 1 --branch dev "$OPENCODE_REPO_URL" "$destination" >/dev/null 2>&1 || fail "failed to clone upstream dev"
     return 0
   fi
 
@@ -1081,7 +1321,11 @@ WORKDIR /src
 COPY source/ /src/
 RUN bun install
 RUN bun run --cwd packages/opencode build --single --skip-embed-web-ui
-RUN cp "$(find /src/packages/opencode/dist -path '*/bin/opencode' | head -n 1)" /tmp/opencode
+RUN set -eu; \
+    matches="$(find /src/packages/opencode/dist -type f -path '*/bin/opencode')"; \
+    count="$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')"; \
+    [ "$count" = "1" ] || { printf 'expected exactly one opencode binary, found %s\n' "$count" >&2; exit 1; }; \
+    cp "$matches" /tmp/opencode
 
 FROM debian:bookworm-slim
 

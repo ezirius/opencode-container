@@ -7,7 +7,9 @@ source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <workspace> [opencode args...]
+       $(basename "$0") <workspace> -- [opencode args...]
        $(basename "$0") <workspace> <production|test> <upstream> [opencode args...]
+       $(basename "$0") <workspace> <production|test> <upstream> -- [opencode args...]
 
 Start or reuse a persistent OpenCode workspace container.
 
@@ -24,11 +26,20 @@ require_workspace_name "$WORKSPACE"
 require_podman
 ensure_workspace_layout "$WORKSPACE"
 seed_workspace_config_env_file "$WORKSPACE"
+PAYLOAD_ONLY=0
 
-if [[ $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+if [[ ${1-} == "--" ]]; then
+  shift
+  PAYLOAD_ONLY=1
+fi
+
+if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
   LANE="$1"
   UPSTREAM_SELECTOR="$2"
   shift 2
+  if [[ ${1-} == "--" ]]; then
+    shift
+  fi
   validate_lane "$LANE"
   validate_upstream_selector "$UPSTREAM_SELECTOR"
   WRAPPER_CONTEXT="$(current_wrapper_context)"
@@ -37,16 +48,7 @@ if [[ $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
   [[ -n "$IMAGE_REF" ]] || fail "no local image found for lane=$LANE upstream=$UPSTREAM_RESOLVED wrapper=$WRAPPER_CONTEXT (run opencode-build first)"
   COMMITSTAMP="$(image_label "$IMAGE_REF" "$OPENCODE_LABEL_COMMITSTAMP")"
   CONTAINER_NAME="$(container_name "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT")"
-
-  if container_exists "$CONTAINER_NAME"; then
-    if [[ "$(container_image_ref "$CONTAINER_NAME" 2>/dev/null || true)" != "$IMAGE_REF" ]]; then
-      create_or_replace_container "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
-    elif ! container_running "$CONTAINER_NAME"; then
-      podman start "$CONTAINER_NAME" >/dev/null
-    fi
-  else
-    create_or_replace_container "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
-  fi
+  ensure_running_container_matches_image_and_runtime "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
 else
   TARGET_ROW="$(resolve_target_details_for_workspace "$WORKSPACE")"
   IFS=$'\t' read -r TARGET_KIND TARGET_REF LANE UPSTREAM_RESOLVED WRAPPER_CONTEXT COMMITSTAMP _STATUS _IMAGE_REF <<< "$TARGET_ROW"

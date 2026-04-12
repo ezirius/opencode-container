@@ -19,6 +19,8 @@ bash -n \
   "$ROOT/tests/shared/test-common.sh" \
   "$ROOT/tests/shared/test-runtime.sh"
 
+sh -n "$ROOT/config/containers/entrypoint.sh"
+
 "$ROOT/tests/shared/test-args.sh"
 "$ROOT/tests/shared/test-layout.sh"
 "$ROOT/tests/shared/test-common.sh"

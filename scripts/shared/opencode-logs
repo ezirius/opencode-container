@@ -5,6 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
+if [[ ${1-} == "--help" ]]; then
+  show_help "Usage: $(basename "$0") <workspace> [podman logs args...]
+
+Show Podman logs for the selected workspace container."
+fi
+
 [[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [podman logs args...]"
 WORKSPACE="$1"
 shift

@@ -30,8 +30,8 @@ fi
 
 validate_upstream_selector "$UPSTREAM_SELECTOR"
 
-WRAPPER_CONTEXT="$(current_wrapper_context)"
-COMMITSTAMP="$(git_commitstamp)"
+WRAPPER_CONTEXT="$(current_wrapper_context "$ROOT")"
+COMMITSTAMP="$(git_commitstamp "$ROOT")"
 UPSTREAM_RESOLVED="$(resolve_upstream_selector "$UPSTREAM_SELECTOR")"
 UPSTREAM_REF="$(upstream_ref_for_selector "$UPSTREAM_SELECTOR")"
 TARGET_IMAGE="$(image_ref "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP")"
