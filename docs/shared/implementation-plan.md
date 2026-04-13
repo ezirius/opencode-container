@@ -6,15 +6,15 @@ Rebuild `opencode-container` so it follows the same wrapper model as `hindsight-
 
 The target wrapper should:
 
-- wrap the official upstream OpenCode image instead of owning a custom mutable base image
+- own a stable Ubuntu LTS runtime instead of wrapping the upstream OpenCode container image directly
 - use immutable local wrapper images
 - use deterministic human-readable container names
 - keep shared logic in `lib/shell/common.sh`
 - use picker-driven workspace commands
-- preserve upstream OpenCode home and storage behavior
-- keep wrapper-owned files separate from upstream-owned files
+- preserve OpenCode home and storage behaviour inside the wrapper-owned runtime
+- keep wrapper-owned files separate from OpenCode-owned files
 
-The only intentional runtime deviation from Hindsight is that OpenCode's official image is CLI-first, so the wrapper must provide a persistent keepalive container runtime that `podman exec` can reuse.
+The wrapper should document this as a tooling-driven decision: the runtime is now wrapper-owned so official-release builds and `main` source builds can share one stable operating-system and tooling surface.
 
 `shared` means the files are intended to work on both macOS and Linux. `macos` means macOS-only.
 
@@ -40,7 +40,7 @@ This plan applies to the OpenCode container wrapper itself, not to upstream Open
 
 The wrapper must:
 
-- preserve upstream state under the upstream image runtime home, such as `/root` or `/home/opencode`
+- preserve OpenCode state under the wrapper-owned runtime home `/home/opencode`
 - keep wrapper-owned config and metadata out of upstream-owned state
 - use Hindsight-style immutable image and container identity
 - use Hindsight-style workspace target selection and removal flows
@@ -116,22 +116,24 @@ Resolution:
 
 Rules:
 
-- the picker should show `main` plus exact release tags newest to oldest
+- the default build target is the latest stable official release available at build time
+- the picker should show `main` plus exact stable release tags newest to oldest
 - the picker should not show a floating `latest` choice
 - `latest` remains accepted as a command argument and resolves before naming
+- beta, prerelease, preview, rc, nightly, and other non-stable releases must not be selected or offered by default
 - floating upstream tags must not appear in immutable wrapper image tags or deterministic container names
 
 ## Build Strategy
 
-The wrapper always produces a local immutable image for local container use.
+The wrapper always produces a local immutable Ubuntu-based image for local container use.
 
 Build source rules:
 
 - `main` must build from upstream source
-- an exact release should prefer the matching official upstream release image `ghcr.io/anomalyco/opencode:<exact-tag>` if it exists, otherwise fall back to a source build of that release
-- `latest` should resolve to the newest exact release and then use the same exact-release logic
+- an exact stable release should install the official OpenCode release into the wrapper-owned Ubuntu runtime
+- `latest` should resolve to the newest exact stable release and then use the same exact-release logic
 
-This means the wrapper is official-image-first, but still able to fall back to source builds when needed.
+This means the wrapper is latest-stable-release-first, while still able to build `main` from source when the user explicitly chooses it.
 
 ## Image Model
 
@@ -204,7 +206,7 @@ For each workspace `<workspace>`, use:
 
 Ownership model:
 
-- `opencode-home` contains upstream-owned files and runtime state
+- `opencode-home` contains OpenCode-owned files and runtime state
 - `opencode-workspace` contains wrapper-owned and user-owned workspace files
 - `.config/opencode` inside `opencode-workspace` contains wrapper-only env/config files
 
@@ -214,16 +216,16 @@ The wrapper must never treat `opencode-home` as wrapper-owned storage.
 
 Each workspace container mounts exactly:
 
-- `"$BASE/<workspace>/opencode-home:<upstream-runtime-home>"`
+- `"$BASE/<workspace>/opencode-home:/home/opencode"`
 - `"$BASE/<workspace>/opencode-workspace:/workspace/opencode-workspace"`
-- `"$OPENCODE_DEVELOPMENT_ROOT:/workspace/opencode-development"`
+- `"$OPENCODE_DEVELOPMENT_ROOT:/workspace/opencode-development"` when that host path exists
 
 In-container meaning:
 
-- `<upstream-runtime-home>` = the upstream image runtime home, such as `/root` or `/home/opencode`
+- `/home/opencode` = the wrapper-owned OpenCode runtime home
 - `/workspace/opencode-workspace` = wrapper-owned workspace mount
 - `/workspace/opencode-workspace/.config/opencode` = wrapper env/config area
-- `/workspace/opencode-development` = extra host development mount required by operator policy
+- `/workspace/opencode-development` = optional extra host development mount when a local development tree is available
 
 Wrapper exec operations should use:
 
@@ -257,6 +259,7 @@ To stay like Hindsight, there must be a strict split between wrapper defaults an
 Wrapper-owned config should consist of:
 
 - `config/shared/opencode.conf`
+- `config/shared/tool-versions.conf`
 - `opencode-workspace/.config/opencode/config.env`
 - optionally `opencode-workspace/.config/opencode/secrets.env`
 - `config/containers/entrypoint.sh` as the runtime loader for those env files
@@ -269,9 +272,12 @@ It should contain only wrapper-level settings such as:
 - local image name
 - project prefix
 - upstream repo URL
-- upstream GHCR image reference
 - GitHub API base URL
+- npm registry base URL for official release packages
+- pinned Ubuntu LTS version
 - development root mount source
+
+`config/shared/tool-versions.conf` should pin wrapper-owned shared-tool versions separately from the main runtime defaults.
 
 It must not contain OpenCode-native settings such as:
 
@@ -288,6 +294,8 @@ Rules:
 
 - `.env` files are wrapper runtime inputs
 - OpenCode-native config stays in upstream-native JSON or JSONC files under `/home/opencode/.config/opencode`
+- wrapper-owned defaults such as the Ubuntu LTS base version must be pinned in config, checked for newer suitable versions during build, and never changed silently
+- the current implementation performs that newer-version notification for the pinned Ubuntu LTS base
 - wrapper config or secrets changes must be applied by container restart only
 - wrapper config or secrets changes must not require image rebuild
 - wrapper config or secrets changes must not require container recreate unless a mount, published server port, or image identity itself changed
@@ -302,7 +310,7 @@ The wrapper should not automatically seed `opencode.json` or other OpenCode-nati
 
 This is the only unavoidable OpenCode-specific adaptation.
 
-OpenCode's official image is CLI-first, not a ready-made persistent service container.
+OpenCode remains CLI-first, so the wrapper must still provide a persistent keepalive container runtime that `podman exec` can reuse.
 
 Target runtime behavior:
 
@@ -382,7 +390,8 @@ Adopt Hindsight's selection model.
 
 `opencode-build <lane>`:
 
-- picker shows `main` plus exact upstream release tags newest to oldest
+- omitting `upstream` defaults to `latest`
+- `latest` resolves to the newest stable official release before naming
 
 `opencode-start <workspace>` and `opencode-bootstrap <workspace>`:
 
@@ -454,9 +463,9 @@ Remove display columns:
 
 `All, but newest` means:
 
-- for containers: leave the newest container per workspace
+- for containers: leave the preferred container per workspace, where `production` wins over `test` and commit timestamp breaks ties within the same lane
 - for images: leave the image serving each kept newest container
-- for mixed mode: leave the newest container per workspace and the image serving it
+- for mixed mode: leave the preferred container per workspace and the image serving it
 
 `All` in mixed mode means remove all containers first and then all images.
 
@@ -507,7 +516,7 @@ It should not include Hindsight-only helpers for browser launches or HTTP URL re
 
 Rewrite `README.md` and `docs/shared/usage.md` around:
 
-- official-image wrapper model
+- Ubuntu LTS-owned runtime model
 - immutable images
 - build lanes
 - upstream selectors
@@ -550,8 +559,8 @@ Do not copy Hindsight's port and HTTP-ready assertions into OpenCode tests unles
 1. Add `docs/shared/implementation-plan.md`.
 2. Add `config/shared/opencode.conf`.
 3. Rebuild `lib/shell/common.sh` around the Hindsight helper model.
-4. Replace the current custom Dockerfile ownership with a thin wrapper-image model around the official OpenCode image.
-5. Add official-image resolution and source fallback.
+4. Replace the current thin wrapper-image model with a wrapper-owned Ubuntu LTS runtime.
+5. Add stable-release installation and `main` source-build support inside that owned runtime.
 6. Add immutable image naming and deterministic container naming.
 7. Replace the current mount layout with:
 - `/home/opencode`
@@ -582,8 +591,9 @@ Do not copy Hindsight's port and HTTP-ready assertions into OpenCode tests unles
 
 ## Final Rule Set
 
-- official image first
-- source build for `main`
+- pinned Ubuntu LTS runtime
+- latest stable official release by default
+- source build for `main` when the user explicitly chooses it
 - exact release resolution for `latest`
 - immutable wrapper images only
 - no upgrade script

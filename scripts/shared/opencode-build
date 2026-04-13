@@ -8,27 +8,28 @@ source "$ROOT/lib/shell/common.sh"
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <production|test> [upstream]
 
-Build an immutable local OpenCode wrapper image.
+Build an immutable local Ubuntu-based OpenCode wrapper image.
 
-If [upstream] is omitted, the wrapper prompts with:
+If [upstream] is omitted, the wrapper builds the latest stable official OpenCode release.
+
+Accepted [upstream] values:
 - main
-- upstream release tags, newest to oldest"
+- latest
+- an exact stable release tag"
 fi
 
 [[ $# -ge 1 && $# -le 2 ]] || usage_error "$(basename "$0") <production|test> [upstream]"
 
 LANE="$1"
-UPSTREAM_SELECTOR="${2:-}"
+UPSTREAM_SELECTOR="${2:-latest}"
 
 require_podman
+require_python3
 validate_lane "$LANE"
 validate_build_context "$LANE"
 
-if [[ -z "$UPSTREAM_SELECTOR" ]]; then
-  UPSTREAM_SELECTOR="$(select_upstream_selector)"
-fi
-
 validate_upstream_selector "$UPSTREAM_SELECTOR"
+notify_if_newer_ubuntu_lts_exists
 
 WRAPPER_CONTEXT="$(current_wrapper_context "$ROOT")"
 COMMITSTAMP="$(git_commitstamp "$ROOT")"
@@ -45,15 +46,10 @@ if [[ "$UPSTREAM_RESOLVED" == "main" ]]; then
   build_source_image "$UPSTREAM_REF" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
   printf 'Build source: upstream source ref %s\n' "$UPSTREAM_REF"
 else
-  BASE_IMAGE="$(official_image_ref_for_upstream "$UPSTREAM_SELECTOR" 2>/dev/null || true)"
-  if [[ -n "$BASE_IMAGE" ]]; then
-    podman pull "$BASE_IMAGE" >/dev/null
-    build_wrapper_image_from_base "$BASE_IMAGE" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$UPSTREAM_REF" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
-    printf 'Build source: official image %s\n' "$BASE_IMAGE"
-  else
-    build_source_image "$UPSTREAM_REF" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
-    printf 'Build source: upstream source ref %s\n' "$UPSTREAM_REF"
-  fi
+  RELEASE_URL="$(release_binary_package_url "$UPSTREAM_RESOLVED")"
+  RELEASE_SHA512="$(release_binary_package_sha512_hex "$UPSTREAM_RESOLVED")"
+  build_release_image "$RELEASE_URL" "$RELEASE_SHA512" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$UPSTREAM_REF" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
+  printf 'Build source: official release %s\n' "$UPSTREAM_REF"
 fi
 
 printf 'Built image: %s\n' "$TARGET_IMAGE"

@@ -92,6 +92,7 @@ assert_eq "opencode-local:test-1.4.3-main-20260410-163440-ab12cd3" "$(image_ref 
 assert_eq "1.4.3" "$(resolve_upstream_selector 1.4.3)" "exact upstream selector stays unchanged"
 assert_eq "1.4.3" "$(resolve_upstream_selector v1.4.3)" "v-prefixed upstream selector normalizes"
 assert_eq "v1.4.3" "$(upstream_ref_for_selector 1.4.3)" "exact upstream ref gets v prefix"
+assert_eq 'opencode-linux-arm64' "$(OPENCODE_CONTAINER_ARCH=arm64 release_binary_package_name)" "release binary package selection follows the container runtime architecture"
 mkdir -p "$TMPROOT/alternate-primary-checkout"
 assert_eq "main" "$(current_wrapper_context "$TMPROOT/alternate-primary-checkout")" "primary checkouts use wrapper context main even when the directory name differs"
 mkdir -p "$TMPROOT/opencode-container-worktrees/feature.alpha"

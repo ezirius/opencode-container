@@ -1,17 +1,17 @@
 # OpenCode Container
 
-This repository wraps upstream OpenCode in the same local-container model used by `hindsight-container`:
+This repository runs OpenCode in a wrapper-owned Ubuntu LTS container using the same local-container model used by `hindsight-container`:
 
 - immutable local wrapper images
 - deterministic workspace container names
 - picker-based workspace commands
-- persistent upstream-owned runtime home such as `/root` or `/home/opencode`
+- persistent OpenCode runtime home at `/home/opencode`
 - wrapper-owned workspace config under `/workspace/opencode-workspace/.config/opencode`
 
 ## Layout
 
 - `config/shared/opencode.conf` contains wrapper defaults
-- `config/containers/Containerfile.wrapper` wraps upstream OpenCode images or source-built base images
+- `config/containers/Containerfile.wrapper` builds the owned Ubuntu runtime for stable OpenCode releases
 - `config/containers/entrypoint.sh` snapshots wrapper runtime env on container start
 - `docs/shared/usage.md` documents the command surface and workspace model
 - `docs/shared/implementation-plan.md` is the source of truth for the architecture
@@ -58,9 +58,12 @@ Accepted upstream selectors:
 Rules:
 
 - `main` builds from upstream source
-- exact releases prefer `ghcr.io/anomalyco/opencode:<exact-tag>`
-- if an exact release image is unavailable, the wrapper falls back to a source build
-- `latest` resolves to the newest exact release before naming
+- exact stable releases install the official OpenCode release into the wrapper-owned Ubuntu runtime
+- `latest` resolves to the newest stable official release before naming
+- prerelease, beta, preview, rc, nightly, and other non-stable releases are not selected by default
+
+Wrapper-owned defaults such as the Ubuntu LTS base version are pinned in `config/shared/opencode.conf`.
+Builds currently notify when a newer Ubuntu LTS exists, but they continue using the pinned value until it is deliberately updated.
 
 Image identity:
 
@@ -80,12 +83,12 @@ Each workspace lives under:
 
 Directory mappings:
 
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> the upstream image runtime home, such as `/root` or `/home/opencode`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/home/opencode`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace` -> `/workspace/opencode-workspace`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode` -> `/workspace/opencode-workspace/.config/opencode`
-- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development`
+- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development` when that host path exists
 
-OpenCode-native state remains upstream-owned inside that runtime home, including locations such as:
+OpenCode-native state remains app-owned inside that runtime home, including locations such as:
 
 - `~/.config/opencode`
 - `~/.local/share/opencode`
@@ -95,10 +98,12 @@ OpenCode-native state remains upstream-owned inside that runtime home, including
 ## Wrapper Config
 
 Wrapper defaults live in `config/shared/opencode.conf`.
+Pinned shared-tool versions live in `config/shared/tool-versions.conf`.
 
 Wrapper runtime files live in:
 
 - `config/shared/opencode.conf`
+- `config/shared/tool-versions.conf`
 - `opencode-workspace/.config/opencode/config.env`
 - `opencode-workspace/.config/opencode/secrets.env`
 
@@ -153,6 +158,53 @@ Default development root:
 
 Environment variables override `config/shared/opencode.conf` at runtime.
 
+## Shared Toolbox
+
+The owned Ubuntu runtime includes a standard shared toolbox. Current installs include:
+
+- `git`
+- `ripgrep`
+- `fd`
+- `python`
+- `jq`
+- `direnv`
+- `just`
+- `yq`
+- `uv`
+- `delta`
+- `watchexec`
+- `shellcheck`
+- `podman`
+- `eza`
+- `bat`
+- `zoxide`
+- `xh`
+- `gh`
+- `jj`
+- `wt`
+- `worktrunk` symlink
+- `basedpyright`
+- `pytest`
+- `ruff`
+- `skopeo`
+- `dive`
+- `buildah`
+- `age`
+- `sops`
+- `doggo`
+- `grpcurl`
+- `websocat`
+- `podman-compose`
+- `hyperfine`
+- `duf`
+- `lnav`
+- `shfmt`
+- `strace`
+- `miller`
+- `csvlens`
+- `caddy`
+- `tlrc`
+
 `OPENCODE_HOST_SERVER_PORT` is configured per workspace in `config.env` or `secrets.env`, not as a wrapper-global environment override.
 
 ## Verification
@@ -160,6 +212,10 @@ Environment variables override `config/shared/opencode.conf` at runtime.
 Run:
 
 - `tests/shared/test-all.sh`
+
+Optional real-build smoke validation requires:
+
+- `OPENCODE_ENABLE_SMOKE_BUILDS=1 tests/shared/test-build-smoke.sh`
 
 ## GitHub Setup On Maldoria
 

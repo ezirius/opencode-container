@@ -27,10 +27,13 @@ assert_rejects "$ROOT/scripts/shared/opencode-open" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-shell" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-stop" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-status" '<workspace>'
-assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'containers' or 'images'" container
-assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'containers' or 'images'" image
-assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'containers' or 'images'" wrong
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'mixed', 'containers', or 'images'" container
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'mixed', 'containers', or 'images'" image
+assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'mixed', 'containers', or 'images'" wrong
 assert_rejects "$ROOT/scripts/shared/opencode-logs" '<workspace>'
 assert_rejects "$ROOT/scripts/shared/opencode-bootstrap" '<workspace>'
+assert_rejects "$ROOT/scripts/shared/opencode-start" '<workspace> <production|test> <upstream>' demo production
+assert_rejects "$ROOT/scripts/shared/opencode-open" '<workspace> <production|test> <upstream>' demo production
+assert_rejects "$ROOT/scripts/shared/opencode-shell" '<workspace> <production|test> <upstream>' demo production
 
 echo "Argument contract checks passed"

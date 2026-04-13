@@ -18,13 +18,18 @@ fi
 WORKSPACE="$1"
 shift
 require_workspace_name "$WORKSPACE"
-require_podman
 PAYLOAD_ONLY=0
 
 if [[ ${1-} == "--" ]]; then
   shift
   PAYLOAD_ONLY=1
 fi
+
+if [[ "$PAYLOAD_ONLY" == "0" && $# == 1 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+  usage_error "$(basename "$0") <workspace> <production|test> <upstream> [command args...]"
+fi
+
+require_podman
 
 if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
   CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$1" "$2")"

@@ -23,15 +23,20 @@ fi
 WORKSPACE="$1"
 shift
 require_workspace_name "$WORKSPACE"
-require_podman
-ensure_workspace_layout "$WORKSPACE"
-seed_workspace_config_env_file "$WORKSPACE"
 PAYLOAD_ONLY=0
 
 if [[ ${1-} == "--" ]]; then
   shift
   PAYLOAD_ONLY=1
 fi
+
+if [[ "$PAYLOAD_ONLY" == "0" && $# == 1 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+  usage_error "$(basename "$0") <workspace> <production|test> <upstream> [opencode args...]"
+fi
+
+require_podman
+ensure_workspace_layout "$WORKSPACE"
+seed_workspace_config_env_file "$WORKSPACE"
 
 if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
   LANE="$1"

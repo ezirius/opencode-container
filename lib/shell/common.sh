@@ -4,8 +4,9 @@ set -euo pipefail
 __env_OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME-}"
 __env_OPENCODE_PROJECT_PREFIX="${OPENCODE_PROJECT_PREFIX-}"
 __env_OPENCODE_REPO_URL="${OPENCODE_REPO_URL-}"
-__env_OPENCODE_GHCR_IMAGE="${OPENCODE_GHCR_IMAGE-}"
 __env_OPENCODE_GITHUB_API_BASE="${OPENCODE_GITHUB_API_BASE-}"
+__env_OPENCODE_NPM_REGISTRY_BASE="${OPENCODE_NPM_REGISTRY_BASE-}"
+__env_OPENCODE_UBUNTU_LTS_VERSION="${OPENCODE_UBUNTU_LTS_VERSION-}"
 __env_OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT-}"
 __env_OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT-}"
 __env_OPENCODE_VERSION="${OPENCODE_VERSION-}"
@@ -20,11 +21,17 @@ if [[ -n "${ROOT:-}" && -f "$ROOT/config/shared/opencode.conf" ]]; then
   source "$ROOT/config/shared/opencode.conf"
 fi
 
+if [[ -n "${ROOT:-}" && -f "$ROOT/config/shared/tool-versions.conf" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT/config/shared/tool-versions.conf"
+fi
+
 [[ -z "$__env_OPENCODE_IMAGE_NAME" ]] || OPENCODE_IMAGE_NAME="$__env_OPENCODE_IMAGE_NAME"
 [[ -z "$__env_OPENCODE_PROJECT_PREFIX" ]] || OPENCODE_PROJECT_PREFIX="$__env_OPENCODE_PROJECT_PREFIX"
 [[ -z "$__env_OPENCODE_REPO_URL" ]] || OPENCODE_REPO_URL="$__env_OPENCODE_REPO_URL"
-[[ -z "$__env_OPENCODE_GHCR_IMAGE" ]] || OPENCODE_GHCR_IMAGE="$__env_OPENCODE_GHCR_IMAGE"
 [[ -z "$__env_OPENCODE_GITHUB_API_BASE" ]] || OPENCODE_GITHUB_API_BASE="$__env_OPENCODE_GITHUB_API_BASE"
+[[ -z "$__env_OPENCODE_NPM_REGISTRY_BASE" ]] || OPENCODE_NPM_REGISTRY_BASE="$__env_OPENCODE_NPM_REGISTRY_BASE"
+[[ -z "$__env_OPENCODE_UBUNTU_LTS_VERSION" ]] || OPENCODE_UBUNTU_LTS_VERSION="$__env_OPENCODE_UBUNTU_LTS_VERSION"
 [[ -z "$__env_OPENCODE_BASE_ROOT" ]] || OPENCODE_BASE_ROOT="$__env_OPENCODE_BASE_ROOT"
 [[ -z "$__env_OPENCODE_DEVELOPMENT_ROOT" ]] || OPENCODE_DEVELOPMENT_ROOT="$__env_OPENCODE_DEVELOPMENT_ROOT"
 [[ -z "$__env_OPENCODE_VERSION" ]] || OPENCODE_VERSION="$__env_OPENCODE_VERSION"
@@ -33,15 +40,17 @@ fi
 [[ -z "$__env_OPENCODE_COMMITSTAMP_OVERRIDE" ]] || OPENCODE_COMMITSTAMP_OVERRIDE="$__env_OPENCODE_COMMITSTAMP_OVERRIDE"
 [[ -z "$__env_OPENCODE_SOURCE_OVERRIDE_DIR" ]] || OPENCODE_SOURCE_OVERRIDE_DIR="$__env_OPENCODE_SOURCE_OVERRIDE_DIR"
 [[ -z "$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK" ]] || OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK"
-unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_REPO_URL __env_OPENCODE_GHCR_IMAGE __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_VERSION __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
+unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_REPO_URL __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_NPM_REGISTRY_BASE __env_OPENCODE_UBUNTU_LTS_VERSION __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_VERSION __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
 
 OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-local}"
 OPENCODE_PROJECT_PREFIX="${OPENCODE_PROJECT_PREFIX:-opencode}"
 OPENCODE_REPO_URL="${OPENCODE_REPO_URL:-https://github.com/anomalyco/opencode.git}"
-OPENCODE_GHCR_IMAGE="${OPENCODE_GHCR_IMAGE:-ghcr.io/anomalyco/opencode}"
 OPENCODE_GITHUB_API_BASE="${OPENCODE_GITHUB_API_BASE:-https://api.github.com}"
-OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence}"
-OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT:-$HOME/Documents/Ezirius/Development/OpenCode}"
+OPENCODE_NPM_REGISTRY_BASE="${OPENCODE_NPM_REGISTRY_BASE:-https://registry.npmjs.org}"
+OPENCODE_UBUNTU_LTS_VERSION="${OPENCODE_UBUNTU_LTS_VERSION:-24.04}"
+OPENCODE_TOOL_BUN_VERSION="${OPENCODE_TOOL_BUN_VERSION:-1.3.12}"
+OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/.local/share/opencode-container}"
+OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT:-$HOME/Development/OpenCode}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-latest}"
 OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX:-}"
 
@@ -358,6 +367,10 @@ container_runtime_env_file() {
   printf '%s' "/tmp/opencode-wrapper-runtime.env"
 }
 
+runtime_home_dir() {
+  printf '%s' '/home/opencode'
+}
+
 workspace_mount_spec() {
   local workspace="$1"
   printf '%s:%s' "$(workspace_dir "$workspace")" "$(container_workspace_dir)"
@@ -365,18 +378,18 @@ workspace_mount_spec() {
 
 workspace_home_mount_spec() {
   local workspace="$1"
-  local image_ref="$2"
-  printf '%s:%s' "$(workspace_home_dir "$workspace")" "$(image_runtime_home_dir "$image_ref")"
+  local _image_ref="$2"
+  printf '%s:%s' "$(workspace_home_dir "$workspace")" "$(runtime_home_dir)"
 }
 
 development_mount_spec() {
   printf '%s:%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "/workspace/opencode-development"
 }
 
-require_development_root() {
+development_root_exists() {
   local development_root
   development_root="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
-  [[ -d "$development_root" ]] || fail "configured development root does not exist: $development_root"
+  [[ -d "$development_root" ]]
 }
 
 validate_lane() {
@@ -406,6 +419,8 @@ list_release_tags() {
 data = json.load(sys.stdin)
 seen = set()
 for item in data if isinstance(data, list) else [data]:
+    if item.get("draft") or item.get("prerelease"):
+        continue
     tag = (item.get("tag_name") or "").strip()
     if not tag:
         continue
@@ -423,6 +438,28 @@ tag = (data.get("tag_name") or "").strip()
 if not tag:
     raise SystemExit("failed to resolve latest OpenCode release")
 print(tag[1:] if tag.startswith("v") else tag)'
+}
+
+latest_ubuntu_lts_version() {
+  api_get 'https://changelogs.ubuntu.com/meta-release-lts' | python3 -c 'import re, sys
+versions = []
+for line in sys.stdin:
+    match = re.match(r"Version:\s*([0-9]+\.[0-9]+)", line.strip())
+    if match:
+        versions.append(tuple(int(part) for part in match.group(1).split(".")))
+if not versions:
+    raise SystemExit("failed to resolve latest Ubuntu LTS version")
+latest = sorted(versions)[-1]
+print(f"{latest[0]}.{latest[1]:02d}")'
+}
+
+notify_if_newer_ubuntu_lts_exists() {
+  local latest_lts
+  latest_lts="$(latest_ubuntu_lts_version 2>/dev/null || true)"
+  [[ -n "$latest_lts" ]] || return 0
+  if [[ "$latest_lts" != "$OPENCODE_UBUNTU_LTS_VERSION" ]]; then
+    printf 'Notice: newer Ubuntu LTS available (%s); build continues with pinned Ubuntu LTS %s\n' "$latest_lts" "$OPENCODE_UBUNTU_LTS_VERSION"
+  fi
 }
 
 resolve_upstream_selector() {
@@ -646,69 +683,6 @@ image_label() {
   printf '%s' "$value"
 }
 
-image_config_user() {
-  local image="$1"
-  local normalized value
-  normalized="$(normalize_image_ref "$image")"
-  value="$(podman image inspect -f '{{.Config.User}}' "$image" 2>/dev/null || true)"
-  if [[ -z "$value" || "$value" == "<no value>" ]]; then
-    value="$(podman image inspect -f '{{.Config.User}}' "$normalized" 2>/dev/null || true)"
-  fi
-  if [[ -z "$value" || "$value" == "<no value>" ]]; then
-    value="$(podman image inspect -f '{{.Config.User}}' "localhost/$normalized" 2>/dev/null || true)"
-  fi
-  [[ "$value" == "<no value>" ]] && value=""
-  printf '%s' "$value"
-}
-
-image_env_value() {
-  local image="$1"
-  local key="$2"
-  local normalized env_lines line
-  normalized="$(normalize_image_ref "$image")"
-  env_lines="$(podman image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$image" 2>/dev/null || true)"
-  if [[ -z "$env_lines" ]]; then
-    env_lines="$(podman image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$normalized" 2>/dev/null || true)"
-  fi
-  if [[ -z "$env_lines" ]]; then
-    env_lines="$(podman image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "localhost/$normalized" 2>/dev/null || true)"
-  fi
-
-  while IFS= read -r line; do
-    [[ "$line" == "$key="* ]] || continue
-    printf '%s' "${line#*=}"
-    return 0
-  done <<< "$env_lines"
-
-  return 1
-}
-
-image_runtime_home_dir() {
-  local image="$1"
-  local runtime_home runtime_user
-
-  runtime_home="$(image_env_value "$image" HOME 2>/dev/null || true)"
-  if [[ -n "$runtime_home" ]]; then
-    printf '%s' "$runtime_home"
-    return 0
-  fi
-
-  runtime_user="$(image_config_user "$image")"
-  runtime_user="${runtime_user%%:*}"
-
-  case "$runtime_user" in
-    ''|root|0)
-      printf '%s' '/root'
-      ;;
-    *[!A-Za-z0-9._-]*)
-      fail "failed to resolve runtime home for image '$image'"
-      ;;
-    *)
-      printf '/home/%s' "$runtime_user"
-      ;;
-  esac
-}
-
 container_exists() {
   local name="$1"
   podman container exists "$name"
@@ -730,7 +704,34 @@ container_label() {
 
 container_image_ref() {
   local name="$1"
-  podman inspect -f '{{.ImageName}}' "$name" 2>/dev/null || true
+  normalize_image_ref "$(podman inspect -f '{{.ImageName}}' "$name" 2>/dev/null || true)"
+}
+
+container_mount_source_for_destination() {
+  local name="$1" destination="$2"
+  podman inspect -f '{{range .Mounts}}{{println .Destination "\t" .Source}}{{end}}' "$name" 2>/dev/null | while IFS=$'\t' read -r row_destination row_source; do
+    [[ "$row_destination" == "$destination" ]] || continue
+    printf '%s' "$row_source"
+    return 0
+  done
+}
+
+container_mounts_match_workspace_config() {
+  local container_name="$1" workspace="$2" image_ref="$3"
+  local expected_home expected_workspace expected_development actual_home actual_workspace actual_development
+
+  expected_home="$(workspace_home_dir "$workspace")"
+  expected_workspace="$(workspace_dir "$workspace")"
+  expected_development=""
+  if development_root_exists; then
+    expected_development="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+  fi
+
+  actual_home="$(container_mount_source_for_destination "$container_name" "$(runtime_home_dir)" 2>/dev/null || true)"
+  actual_workspace="$(container_mount_source_for_destination "$container_name" "$(container_workspace_dir)" 2>/dev/null || true)"
+  actual_development="$(container_mount_source_for_destination "$container_name" '/workspace/opencode-development' 2>/dev/null || true)"
+
+  [[ "$actual_home" == "$expected_home" && "$actual_workspace" == "$expected_workspace" && "$actual_development" == "$expected_development" ]]
 }
 
 project_image_refs() {
@@ -1008,7 +1009,7 @@ resolve_container_for_workspace() {
 
 print_container_summary() {
   local workspace="$1" container_name="$2" status image
-  local server_url
+  local server_url development_mount
   status="stopped"
   container_running "$container_name" && status="running"
   if [[ "$status" == "running" ]]; then
@@ -1028,20 +1029,24 @@ print_container_summary() {
   [[ -n "$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")" ]] && printf 'Commit Stamp: %s\n' "$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")"
   printf 'Home Mount: %s\n' "$(workspace_home_dir "$workspace")"
   printf 'Workspace Mount: %s\n' "$(workspace_dir "$workspace")"
-  printf 'Development Mount: %s\n' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+  development_mount='(not mounted)'
+  if development_root_exists; then
+    development_mount="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+  fi
+  printf 'Development Mount: %s\n' "$development_mount"
 }
 
 create_or_replace_container() {
   local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
   local server_port server_publish_spec
   local -a run_args
+
+  server_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
+  server_publish_spec="$(opencode_server_port_publish_spec "$server_port" 2>/dev/null || true)"
+
   if container_exists "$container_name"; then
     podman rm -f "$container_name" >/dev/null
   fi
-
-  require_development_root
-  server_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
-  server_publish_spec="$(opencode_server_port_publish_spec "$server_port" 2>/dev/null || true)"
 
   run_args=(
     run -d
@@ -1059,9 +1064,12 @@ create_or_replace_container() {
   run_args+=(
     -v "$(workspace_home_mount_spec "$workspace" "$image_ref")"
     -v "$(workspace_mount_spec "$workspace")"
-    -v "$(development_mount_spec)"
     "$image_ref"
   )
+
+  if development_root_exists; then
+    run_args+=( -v "$(development_mount_spec)" )
+  fi
 
   podman "${run_args[@]}" >/dev/null
 }
@@ -1094,16 +1102,20 @@ container_server_port_matches_workspace_config() {
 container_matches_workspace_runtime_config() {
   local container_name="$1"
   local workspace="$2"
-  container_server_port_matches_workspace_config "$container_name" "$workspace"
+  local image_ref="$3"
+  container_server_port_matches_workspace_config "$container_name" "$workspace" &&
+    container_mounts_match_workspace_config "$container_name" "$workspace" "$image_ref"
 }
 
 ensure_running_container_matches_image_and_runtime() {
   local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
+  local current_image_ref
 
   if container_exists "$container_name"; then
-    if [[ "$(container_image_ref "$container_name" 2>/dev/null || true)" != "$image_ref" ]]; then
+    current_image_ref="$(container_image_ref "$container_name" 2>/dev/null || true)"
+    if [[ "$current_image_ref" != "$(normalize_image_ref "$image_ref")" ]]; then
       create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
-    elif ! container_matches_workspace_runtime_config "$container_name" "$workspace"; then
+    elif ! container_matches_workspace_runtime_config "$container_name" "$workspace" "$image_ref"; then
       create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
     elif ! container_running "$container_name"; then
       podman start "$container_name" >/dev/null
@@ -1149,7 +1161,9 @@ server_url_for_container_base() {
 
 start_managed_server_in_container() {
   local container_name="$1"
-  podman exec "$container_name" /bin/sh -lc '. /tmp/opencode-wrapper-runtime.env 2>/dev/null || true; cd /workspace/opencode-workspace; mkdir -p /tmp/opencode-wrapper; if [ -f /tmp/opencode-wrapper/server.pid ] && kill -0 "$(cat /tmp/opencode-wrapper/server.pid)" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname 0.0.0.0 --port 4096 >/tmp/opencode-wrapper/server.log 2>&1 & echo $! >/tmp/opencode-wrapper/server.pid' >/dev/null
+  local runtime_env_file
+  runtime_env_file="$(container_runtime_env_file)"
+  podman exec "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; mkdir -p /tmp/opencode-wrapper; if [ -f /tmp/opencode-wrapper/server.pid ] && kill -0 \"\$(cat /tmp/opencode-wrapper/server.pid)\" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname 0.0.0.0 --port 4096 >/tmp/opencode-wrapper/server.log 2>&1 & echo \$! >/tmp/opencode-wrapper/server.pid" >/dev/null
 }
 
 server_active_for_container() {
@@ -1190,9 +1204,12 @@ ensure_managed_server_for_container() {
 start_or_reuse_target() {
   local workspace="$1" kind="$2" ref="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
   local resolved_container_name
+  local existing_image_ref
 
   if [[ "$kind" == "container" ]]; then
-    ensure_running_container_matches_image_and_runtime "$ref" "$(container_image_ref "$ref")" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+    existing_image_ref="$(container_image_ref "$ref")"
+    [[ -n "$existing_image_ref" ]] || fail "failed to resolve backing image for container: $ref"
+    ensure_running_container_matches_image_and_runtime "$ref" "$existing_image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
     printf '%s' "$ref"
     return 0
   fi
@@ -1218,60 +1235,100 @@ exec_podman_interactive_command() {
 
 exec_opencode_in_container() {
   local container_name="$1"
+  local runtime_env_file
   shift
-  exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc '. /tmp/opencode-wrapper-runtime.env 2>/dev/null || true; cd /workspace/opencode-workspace; exec opencode "$@"' sh "$@"
+  runtime_env_file="$(container_runtime_env_file)"
+  exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; exec opencode \"\$@\"" sh "$@"
 }
 
 exec_shell_in_container() {
   local container_name="$1"
+  local runtime_env_file
   shift
+  runtime_env_file="$(container_runtime_env_file)"
   if [[ $# -gt 0 ]]; then
-    exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc '. /tmp/opencode-wrapper-runtime.env 2>/dev/null || true; cd /workspace/opencode-workspace; exec "$@"' sh "$@"
+    exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; exec \"\$@\"" sh "$@"
   else
-    exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc '. /tmp/opencode-wrapper-runtime.env 2>/dev/null || true; cd /workspace/opencode-workspace; exec /bin/sh'
+    exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; exec /bin/sh"
   fi
 }
 
-upstream_image_candidates() {
-  local upstream="$1"
-  if [[ "$upstream" == "main" ]]; then
-    return 0
-  fi
-  printf '%s:%s\n' "$OPENCODE_GHCR_IMAGE" "$upstream"
-  printf '%s:v%s\n' "$OPENCODE_GHCR_IMAGE" "$upstream"
-}
-
-upstream_image_available() {
-  local image_ref="$1"
-  podman manifest inspect "$image_ref" >/dev/null 2>&1
-}
-
-official_image_ref_for_upstream() {
-  local upstream_selector="$1"
-  local resolved candidate
-  resolved="$(resolve_upstream_selector "$upstream_selector")"
-  while IFS= read -r candidate; do
-    [[ -n "$candidate" ]] || continue
-    if upstream_image_available "$candidate"; then
-      printf '%s' "$candidate"
-      return 0
-    fi
-  done < <(upstream_image_candidates "$resolved")
-  return 1
-}
-
-build_wrapper_image_from_base() {
-  local base_image="$1" target_image="$2" lane="$3" upstream="$4" upstream_ref="$5" wrapper="$6" commitstamp="$7"
+build_release_image() {
+  local release_url="$1" release_sha512="$2" target_image="$3" lane="$4" upstream="$5" upstream_ref="$6" wrapper="$7" commitstamp="$8"
   podman build \
     -f "$ROOT/config/containers/Containerfile.wrapper" \
     -t "$target_image" \
-    --build-arg "BASE_IMAGE=$base_image" \
+    --arch "$(container_runtime_arch)" \
+    --build-arg "UBUNTU_VERSION=$OPENCODE_UBUNTU_LTS_VERSION" \
+    --build-arg "OPENCODE_RELEASE_ARCHIVE_URL=$release_url" \
+    --build-arg "OPENCODE_RELEASE_ARCHIVE_SHA512=$release_sha512" \
     --build-arg "OPENCODE_WRAPPER_LANE=$lane" \
     --build-arg "OPENCODE_WRAPPER_UPSTREAM=$upstream" \
     --build-arg "OPENCODE_WRAPPER_UPSTREAM_REF=$upstream_ref" \
     --build-arg "OPENCODE_WRAPPER_CONTEXT=$wrapper" \
     --build-arg "OPENCODE_WRAPPER_COMMITSTAMP=$commitstamp" \
     "$ROOT" >/dev/null
+}
+
+release_binary_package_name() {
+  local arch
+  arch="$(container_runtime_arch)"
+  case "$arch" in
+    x86_64|amd64) printf '%s' 'opencode-linux-x64' ;;
+    aarch64|arm64) printf '%s' 'opencode-linux-arm64' ;;
+    *) fail "unsupported architecture for official OpenCode release packages: $arch" ;;
+  esac
+}
+
+container_runtime_arch() {
+  local arch
+  if [[ -n "${OPENCODE_CONTAINER_ARCH:-}" ]]; then
+    printf '%s' "$OPENCODE_CONTAINER_ARCH"
+    return 0
+  fi
+
+  arch="$(podman info --format '{{.Host.Arch}}' 2>/dev/null || true)"
+  if [[ -n "$arch" ]]; then
+    printf '%s' "$arch"
+    return 0
+  fi
+
+  uname -m
+}
+
+package_registry_metadata() {
+  local package_name="$1" package_version="$2"
+  api_get "$OPENCODE_NPM_REGISTRY_BASE/$package_name/$package_version"
+}
+
+package_download_url() {
+  local package_name="$1" package_version="$2"
+  package_registry_metadata "$package_name" "$package_version" | python3 -c 'import json, sys
+data = json.load(sys.stdin)
+url = ((data.get("dist") or {}).get("tarball") or "").strip()
+if not url:
+    raise SystemExit("failed to resolve package tarball url")
+print(url)'
+}
+
+package_download_sha512_hex() {
+  local package_name="$1" package_version="$2"
+  package_registry_metadata "$package_name" "$package_version" | python3 -c 'import base64, hashlib, json, sys
+data = json.load(sys.stdin)
+integrity = ((data.get("dist") or {}).get("integrity") or "").strip()
+if not integrity.startswith("sha512-"):
+    raise SystemExit("failed to resolve package sha512 integrity")
+print(base64.b64decode(integrity.split("-", 1)[1]).hex())'
+}
+
+release_binary_package_url() {
+  local upstream_version="$1"
+  package_download_url "$(release_binary_package_name)" "$upstream_version"
+}
+
+release_binary_package_sha512_hex() {
+  local upstream_version="$1"
+  package_download_sha512_hex "$(release_binary_package_name)" "$upstream_version"
 }
 
 clone_upstream_source() {
@@ -1296,7 +1353,6 @@ build_source_image() {
   local commitstamp="$6"
   local temp_dir
   local source_dir
-  local base_image
   local source_dockerfile
 
   require_mktemp
@@ -1305,6 +1361,11 @@ build_source_image() {
   temp_dir="$(mktemp -d)"
   trap 'rm -rf "$temp_dir"' RETURN
   source_dir="$temp_dir/source"
+  mkdir -p "$temp_dir/config/containers"
+  mkdir -p "$temp_dir/config/shared"
+  cp "$ROOT/config/containers/entrypoint.sh" "$temp_dir/config/containers/entrypoint.sh"
+  cp "$ROOT/config/containers/install-tools.sh" "$temp_dir/config/containers/install-tools.sh"
+  cp "$ROOT/config/shared/tool-versions.conf" "$temp_dir/config/shared/tool-versions.conf"
 
   if [[ -n "${OPENCODE_SOURCE_OVERRIDE_DIR:-}" ]]; then
     mkdir -p "$source_dir"
@@ -1315,7 +1376,7 @@ build_source_image() {
 
   source_dockerfile="$temp_dir/Containerfile.source-base"
   cat > "$source_dockerfile" <<'EOF'
-FROM oven/bun:1 AS build
+FROM oven/bun:__OPENCODE_TOOL_BUN_VERSION__ AS build
 
 WORKDIR /src
 COPY source/ /src/
@@ -1327,49 +1388,45 @@ RUN set -eu; \
     [ "$count" = "1" ] || { printf 'expected exactly one opencode binary, found %s\n' "$count" >&2; exit 1; }; \
     cp "$matches" /tmp/opencode
 
-FROM debian:bookworm-slim
+FROM ubuntu:__OPENCODE_UBUNTU_LTS_VERSION__
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
-    curl \
-    fd-find \
-    git \
-    jq \
-    less \
-    procps \
-    python3 \
-    ripgrep \
-    tini \
-  && ln -sf /usr/bin/fdfind /usr/local/bin/fd || true \
+COPY config/shared/tool-versions.conf /tmp/opencode-tool-versions.conf
+COPY config/containers/install-tools.sh /tmp/opencode-install-tools.sh
+
+RUN bash /tmp/opencode-install-tools.sh \
   && useradd -m -s /bin/bash opencode \
   && mkdir -p /workspace/opencode-workspace \
   && chown -R opencode:opencode /workspace /home/opencode \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -f /tmp/opencode-tool-versions.conf /tmp/opencode-install-tools.sh
 
 COPY --from=build /tmp/opencode /usr/local/bin/opencode
+COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
+RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 
 USER opencode
 WORKDIR /workspace/opencode-workspace
 
 ENV HOME=/home/opencode
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]
 EOF
-
-  base_image="opencode-source-base:${lane}-${upstream_resolved}-${wrapper_context}-${commitstamp}"
+  sed -i "s/__OPENCODE_UBUNTU_LTS_VERSION__/$OPENCODE_UBUNTU_LTS_VERSION/g" "$source_dockerfile"
+  sed -i "s/__OPENCODE_TOOL_BUN_VERSION__/$OPENCODE_TOOL_BUN_VERSION/g" "$source_dockerfile"
 
   podman build \
     -f "$source_dockerfile" \
-    -t "$base_image" \
+    -t "$target_image" \
+    --arch "$(container_runtime_arch)" \
+    --label "$OPENCODE_LABEL_LANE=$lane" \
+    --label "$OPENCODE_LABEL_UPSTREAM=$upstream_resolved" \
+    --label "$OPENCODE_LABEL_UPSTREAM_REF=$source_ref" \
+    --label "$OPENCODE_LABEL_WRAPPER=$wrapper_context" \
+    --label "$OPENCODE_LABEL_COMMITSTAMP=$commitstamp" \
     "$temp_dir" >/dev/null
-
-  build_wrapper_image_from_base "$base_image" "$target_image" "$lane" "$upstream_resolved" "$source_ref" "$wrapper_context" "$commitstamp"
-  podman rmi "$base_image" >/dev/null 2>&1 || true
 }

@@ -177,7 +177,22 @@ case "$url" in
     printf '{"tag_name":"v1.4.3"}'
     ;;
   */releases)
-    printf '[{"tag_name":"v1.4.3"},{"tag_name":"v1.4.2"}]'
+    printf '[{"tag_name":"v1.4.3","draft":false,"prerelease":false},{"tag_name":"v1.4.2","draft":false,"prerelease":false},{"tag_name":"v1.5.0-beta.1","draft":false,"prerelease":true}]'
+    ;;
+  https://changelogs.ubuntu.com/meta-release-lts)
+    printf 'Dist: noble\nVersion: 24.04\n\nDist: questing\nVersion: 26.04\n'
+    ;;
+  https://registry.npmjs.org/opencode-linux-x64/1.4.3)
+    printf '{"dist":{"tarball":"https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.4.3.tgz","integrity":"sha512-RS6TsDqTUrW5sefxD1KD9Xy9mSYGXAlr2DlGrdi8vNm9e/Bt4r4u557VB7f/Uj2CxTt2Gf7OWl08ZoPlxMJ5Gg=="}}'
+    ;;
+  https://registry.npmjs.org/opencode-linux-x64/1.4.2)
+    printf '{"dist":{"tarball":"https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.4.2.tgz","integrity":"sha512-RS6TsDqTUrW5sefxD1KD9Xy9mSYGXAlr2DlGrdi8vNm9e/Bt4r4u557VB7f/Uj2CxTt2Gf7OWl08ZoPlxMJ5Gg=="}}'
+    ;;
+  https://registry.npmjs.org/opencode-linux-arm64/1.4.3)
+    printf '{"dist":{"tarball":"https://registry.npmjs.org/opencode-linux-arm64/-/opencode-linux-arm64-1.4.3.tgz","integrity":"sha512-9jpVSOEF7TX3gPPAHVAsBT9XEO3LgYafI+IUmOzbBB9CDiVVNJw6JmEffmSpSxY4nkAh322xnMbNjVGEyXQBRA=="}}'
+    ;;
+  https://registry.npmjs.org/opencode-linux-arm64/1.4.2)
+    printf '{"dist":{"tarball":"https://registry.npmjs.org/opencode-linux-arm64/-/opencode-linux-arm64-1.4.2.tgz","integrity":"sha512-9jpVSOEF7TX3gPPAHVAsBT9XEO3LgYafI+IUmOzbBB9CDiVVNJw6JmEffmSpSxY4nkAh322xnMbNjVGEyXQBRA=="}}'
     ;;
   *)
     printf 'unexpected curl url: %s\n' "$url" >&2
@@ -252,7 +267,7 @@ remove_container_record() {
   local name="$1"
   grep -Fv "${name}"$'\t' "$CONTAINERS_FILE" > "$CONTAINERS_FILE.tmp" || true
   mv "$CONTAINERS_FILE.tmp" "$CONTAINERS_FILE"
-  rm -f "$STATE_DIR/port_4096_$name" "$STATE_DIR/server_active_$name"
+  rm -f "$STATE_DIR/port_4096_$name" "$STATE_DIR/server_active_$name" "$STATE_DIR/mount_home_$name" "$STATE_DIR/mount_workspace_$name" "$STATE_DIR/mount_development_$name"
 }
 
 subcommand="${1:?}"
@@ -275,7 +290,9 @@ case "$subcommand" in
   build)
     log_call "build $*"
     target=""
-    base_image=""
+    ubuntu_version=""
+    release_url=""
+    release_sha512=""
     lane=""
     upstream=""
     upstream_ref=""
@@ -291,7 +308,9 @@ case "$subcommand" in
           ;;
         --build-arg)
           case "$2" in
-            BASE_IMAGE=*) base_image="${2#*=}" ;;
+            UBUNTU_VERSION=*) ubuntu_version="${2#*=}" ;;
+            OPENCODE_RELEASE_ARCHIVE_URL=*) release_url="${2#*=}" ;;
+            OPENCODE_RELEASE_ARCHIVE_SHA512=*) release_sha512="${2#*=}" ;;
             OPENCODE_WRAPPER_LANE=*) lane="${2#*=}" ;;
             OPENCODE_WRAPPER_UPSTREAM=*) upstream="${2#*=}" ;;
             OPENCODE_WRAPPER_UPSTREAM_REF=*) upstream_ref="${2#*=}" ;;
@@ -300,21 +319,23 @@ case "$subcommand" in
           esac
           shift 2
           ;;
+        --label)
+          case "$2" in
+            $LABEL_LANE=*) lane="${2#*=}" ;;
+            $LABEL_UPSTREAM=*) upstream="${2#*=}" ;;
+            $LABEL_UPSTREAM_REF=*) upstream_ref="${2#*=}" ;;
+            $LABEL_WRAPPER=*) wrapper="${2#*=}" ;;
+            $LABEL_COMMITSTAMP=*) commitstamp="${2#*=}" ;;
+          esac
+          shift 2
+          ;;
         *)
           shift
           ;;
       esac
     done
-    case "$base_image" in
-      ghcr.io/anomalyco/opencode:*)
-        runtime_user="root"
-        runtime_home="/root"
-        ;;
-      *)
-        runtime_user="opencode"
-        runtime_home="/home/opencode"
-        ;;
-    esac
+    runtime_user="opencode"
+    runtime_home="/home/opencode"
     remove_image_record "$target"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$target" "$lane" "$upstream" "$upstream_ref" "$wrapper" "$commitstamp" "$runtime_user" "$runtime_home" >> "$IMAGES_FILE"
     ;;
@@ -372,6 +393,11 @@ case "$subcommand" in
     case "$format" in
       '{{.State.Running}}') printf '%s\n' "$status" ;;
       '{{.ImageName}}') printf '%s\n' "$image_ref" ;;
+      '{{range .Mounts}}{{println .Destination "\t" .Source}}{{end}}')
+        [[ -f "$STATE_DIR/mount_home_$name" ]] && printf '/home/opencode\t%s\n' "$(cat "$STATE_DIR/mount_home_$name")"
+        [[ -f "$STATE_DIR/mount_workspace_$name" ]] && printf '/workspace/opencode-workspace\t%s\n' "$(cat "$STATE_DIR/mount_workspace_$name")"
+        [[ -f "$STATE_DIR/mount_development_$name" ]] && printf '/workspace/opencode-development\t%s\n' "$(cat "$STATE_DIR/mount_development_$name")"
+        ;;
       *"$LABEL_WORKSPACE"*) printf '%s\n' "$workspace" ;;
       *"$LABEL_LANE"*) printf '%s\n' "$lane" ;;
       *"$LABEL_UPSTREAM"*) printf '%s\n' "$upstream" ;;
@@ -390,6 +416,9 @@ case "$subcommand" in
     commitstamp=""
     image_ref=""
     server_port=""
+    home_mount=""
+    workspace_mount=""
+    development_mount=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --name)
@@ -413,7 +442,15 @@ case "$subcommand" in
           esac
           shift 2
           ;;
-        -v|--restart|-d)
+        -v)
+          case "$2" in
+            *:/home/opencode) home_mount="${2%:/home/opencode}" ;;
+            *:/workspace/opencode-workspace) workspace_mount="${2%:/workspace/opencode-workspace}" ;;
+            *:/workspace/opencode-development) development_mount="${2%:/workspace/opencode-development}" ;;
+          esac
+          shift 2
+          ;;
+        --restart|-d)
           if [[ "$1" == "-d" ]]; then shift; else shift 2; fi
           ;;
         *)
@@ -427,6 +464,9 @@ case "$subcommand" in
     if [[ -n "$server_port" ]]; then
       printf '%s\n' "127.0.0.1:$server_port" > "$STATE_DIR/port_4096_$name"
     fi
+    [[ -n "$home_mount" ]] && printf '%s\n' "$home_mount" > "$STATE_DIR/mount_home_$name"
+    [[ -n "$workspace_mount" ]] && printf '%s\n' "$workspace_mount" > "$STATE_DIR/mount_workspace_$name"
+    [[ -n "$development_mount" ]] && printf '%s\n' "$development_mount" > "$STATE_DIR/mount_development_$name"
     ;;
   start)
     log_call "start $*"
@@ -494,25 +534,37 @@ export OPENCODE_SOURCE_OVERRIDE_DIR="$SOURCE_DIR"
 export OPENCODE_SKIP_BUILD_CONTEXT_CHECK=1
 
 source "$ROOT/lib/shell/common.sh"
-assert_eq $'1.4.3\n1.4.2' "$(list_release_tags)" 'release list resolves from GitHub API output'
+assert_eq $'1.4.3\n1.4.2' "$(list_release_tags)" 'release list resolves from GitHub API output and excludes prereleases'
 assert_eq '1.4.3' "$(latest_release_tag)" 'latest release resolves from GitHub API output'
+assert_eq '26.04' "$(latest_ubuntu_lts_version)" 'latest Ubuntu LTS resolves from Ubuntu metadata'
+NO_PYTHON_BIN="$TMPDIR/no-python-bin"
+mkdir -p "$NO_PYTHON_BIN"
+ln -sf "$(command -v bash)" "$NO_PYTHON_BIN/bash"
+ln -sf "$(command -v dirname)" "$NO_PYTHON_BIN/dirname"
+ln -sf "$MOCK_BIN/podman" "$NO_PYTHON_BIN/podman"
+assert_command_fails "env PATH='$NO_PYTHON_BIN' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' '$ROOT/scripts/shared/opencode-build' test 1.4.3" "$STATE_DIR/build-no-python.out"
+assert_contains "$STATE_DIR/build-no-python.out" 'python3 is required' 'build fails early with a clear prerequisite error when python3 is missing'
 
 "$ROOT/scripts/shared/opencode-build" test 1.4.3 > "$STATE_DIR/build.out"
-assert_contains "$STATE_DIR/build.out" 'Build source: official image ghcr.io/anomalyco/opencode:1.4.3' 'build prefers official image for exact tag'
+assert_contains "$STATE_DIR/build.out" 'Notice: newer Ubuntu LTS available (26.04); build continues with pinned Ubuntu LTS 24.04' 'build notifies when the Ubuntu LTS pin is behind'
+assert_contains "$STATE_DIR/build.out" 'Build source: official release v1.4.3' 'build uses the official stable release artefact for exact releases'
 assert_contains "$STATE_DIR/build.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'build creates immutable image ref'
+assert_contains "$STATE_DIR/podman.log" 'UBUNTU_VERSION=24.04' 'release build uses the pinned Ubuntu LTS version'
 
 (cd "$TMPDIR" && "$ROOT/scripts/shared/opencode-build" test 1.4.3 > "$STATE_DIR/build-outside-repo.out")
 assert_contains "$STATE_DIR/build-outside-repo.out" 'Image already exists: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'build uses repository workdir even when launched from outside the repo'
+
+env OPENCODE_COMMITSTAMP_OVERRIDE='20260410-170000-deffeed' "$ROOT/scripts/shared/opencode-build" test > "$STATE_DIR/build-default.out"
+assert_contains "$STATE_DIR/build-default.out" 'Build source: official release v1.4.3' 'build defaults to the latest stable official release when no upstream is given'
+assert_contains "$STATE_DIR/build-default.out" 'Built image: opencode-local:test-1.4.3-main-20260410-170000-deffeed' 'default build resolves to the latest stable release identity'
 
 "$ROOT/scripts/shared/opencode-build" test main > "$STATE_DIR/build-main.out"
 assert_contains "$STATE_DIR/build-main.out" 'Build source: upstream source ref dev' 'main build uses upstream source ref'
 assert_contains "$STATE_DIR/build-main.out" 'Built image: opencode-local:test-main-main-20260410-163440-ab12cd3' 'main build creates immutable image ref'
 assert_contains "$STATE_DIR/podman.log" 'Containerfile.source-base' 'main build uses source-base containerfile'
-assert_contains "$STATE_DIR/podman.log" 'config/containers/Containerfile.wrapper' 'main build wraps the source base image'
 
 "$ROOT/scripts/shared/opencode-build" test 1.4.2 > "$STATE_DIR/build-fallback.out"
-assert_contains "$STATE_DIR/build-fallback.out" 'Build source: upstream source ref v1.4.2' 'release fallback uses source when no official image is available'
-assert_contains "$STATE_DIR/podman.log" 'Containerfile.source-base' 'release fallback uses source-base containerfile'
+assert_contains "$STATE_DIR/build-fallback.out" 'Build source: official release v1.4.2' 'exact stable releases use the official release artefact path'
 
 reset_git_mock_state
 assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_DIFF_STATE=unstaged '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has unstaged changes' "$STATE_DIR/build-production-unstaged.out"
@@ -533,13 +585,19 @@ assert_not_contains "$STATE_DIR/start.out" 'Server: http://127.0.0.1:' 'start do
 assert_contains "$STATE_DIR/start.out" 'Workspace Dir: /workspace/opencode-workspace' 'start prints container workspace dir'
 assert_contains "$STATE_DIR/podman.log" '--name opencode-general-test-1.4.3-main' 'run uses deterministic container name'
 assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1::4096' 'start does not publish a random host server port when unset'
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-home:/root" 'official image run mounts workspace home at the upstream root home'
+assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-home:/home/opencode" 'owned Ubuntu runtime mounts workspace home at the fixed runtime home'
 assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-workspace:/workspace/opencode-workspace" 'run mounts workspace dir'
 assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT:/workspace/opencode-development" 'run mounts configured development root'
 assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:6553:4096' 'global OPENCODE_HOST_SERVER_PORT environment does not override per-workspace server config'
 
+rm -rf "$DEVELOPMENT_ROOT"
+: > "$STATE_DIR/podman.log"
+"$ROOT/scripts/shared/opencode-start" general test 1.4.3 > "$STATE_DIR/start-nodevroot.out"
+assert_not_contains "$STATE_DIR/podman.log" '/workspace/opencode-development' 'release containers can start without a configured development mount root'
+mkdir -p "$DEVELOPMENT_ROOT"
+
 "$ROOT/scripts/shared/opencode-start" sourcey test 1.4.2 > "$STATE_DIR/start-source.out"
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/sourcey/opencode-home:/home/opencode" 'source-built run mounts workspace home at the upstream opencode home'
+assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/sourcey/opencode-home:/home/opencode" 'release-built and source-built runtimes share the same fixed runtime home'
 podman rm -f opencode-sourcey-test-1.4.2-main >/dev/null
 
 mkdir -p "$TMPDIR/workspaces/fixed/opencode-workspace/.config/opencode"
@@ -625,6 +683,19 @@ EOF
 "$ROOT/scripts/shared/opencode-start" general test 1.4.3 > "$STATE_DIR/start-general-fixed.out"
 assert_contains "$STATE_DIR/start-general-fixed.out" 'Server: http://127.0.0.1:5098' 'restarting after adding a configured host server port recreates the container and starts the managed server'
 assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5098:4096' 'reconfigured workspace recreates container with the configured host server port'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-normalize-test-1.4.3-main' normalize test 1.4.3 main 20260410-163440-ab12cd3 true 'localhost/opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
+assert_eq 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' "$(container_image_ref opencode-normalize-test-1.4.3-main)" 'container image refs are normalised before runtime comparisons'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-remount-test-1.4.3-main' remount test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
+printf '%s\n' "$TMPDIR/workspaces/remount/opencode-home" > "$STATE_DIR/mount_home_opencode-remount-test-1.4.3-main"
+printf '%s\n' "$TMPDIR/workspaces/remount/opencode-workspace" > "$STATE_DIR/mount_workspace_opencode-remount-test-1.4.3-main"
+printf '%s\n' "$DEVELOPMENT_ROOT-old" > "$STATE_DIR/mount_development_opencode-remount-test-1.4.3-main"
+: > "$STATE_DIR/podman.log"
+"$ROOT/scripts/shared/opencode-start" remount test 1.4.3 > "$STATE_DIR/start-remount.out"
+assert_contains "$STATE_DIR/podman.log" 'rm -f opencode-remount-test-1.4.3-main' 'start recreates the container when the configured development mount changes'
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
 
 podman rm -f opencode-fixed-test-1.4.3-main >/dev/null
 

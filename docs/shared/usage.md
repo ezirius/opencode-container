@@ -7,7 +7,7 @@ This wrapper now uses:
 - immutable image tags
 - deterministic container names
 - picker-based workspace commands
-- official-image-first release builds with source fallback
+- latest-stable-release-first builds into a wrapper-owned Ubuntu runtime
 - source builds for upstream `main`
 - no mutable shared-image upgrade flow
 
@@ -23,18 +23,15 @@ Where:
 - `lane` is `production` or `test`
 - `upstream` is `main`, `latest`, or an exact release tag such as `1.4.3`
 
-If `upstream` is omitted, the script prompts with:
-
-- `main`
-- available upstream release tags, newest to oldest
+If `upstream` is omitted, the script builds the latest stable official OpenCode release.
 
 Rules:
 
 - `main` builds from upstream source
-- exact releases prefer `ghcr.io/anomalyco/opencode:<exact-tag>`
-- if an exact release image is unavailable, the wrapper falls back to source
-- `latest` resolves to an exact release before naming
-- the picker does not show floating `latest`
+- exact stable releases install the official OpenCode release into the wrapper-owned Ubuntu runtime
+- `latest` resolves to an exact stable release before naming
+- prerelease, beta, preview, rc, nightly, and other non-stable releases are not selected by default
+- wrapper-owned defaults such as the Ubuntu LTS base version are pinned in config, checked for newer suitable versions during build, and only changed deliberately
 
 Production builds:
 
@@ -95,9 +92,9 @@ With no argument, the mixed picker shows containers first and then images.
 
 `All, but newest` means:
 
-- for containers: keep the newest container per workspace
+- for containers: keep the preferred container per workspace, where `production` wins over `test` and commit timestamp breaks ties within the same lane
 - for images: keep the image serving each kept newest container
-- in mixed mode: keep the newest container per workspace and the image serving it
+- in mixed mode: keep the preferred container per workspace and the image serving it
 
 `All` in mixed mode removes all containers first and then all images.
 
@@ -111,20 +108,22 @@ Each workspace uses:
 
 Directory mappings are:
 
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> the upstream image runtime home, such as `/root` or `/home/opencode`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/home/opencode`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace` -> `/workspace/opencode-workspace`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode` -> `/workspace/opencode-workspace/.config/opencode`
-- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development`
+- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development` when that host path exists
 
 OpenCode remains responsible for its own home/state layout under that runtime home.
 
 ## Wrapper Runtime Config
 
 Wrapper defaults are defined in `config/shared/opencode.conf`.
+Pinned shared-tool versions are defined in `config/shared/tool-versions.conf`.
 
 Workspace runtime files are:
 
 - `config/shared/opencode.conf`
+- `config/shared/tool-versions.conf`
 - `config.env`
 - `secrets.env`
 
@@ -145,6 +144,8 @@ Rules:
 
 - `config/shared/opencode.conf` is wrapper-only and not OpenCode-native config
 - `config/shared/opencode.conf` is for wrapper-wide defaults, not workspace runtime overrides
+- wrapper-owned defaults such as the Ubuntu LTS base version are pinned in config and only changed deliberately
+- the build currently checks the Ubuntu LTS pin for newer suitable versions and reports when it is behind
 - `config.env` is seeded automatically as a commented starter file
 - `secrets.env` is optional
 - `config.env` and `secrets.env` are parsed as environment assignments and are not executed as shell scripts
@@ -169,8 +170,9 @@ If `OPENCODE_HOST_SERVER_PORT` is set for a workspace, the wrapper starts `openc
 - `OPENCODE_IMAGE_NAME`
 - `OPENCODE_PROJECT_PREFIX`
 - `OPENCODE_REPO_URL`
-- `OPENCODE_GHCR_IMAGE`
 - `OPENCODE_GITHUB_API_BASE`
+- `OPENCODE_NPM_REGISTRY_BASE`
+- `OPENCODE_UBUNTU_LTS_VERSION`
 - `OPENCODE_DEVELOPMENT_ROOT`
 
 `OPENCODE_HOST_SERVER_PORT` is configured per workspace in `config.env` or `secrets.env`, not as a wrapper-global environment override.
@@ -187,3 +189,56 @@ For tests and automation, the wrapper also honors:
 Run:
 
 - `./tests/shared/test-all.sh`
+
+Optional real-build smoke checks can be enabled with:
+
+- `OPENCODE_ENABLE_SMOKE_BUILDS=1 ./tests/shared/test-build-smoke.sh`
+
+This requires a working `podman` environment and intentionally performs a real Ubuntu runtime build.
+
+## Shared Toolbox
+
+The owned Ubuntu runtime includes a standard shared toolbox:
+
+- `git`
+- `ripgrep`
+- `fd`
+- `python`
+- `jq`
+- `direnv`
+- `just`
+- `yq`
+- `uv`
+- `delta`
+- `watchexec`
+- `shellcheck`
+- `podman`
+- `eza`
+- `bat`
+- `zoxide`
+- `xh`
+- `gh`
+- `jj`
+- `wt`
+- `worktrunk` symlink
+- `basedpyright`
+- `pytest`
+- `ruff`
+- `skopeo`
+- `dive`
+- `buildah`
+- `age`
+- `sops`
+- `doggo`
+- `grpcurl`
+- `websocat`
+- `podman-compose`
+- `hyperfine`
+- `duf`
+- `lnav`
+- `shfmt`
+- `strace`
+- `miller`
+- `csvlens`
+- `caddy`
+- `tlrc`

@@ -15,7 +15,7 @@ fi
 
 [[ $# -le 1 ]] || usage_error "$(basename "$0") [containers|images]"
 MODE="${1:-mixed}"
-[[ "$MODE" == "mixed" || "$MODE" == "containers" || "$MODE" == "images" ]] || fail "mode must be 'containers' or 'images'"
+[[ "$MODE" == "mixed" || "$MODE" == "containers" || "$MODE" == "images" ]] || fail "mode must be 'mixed', 'containers', or 'images'"
 require_podman
 
 container_lane_rank() {
