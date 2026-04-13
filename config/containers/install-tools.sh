@@ -90,6 +90,8 @@ install_from_tar_archive() {
 ubuntu_packages=()
 
 install_apt_packages() {
+  printf '#!/bin/sh\nexit 101\n' >/usr/sbin/policy-rc.d
+  chmod 755 /usr/sbin/policy-rc.d
   apt-get update
   apt-get install -y --no-install-recommends \
     age \
@@ -100,7 +102,6 @@ install_apt_packages() {
     caddy \
     curl \
     direnv \
-    dive \
     duf \
     eza \
     fd-find \
@@ -128,6 +129,8 @@ install_apt_packages() {
     xz-utils \
     zoxide \
   && rm -rf /var/lib/apt/lists/*
+
+  rm -f /usr/sbin/policy-rc.d
 
   ln -sf /usr/bin/fdfind /usr/local/bin/fd || true
   ln -sf /usr/bin/batcat /usr/local/bin/bat || true
