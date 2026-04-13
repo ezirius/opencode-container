@@ -40,7 +40,7 @@ This plan applies to the OpenCode container wrapper itself, not to upstream Open
 
 The wrapper must:
 
-- preserve OpenCode state under the wrapper-owned runtime home `/home/opencode`
+- preserve OpenCode state under the wrapper-owned runtime home `/root`
 - keep wrapper-owned config and metadata out of upstream-owned state
 - use Hindsight-style immutable image and container identity
 - use Hindsight-style workspace target selection and removal flows
@@ -216,13 +216,13 @@ The wrapper must never treat `opencode-home` as wrapper-owned storage.
 
 Each workspace container mounts exactly:
 
-- `"$BASE/<workspace>/opencode-home:/home/opencode"`
+- `"$BASE/<workspace>/opencode-home:/root"`
 - `"$BASE/<workspace>/opencode-workspace:/workspace/opencode-workspace"`
 - `"$OPENCODE_DEVELOPMENT_ROOT:/workspace/opencode-development"` when that host path exists
 
 In-container meaning:
 
-- `/home/opencode` = the wrapper-owned OpenCode runtime home
+- `/root` = the wrapper-owned OpenCode runtime home
 - `/workspace/opencode-workspace` = wrapper-owned workspace mount
 - `/workspace/opencode-workspace/.config/opencode` = wrapper env/config area
 - `/workspace/opencode-development` = optional extra host development mount when a local development tree is available
@@ -237,10 +237,10 @@ OpenCode is expected to populate `opencode-home` substantially over time.
 
 Verified and documented upstream-owned locations include:
 
-- `/home/opencode/.config/opencode/`
-- `/home/opencode/.local/share/opencode/`
-- `/home/opencode/.local/state/opencode/`
-- `/home/opencode/.cache/opencode/`
+- `/root/.config/opencode/`
+- `/root/.local/share/opencode/`
+- `/root/.local/state/opencode/`
+- `/root/.cache/opencode/`
 
 Documented examples include:
 
@@ -288,12 +288,12 @@ It must not contain OpenCode-native settings such as:
 - TUI settings
 - agents, commands, plugins, or themes
 
-Those OpenCode-native settings stay upstream-native under `/home/opencode/.config/opencode` or in project-local OpenCode config.
+Those OpenCode-native settings stay upstream-native under `/root/.config/opencode` or in project-local OpenCode config.
 
 Rules:
 
 - `.env` files are wrapper runtime inputs
-- OpenCode-native config stays in upstream-native JSON or JSONC files under `/home/opencode/.config/opencode`
+- OpenCode-native config stays in upstream-native JSON or JSONC files under `/root/.config/opencode`
 - wrapper-owned defaults such as the Ubuntu LTS base version must be pinned in config, checked for newer suitable versions during build, and never changed silently
 - the current implementation performs that newer-version notification for the pinned Ubuntu LTS base
 - wrapper config or secrets changes must be applied by container restart only
@@ -563,7 +563,7 @@ Do not copy Hindsight's port and HTTP-ready assertions into OpenCode tests unles
 5. Add stable-release installation and `main` source-build support inside that owned runtime.
 6. Add immutable image naming and deterministic container naming.
 7. Replace the current mount layout with:
-- `/home/opencode`
+- `/root`
 - `/workspace/opencode-workspace`
 - `/workspace/opencode-development`
 8. Add wrapper env loading via `config.env` and optional `secrets.env`.

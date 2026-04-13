@@ -1,4 +1,6 @@
 ARG UBUNTU_VERSION
+ARG OPENCODE_CONTAINER_WORKSPACE_DIR
+ARG OPENCODE_CONTAINER_RUNTIME_HOME
 FROM ubuntu:${UBUNTU_VERSION}
 
 ARG OPENCODE_WRAPPER_LANE
@@ -26,8 +28,8 @@ COPY config/containers/install-tools.sh /tmp/opencode-install-tools.sh
 
 RUN bash /tmp/opencode-install-tools.sh \
   && useradd -m -s /bin/bash opencode \
-  && mkdir -p /workspace/opencode-workspace \
-  && chown -R opencode:opencode /workspace /run \
+  && mkdir -p "${OPENCODE_CONTAINER_WORKSPACE_DIR}" "${OPENCODE_CONTAINER_RUNTIME_HOME}" \
+  && chown -R root:root /workspace /run "${OPENCODE_CONTAINER_RUNTIME_HOME}" \
   && rm -f /tmp/opencode-tool-versions.conf /tmp/opencode-install-tools.sh
 
 RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIVE_SHA512" \
@@ -41,10 +43,10 @@ RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIV
 COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
 RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 
-USER opencode
-WORKDIR /workspace/opencode-workspace
+USER root
+WORKDIR ${OPENCODE_CONTAINER_WORKSPACE_DIR}
 
-ENV HOME=/root
+ENV HOME=${OPENCODE_CONTAINER_RUNTIME_HOME}
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]

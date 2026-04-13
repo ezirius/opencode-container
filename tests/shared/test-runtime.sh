@@ -334,8 +334,8 @@ case "$subcommand" in
           ;;
       esac
     done
-    runtime_user="opencode"
-    runtime_home="/home/opencode"
+    runtime_user="root"
+    runtime_home="/root"
     remove_image_record "$target"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$target" "$lane" "$upstream" "$upstream_ref" "$wrapper" "$commitstamp" "$runtime_user" "$runtime_home" >> "$IMAGES_FILE"
     ;;
@@ -394,7 +394,7 @@ case "$subcommand" in
       '{{.State.Running}}') printf '%s\n' "$status" ;;
       '{{.ImageName}}') printf '%s\n' "$image_ref" ;;
       '{{range .Mounts}}{{printf "%s\t%s\n" .Destination .Source}}{{end}}')
-        [[ -f "$STATE_DIR/mount_home_$name" ]] && printf '/home/opencode\t%s\n' "$(cat "$STATE_DIR/mount_home_$name")"
+        [[ -f "$STATE_DIR/mount_home_$name" ]] && printf '/root\t%s\n' "$(cat "$STATE_DIR/mount_home_$name")"
         [[ -f "$STATE_DIR/mount_workspace_$name" ]] && printf '/workspace/opencode-workspace\t%s\n' "$(cat "$STATE_DIR/mount_workspace_$name")"
         [[ -f "$STATE_DIR/mount_development_$name" ]] && printf '/workspace/opencode-development\t%s\n' "$(cat "$STATE_DIR/mount_development_$name")"
         ;;
@@ -435,7 +435,7 @@ case "$subcommand" in
           esac
           shift 2
           ;;
-        -p)
+        -e|-p)
           case "$2" in
             127.0.0.1::4096) server_port="64096" ;;
             127.0.0.1:*:4096) server_port="${2#127.0.0.1:}"; server_port="${server_port%:4096}" ;;
@@ -444,7 +444,7 @@ case "$subcommand" in
           ;;
         -v)
           case "$2" in
-            *:/home/opencode) home_mount="${2%:/home/opencode}" ;;
+            *:/root) home_mount="${2%:/root}" ;;
             *:/workspace/opencode-workspace) workspace_mount="${2%:/workspace/opencode-workspace}" ;;
             *:/workspace/opencode-development) development_mount="${2%:/workspace/opencode-development}" ;;
           esac
@@ -585,7 +585,7 @@ assert_not_contains "$STATE_DIR/start.out" 'Server: http://127.0.0.1:' 'start do
 assert_contains "$STATE_DIR/start.out" 'Workspace Dir: /workspace/opencode-workspace' 'start prints container workspace dir'
 assert_contains "$STATE_DIR/podman.log" '--name opencode-general-test-1.4.3-main' 'run uses deterministic container name'
 assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1::4096' 'start does not publish a random host server port when unset'
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-home:/home/opencode" 'owned Ubuntu runtime mounts workspace home at the fixed runtime home'
+assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-home:/root" 'owned Ubuntu runtime mounts workspace home at the fixed runtime home'
 assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-workspace:/workspace/opencode-workspace" 'run mounts workspace dir'
 assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT:/workspace/opencode-development" 'run mounts configured development root'
 assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:6553:4096' 'global OPENCODE_HOST_SERVER_PORT environment does not override per-workspace server config'
@@ -597,7 +597,7 @@ assert_not_contains "$STATE_DIR/podman.log" '/workspace/opencode-development' 'r
 mkdir -p "$DEVELOPMENT_ROOT"
 
 "$ROOT/scripts/shared/opencode-start" sourcey test 1.4.2 > "$STATE_DIR/start-source.out"
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/sourcey/opencode-home:/home/opencode" 'release-built and source-built runtimes share the same fixed runtime home'
+assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/sourcey/opencode-home:/root" 'release-built and source-built runtimes share the same fixed runtime home'
 podman rm -f opencode-sourcey-test-1.4.2-main >/dev/null
 
 mkdir -p "$TMPDIR/workspaces/fixed/opencode-workspace/.config/opencode"

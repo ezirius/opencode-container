@@ -9,6 +9,11 @@ __env_OPENCODE_NPM_REGISTRY_BASE="${OPENCODE_NPM_REGISTRY_BASE-}"
 __env_OPENCODE_UBUNTU_LTS_VERSION="${OPENCODE_UBUNTU_LTS_VERSION-}"
 __env_OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT-}"
 __env_OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT-}"
+__env_OPENCODE_CONTAINER_RUNTIME_HOME="${OPENCODE_CONTAINER_RUNTIME_HOME-}"
+__env_OPENCODE_CONTAINER_WORKSPACE_DIR="${OPENCODE_CONTAINER_WORKSPACE_DIR-}"
+__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR="${OPENCODE_CONTAINER_DEVELOPMENT_DIR-}"
+__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE="${OPENCODE_CONTAINER_RUNTIME_ENV_FILE-}"
+__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR="${OPENCODE_CONTAINER_RUNTIME_STATE_DIR-}"
 __env_OPENCODE_VERSION="${OPENCODE_VERSION-}"
 __env_OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX-}"
 __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE="${OPENCODE_WRAPPER_CONTEXT_OVERRIDE-}"
@@ -34,24 +39,34 @@ fi
 [[ -z "$__env_OPENCODE_UBUNTU_LTS_VERSION" ]] || OPENCODE_UBUNTU_LTS_VERSION="$__env_OPENCODE_UBUNTU_LTS_VERSION"
 [[ -z "$__env_OPENCODE_BASE_ROOT" ]] || OPENCODE_BASE_ROOT="$__env_OPENCODE_BASE_ROOT"
 [[ -z "$__env_OPENCODE_DEVELOPMENT_ROOT" ]] || OPENCODE_DEVELOPMENT_ROOT="$__env_OPENCODE_DEVELOPMENT_ROOT"
+[[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_HOME" ]] || OPENCODE_CONTAINER_RUNTIME_HOME="$__env_OPENCODE_CONTAINER_RUNTIME_HOME"
+[[ -z "$__env_OPENCODE_CONTAINER_WORKSPACE_DIR" ]] || OPENCODE_CONTAINER_WORKSPACE_DIR="$__env_OPENCODE_CONTAINER_WORKSPACE_DIR"
+[[ -z "$__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR" ]] || OPENCODE_CONTAINER_DEVELOPMENT_DIR="$__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR"
+[[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE" ]] || OPENCODE_CONTAINER_RUNTIME_ENV_FILE="$__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE"
+[[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR" ]] || OPENCODE_CONTAINER_RUNTIME_STATE_DIR="$__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR"
 [[ -z "$__env_OPENCODE_VERSION" ]] || OPENCODE_VERSION="$__env_OPENCODE_VERSION"
 [[ -z "$__env_OPENCODE_SELECT_INDEX" ]] || OPENCODE_SELECT_INDEX="$__env_OPENCODE_SELECT_INDEX"
 [[ -z "$__env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE" ]] || OPENCODE_WRAPPER_CONTEXT_OVERRIDE="$__env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE"
 [[ -z "$__env_OPENCODE_COMMITSTAMP_OVERRIDE" ]] || OPENCODE_COMMITSTAMP_OVERRIDE="$__env_OPENCODE_COMMITSTAMP_OVERRIDE"
 [[ -z "$__env_OPENCODE_SOURCE_OVERRIDE_DIR" ]] || OPENCODE_SOURCE_OVERRIDE_DIR="$__env_OPENCODE_SOURCE_OVERRIDE_DIR"
 [[ -z "$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK" ]] || OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK"
-unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_REPO_URL __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_NPM_REGISTRY_BASE __env_OPENCODE_UBUNTU_LTS_VERSION __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_VERSION __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
+unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_REPO_URL __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_NPM_REGISTRY_BASE __env_OPENCODE_UBUNTU_LTS_VERSION __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_CONTAINER_RUNTIME_HOME __env_OPENCODE_CONTAINER_WORKSPACE_DIR __env_OPENCODE_CONTAINER_DEVELOPMENT_DIR __env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE __env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR __env_OPENCODE_VERSION __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
 
-OPENCODE_IMAGE_NAME="${OPENCODE_IMAGE_NAME:-opencode-local}"
-OPENCODE_PROJECT_PREFIX="${OPENCODE_PROJECT_PREFIX:-opencode}"
-OPENCODE_REPO_URL="${OPENCODE_REPO_URL:-https://github.com/anomalyco/opencode.git}"
-OPENCODE_GITHUB_API_BASE="${OPENCODE_GITHUB_API_BASE:-https://api.github.com}"
-OPENCODE_NPM_REGISTRY_BASE="${OPENCODE_NPM_REGISTRY_BASE:-https://registry.npmjs.org}"
-OPENCODE_UBUNTU_LTS_VERSION="${OPENCODE_UBUNTU_LTS_VERSION:-24.04}"
-OPENCODE_TOOL_BUN_VERSION="${OPENCODE_TOOL_BUN_VERSION:-1.3.12}"
-OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/containers-artifici/opencode-container}"
-OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT:-$HOME/Development/OpenCode}"
-OPENCODE_VERSION="${OPENCODE_VERSION:-latest}"
+[[ -n "${OPENCODE_IMAGE_NAME:-}" ]] || fail "missing OPENCODE_IMAGE_NAME in config/shared/opencode.conf"
+[[ -n "${OPENCODE_PROJECT_PREFIX:-}" ]] || fail "missing OPENCODE_PROJECT_PREFIX in config/shared/opencode.conf"
+[[ -n "${OPENCODE_REPO_URL:-}" ]] || fail "missing OPENCODE_REPO_URL in config/shared/opencode.conf"
+[[ -n "${OPENCODE_GITHUB_API_BASE:-}" ]] || fail "missing OPENCODE_GITHUB_API_BASE in config/shared/opencode.conf"
+[[ -n "${OPENCODE_NPM_REGISTRY_BASE:-}" ]] || fail "missing OPENCODE_NPM_REGISTRY_BASE in config/shared/opencode.conf"
+[[ -n "${OPENCODE_UBUNTU_LTS_VERSION:-}" ]] || fail "missing OPENCODE_UBUNTU_LTS_VERSION in config/shared/opencode.conf"
+[[ -n "${OPENCODE_TOOL_BUN_VERSION:-}" ]] || fail "missing OPENCODE_TOOL_BUN_VERSION in config/shared/tool-versions.conf"
+[[ -n "${OPENCODE_BASE_ROOT:-}" ]] || fail "missing OPENCODE_BASE_ROOT in config/shared/opencode.conf"
+[[ -n "${OPENCODE_DEVELOPMENT_ROOT:-}" ]] || fail "missing OPENCODE_DEVELOPMENT_ROOT in config/shared/opencode.conf"
+[[ -n "${OPENCODE_CONTAINER_RUNTIME_HOME:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_HOME in config/shared/opencode.conf"
+[[ -n "${OPENCODE_CONTAINER_WORKSPACE_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_WORKSPACE_DIR in config/shared/opencode.conf"
+[[ -n "${OPENCODE_CONTAINER_DEVELOPMENT_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_DEVELOPMENT_DIR in config/shared/opencode.conf"
+[[ -n "${OPENCODE_CONTAINER_RUNTIME_ENV_FILE:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_ENV_FILE in config/shared/opencode.conf"
+[[ -n "${OPENCODE_CONTAINER_RUNTIME_STATE_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_STATE_DIR in config/shared/opencode.conf"
+[[ -n "${OPENCODE_VERSION:-}" ]] || fail "missing OPENCODE_VERSION in config/shared/opencode.conf"
 OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX:-}"
 
 OPENCODE_LABEL_NAMESPACE="opencode.wrapper"
@@ -242,8 +257,8 @@ seed_workspace_config_env_file() {
 # Use secrets.env for tokens, keys, passwords, and other secrets.
 #
 # Non-secret examples:
-# OPENCODE_CONFIG=/home/opencode/.config/opencode/opencode.json
-# OPENCODE_CONFIG_DIR=/workspace/opencode-workspace/.opencode
+  # OPENCODE_CONFIG=~/.config/opencode/opencode.json
+  # OPENCODE_CONFIG_DIR=.opencode
 # OPENCODE_MODEL=anthropic/claude-sonnet-4-5
 # OPENCODE_HOST_SERVER_PORT=4096
 EOF
@@ -365,7 +380,7 @@ opencode_server_port_publish_spec() {
 }
 
 container_workspace_dir() {
-  printf '%s' "/workspace/opencode-workspace"
+  printf '%s' "$OPENCODE_CONTAINER_WORKSPACE_DIR"
 }
 
 container_config_dir() {
@@ -373,11 +388,27 @@ container_config_dir() {
 }
 
 container_runtime_env_file() {
-  printf '%s' "/tmp/opencode-wrapper-runtime.env"
+  printf '%s' "$OPENCODE_CONTAINER_RUNTIME_ENV_FILE"
 }
 
 runtime_home_dir() {
-  printf '%s' '/root'
+  printf '%s' "$OPENCODE_CONTAINER_RUNTIME_HOME"
+}
+
+container_development_dir() {
+  printf '%s' "$OPENCODE_CONTAINER_DEVELOPMENT_DIR"
+}
+
+container_runtime_state_dir() {
+  printf '%s' "$OPENCODE_CONTAINER_RUNTIME_STATE_DIR"
+}
+
+container_config_env_file() {
+  printf '%s/config.env' "$(container_config_dir)"
+}
+
+container_secrets_env_file() {
+  printf '%s/secrets.env' "$(container_config_dir)"
 }
 
 workspace_mount_spec() {
@@ -392,7 +423,7 @@ workspace_home_mount_spec() {
 }
 
 development_mount_spec() {
-  printf '%s:%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "/workspace/opencode-development"
+  printf '%s:%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "$(container_development_dir)"
 }
 
 development_root_exists() {
@@ -743,7 +774,7 @@ container_mounts_match_workspace_config() {
 
   actual_home="$(container_mount_source_for_destination "$container_name" "$(runtime_home_dir)" 2>/dev/null || true)"
   actual_workspace="$(container_mount_source_for_destination "$container_name" "$(container_workspace_dir)" 2>/dev/null || true)"
-  actual_development="$(container_mount_source_for_destination "$container_name" '/workspace/opencode-development' 2>/dev/null || true)"
+  actual_development="$(container_mount_source_for_destination "$container_name" "$(container_development_dir)" 2>/dev/null || true)"
 
   [[ "$actual_home" == "$expected_home" && "$actual_workspace" == "$expected_workspace" && "$actual_development" == "$expected_development" ]]
 }
@@ -1094,6 +1125,15 @@ create_or_replace_container() {
     run -d
     --name "$container_name"
     --restart unless-stopped
+    -e "HOME=$(runtime_home_dir)"
+    -e "OPENCODE_CONTAINER_RUNTIME_HOME=$(runtime_home_dir)"
+    -e "OPENCODE_CONTAINER_WORKSPACE_DIR=$(container_workspace_dir)"
+    -e "OPENCODE_CONTAINER_DEVELOPMENT_DIR=$(container_development_dir)"
+    -e "OPENCODE_CONTAINER_RUNTIME_ENV_FILE=$(container_runtime_env_file)"
+    -e "OPENCODE_CONTAINER_RUNTIME_STATE_DIR=$(container_runtime_state_dir)"
+    -e "OPENCODE_WRAPPER_RUNTIME_ENV_FILE=$(container_runtime_env_file)"
+    -e "OPENCODE_WRAPPER_CONFIG_ENV_FILE=$(container_config_env_file)"
+    -e "OPENCODE_WRAPPER_SECRETS_ENV_FILE=$(container_secrets_env_file)"
     --label "$OPENCODE_LABEL_WORKSPACE=$workspace"
     --label "$OPENCODE_LABEL_LANE=$lane"
     --label "$OPENCODE_LABEL_UPSTREAM=$upstream"
@@ -1202,9 +1242,11 @@ server_url_for_container_base() {
 
 start_managed_server_in_container() {
   local container_name="$1"
-  local runtime_env_file
+  local runtime_env_file workspace_dir runtime_state_dir
   runtime_env_file="$(container_runtime_env_file)"
-  podman exec "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; mkdir -p /tmp/opencode-wrapper; if [ -f /tmp/opencode-wrapper/server.pid ] && kill -0 \"\$(cat /tmp/opencode-wrapper/server.pid)\" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname 0.0.0.0 --port 4096 >/tmp/opencode-wrapper/server.log 2>&1 & echo \$! >/tmp/opencode-wrapper/server.pid" >/dev/null
+  workspace_dir="$(container_workspace_dir)"
+  runtime_state_dir="$(container_runtime_state_dir)"
+  podman exec "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; mkdir -p \"$runtime_state_dir\"; if [ -f \"$runtime_state_dir/server.pid\" ] && kill -0 \"\$(cat \"$runtime_state_dir/server.pid\")\" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname 0.0.0.0 --port 4096 >\"$runtime_state_dir/server.log\" 2>&1 & echo \$! >\"$runtime_state_dir/server.pid\"" >/dev/null
 }
 
 server_active_for_container() {
@@ -1276,21 +1318,23 @@ exec_podman_interactive_command() {
 
 exec_opencode_in_container() {
   local container_name="$1"
-  local runtime_env_file
+  local runtime_env_file workspace_dir
   shift
   runtime_env_file="$(container_runtime_env_file)"
-  exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; exec opencode \"\$@\"" sh "$@"
+  workspace_dir="$(container_workspace_dir)"
+  exec_podman_interactive_command exec --workdir "$workspace_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; exec opencode \"\$@\"" sh "$@"
 }
 
 exec_shell_in_container() {
   local container_name="$1"
-  local runtime_env_file
+  local runtime_env_file workspace_dir
   shift
   runtime_env_file="$(container_runtime_env_file)"
+  workspace_dir="$(container_workspace_dir)"
   if [[ $# -gt 0 ]]; then
-    exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; exec \"\$@\"" sh "$@"
+    exec_podman_interactive_command exec --workdir "$workspace_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; exec \"\$@\"" sh "$@"
   else
-    exec_podman_interactive_command exec --workdir "$(container_workspace_dir)" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd /workspace/opencode-workspace; exec /bin/sh"
+    exec_podman_interactive_command exec --workdir "$workspace_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; exec /bin/sh"
   fi
 }
 
@@ -1301,6 +1345,8 @@ build_release_image() {
     -t "$target_image" \
     --arch "$(container_runtime_arch)" \
     --build-arg "UBUNTU_VERSION=$OPENCODE_UBUNTU_LTS_VERSION" \
+    --build-arg "OPENCODE_CONTAINER_WORKSPACE_DIR=$OPENCODE_CONTAINER_WORKSPACE_DIR" \
+    --build-arg "OPENCODE_CONTAINER_RUNTIME_HOME=$OPENCODE_CONTAINER_RUNTIME_HOME" \
     --build-arg "OPENCODE_RELEASE_ARCHIVE_URL=$release_url" \
     --build-arg "OPENCODE_RELEASE_ARCHIVE_SHA512=$release_sha512" \
     --build-arg "OPENCODE_WRAPPER_LANE=$lane" \
@@ -1406,6 +1452,7 @@ build_source_image() {
   mkdir -p "$temp_dir/config/shared"
   cp "$ROOT/config/containers/entrypoint.sh" "$temp_dir/config/containers/entrypoint.sh"
   cp "$ROOT/config/containers/install-tools.sh" "$temp_dir/config/containers/install-tools.sh"
+  cp "$ROOT/config/shared/opencode.conf" "$temp_dir/config/shared/opencode.conf"
   cp "$ROOT/config/shared/tool-versions.conf" "$temp_dir/config/shared/tool-versions.conf"
 
   if [[ -n "${OPENCODE_SOURCE_OVERRIDE_DIR:-}" ]]; then
@@ -1431,6 +1478,9 @@ RUN set -eu; \
 
 FROM ubuntu:__OPENCODE_UBUNTU_LTS_VERSION__
 
+ARG OPENCODE_CONTAINER_WORKSPACE_DIR=__OPENCODE_CONTAINER_WORKSPACE_DIR__
+ARG OPENCODE_CONTAINER_RUNTIME_HOME=__OPENCODE_CONTAINER_RUNTIME_HOME__
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 ENV LANG=C.UTF-8
@@ -1441,8 +1491,8 @@ COPY config/containers/install-tools.sh /tmp/opencode-install-tools.sh
 
 RUN bash /tmp/opencode-install-tools.sh \
   && useradd -m -s /bin/bash opencode \
-  && mkdir -p /workspace/opencode-workspace \
-  && chown -R opencode:opencode /workspace /root \
+  && mkdir -p "$OPENCODE_CONTAINER_WORKSPACE_DIR" "$OPENCODE_CONTAINER_RUNTIME_HOME" \
+  && chown -R root:root /workspace "$OPENCODE_CONTAINER_RUNTIME_HOME" \
   && rm -f /tmp/opencode-tool-versions.conf /tmp/opencode-install-tools.sh
 
 COPY --from=build /tmp/opencode /usr/local/bin/opencode
@@ -1450,20 +1500,24 @@ COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
 RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 
 USER root
-WORKDIR /workspace/opencode-workspace
+WORKDIR $OPENCODE_CONTAINER_WORKSPACE_DIR
 
-ENV HOME=/root
+ENV HOME=$OPENCODE_CONTAINER_RUNTIME_HOME
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]
 EOF
   sed -i "s/__OPENCODE_UBUNTU_LTS_VERSION__/$OPENCODE_UBUNTU_LTS_VERSION/g" "$source_dockerfile"
   sed -i "s/__OPENCODE_TOOL_BUN_VERSION__/$OPENCODE_TOOL_BUN_VERSION/g" "$source_dockerfile"
+  sed -i "s|__OPENCODE_CONTAINER_WORKSPACE_DIR__|$OPENCODE_CONTAINER_WORKSPACE_DIR|g" "$source_dockerfile"
+  sed -i "s|__OPENCODE_CONTAINER_RUNTIME_HOME__|$OPENCODE_CONTAINER_RUNTIME_HOME|g" "$source_dockerfile"
 
   podman build \
     -f "$source_dockerfile" \
     -t "$target_image" \
     --arch "$(container_runtime_arch)" \
+    --build-arg "OPENCODE_CONTAINER_WORKSPACE_DIR=$OPENCODE_CONTAINER_WORKSPACE_DIR" \
+    --build-arg "OPENCODE_CONTAINER_RUNTIME_HOME=$OPENCODE_CONTAINER_RUNTIME_HOME" \
     --label "$OPENCODE_LABEL_LANE=$lane" \
     --label "$OPENCODE_LABEL_UPSTREAM=$upstream_resolved" \
     --label "$OPENCODE_LABEL_UPSTREAM_REF=$source_ref" \

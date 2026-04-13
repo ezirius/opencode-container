@@ -5,7 +5,7 @@ This repository runs OpenCode in a wrapper-owned Ubuntu LTS container using the 
 - immutable local wrapper images
 - deterministic workspace container names
 - picker-based workspace commands
-- persistent OpenCode runtime home at `/home/opencode`
+- persistent OpenCode runtime home at `/root`
 - wrapper-owned workspace config under `/workspace/opencode-workspace/.config/opencode`
 
 ## Layout
@@ -83,7 +83,7 @@ Each workspace lives under:
 
 Directory mappings:
 
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/home/opencode`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/root`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace` -> `/workspace/opencode-workspace`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode` -> `/workspace/opencode-workspace/.config/opencode`
 - `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development` when that host path exists
@@ -116,7 +116,7 @@ File roles:
 Wrapper files used at runtime:
 
 - `config/containers/entrypoint.sh` reads `config.env` first and then `secrets.env`
-- `config/shared/opencode.conf` provides wrapper defaults such as `OPENCODE_BASE_ROOT` and `OPENCODE_DEVELOPMENT_ROOT`
+- `config/shared/opencode.conf` provides wrapper defaults such as `OPENCODE_BASE_ROOT`, `OPENCODE_DEVELOPMENT_ROOT`, and the canonical in-container path layout
 - `opencode-workspace/.config/opencode/config.env` provides workspace-scoped non-secret wrapper environment assignments
 - `opencode-workspace/.config/opencode/secrets.env` optionally overrides matching values from `config.env`
 
@@ -124,6 +124,7 @@ Rules:
 
 - `opencode.conf` is wrapper-only, not OpenCode app config
 - `opencode.conf` is for wrapper-wide defaults, not workspace runtime overrides
+- host directory roots and canonical in-container path layout are defined once in `config/shared/opencode.conf`
 - `config.env` is seeded automatically as an optional starter file
 - `secrets.env` is optional
 - `config.env` and `secrets.env` are parsed as environment assignments and are not executed as shell scripts

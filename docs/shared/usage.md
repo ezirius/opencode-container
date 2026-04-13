@@ -108,7 +108,7 @@ Each workspace uses:
 
 Directory mappings are:
 
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/home/opencode`
+- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/root`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace` -> `/workspace/opencode-workspace`
 - `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode` -> `/workspace/opencode-workspace/.config/opencode`
 - `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development` when that host path exists
@@ -129,7 +129,7 @@ Workspace runtime files are:
 
 File roles are:
 
-- `config/shared/opencode.conf` for wrapper-wide defaults
+- `config/shared/opencode.conf` for wrapper-wide defaults, host roots, and canonical in-container path layout
 - `config.env` for workspace-scoped non-secret wrapper settings
 - `secrets.env` for workspace-scoped secret wrapper settings
 
