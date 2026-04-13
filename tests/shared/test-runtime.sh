@@ -708,6 +708,23 @@ assert_contains "$STATE_DIR/podman.log" 'exec opencode "$@"' 'open forwards Open
 OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-open" general test 1.4.3 -- --help > "$STATE_DIR/open-explicit-context.out"
 assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-general-test-1.4.3-main /bin/sh -lc' 'explicit open resolves existing containers independently of the caller wrapper context'
 
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-solo-test-1.4.3-main' solo test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-logs" solo --tail 3 > "$STATE_DIR/logs-solo-picker.out" 2>&1
+assert_contains "$STATE_DIR/logs-solo-picker.out" "Select a container for workspace 'solo'" 'logs shows picker UI even with a single matching container'
+assert_contains "$STATE_DIR/logs-solo-picker.out" 'lane  upstream  wrapper  commit                   status' 'logs single-container picker shows aligned headers'
+printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-status" solo > "$STATE_DIR/status-solo-picker.out" 2>&1
+assert_contains "$STATE_DIR/status-solo-picker.out" "Select a container for workspace 'solo'" 'status shows picker UI even with a single matching container'
+assert_contains "$STATE_DIR/status-solo-picker.out" 'Status: running' 'status still resolves the selected single container'
+printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-shell" solo -- env > "$STATE_DIR/shell-solo-picker.out" 2>&1
+assert_contains "$STATE_DIR/shell-solo-picker.out" "Select a container for workspace 'solo'" 'shell shows picker UI even with a single matching container'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-solo-test-1.4.3-main /bin/sh -lc' 'shell runs against the selected single container'
+printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-open" solo -- --help > "$STATE_DIR/open-solo-picker.out" 2>&1
+assert_contains "$STATE_DIR/open-solo-picker.out" "Select a container for workspace 'solo'" 'open shows picker UI even with a single matching container'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-solo-test-1.4.3-main /bin/sh -lc' 'open runs against the selected single container'
+printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-stop" solo > "$STATE_DIR/stop-solo-picker.out" 2>&1
+assert_contains "$STATE_DIR/stop-solo-picker.out" "Select a container for workspace 'solo'" 'stop shows picker UI even with a single matching container'
+assert_contains "$STATE_DIR/stop-solo-picker.out" 'Stopped container: opencode-solo-test-1.4.3-main' 'stop still stops the selected single container'
+
 "$ROOT/scripts/shared/opencode-shell" second -- test arg > "$STATE_DIR/shell-delimiter.out"
 assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-second-test-1.4.3-main /bin/sh -lc' 'shell accepts -- to separate wrapper arguments from command arguments'
 

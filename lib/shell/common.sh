@@ -926,9 +926,11 @@ workspace_target_rows() {
 
 container_picker_display_rows() {
   local rows="$1"
+  local row
   while IFS=$'\t' read -r name _workspace lane upstream wrapper commitstamp status _image_ref; do
     [[ -n "$name" ]] || continue
-    picker_display_row_from_target "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+    row="$(picker_display_row_from_target "$lane" "$upstream" "$wrapper" "$commitstamp" "$status")"
+    printf '%s\n' "$row"
   done <<< "$rows"
 }
 
@@ -943,13 +945,12 @@ resolve_row_from_picker() {
   while IFS= read -r selection_line; do
     [[ -n "$selection_line" ]] || continue
     display_rows+=("$selection_line")
+    display_count=$((display_count + 1))
   done < <(container_picker_display_rows "$rows")
 
-  if [[ ${#display_rows[@]} -eq 1 ]]; then
-    printf '%s' "$rows"
-    return 0
-  fi
+  [[ "$display_count" -gt 0 ]] || fail "no container picker rows available"
 
+  set +u
   while IFS= read -r selection_line; do
     [[ -n "$selection_line" ]] || continue
     formatted_options+=("$selection_line")
@@ -960,12 +961,15 @@ resolve_row_from_picker() {
       divider_line="$selection_line"
     fi
   done < <(format_picker_table "${display_rows[@]}")
+  set -u
 
   [[ "$formatted_count" -ge 3 ]] || fail "failed to format container picker options"
 
   prompt+=$'\n'"$header_line"
   prompt+=$'\n'"$divider_line"
+  set +u
   selection="$(select_menu_option "$prompt" "${formatted_options[@]:2}")"
+  set -u
   selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
   [[ -n "$selection_line" ]] || fail "failed to resolve selected container target"
   printf '%s' "$selection_line"
@@ -989,6 +993,7 @@ resolve_target_details_for_workspace() {
     return 0
   fi
 
+  set +u
   while IFS= read -r selection_line; do
     [[ -n "$selection_line" ]] || continue
     formatted_options+=("$selection_line")
@@ -999,11 +1004,14 @@ resolve_target_details_for_workspace() {
       divider_line="$selection_line"
     fi
   done < <(format_picker_table "${display_rows[@]}")
+  set -u
 
   prompt="Select a target for workspace '$workspace'"
   prompt+=$'\n'"$header_line"
   prompt+=$'\n'"$divider_line"
+  set +u
   selection="$(select_menu_option "$prompt" "${formatted_options[@]:2}")"
+  set -u
   selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
   [[ -n "$selection_line" ]] || fail "failed to resolve selected workspace target"
   printf '%s' "$selection_line"
@@ -1036,11 +1044,7 @@ resolve_container_for_workspace() {
   local workspace="$1" rows row name
   rows="$(workspace_container_rows "$workspace")"
   [[ -n "$rows" ]] || fail "no existing container found for workspace '$workspace'"
-  if [[ $(printf '%s\n' "$rows" | sed '/^$/d' | wc -l | tr -d ' ') == "1" ]]; then
-    row="$rows"
-  else
-    row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
-  fi
+  row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
   IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref <<< "$row"
   printf '%s' "$name"
 }

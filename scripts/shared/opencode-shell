@@ -53,13 +53,13 @@ fi
 require_podman
 
 if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
-  CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$1" "$2")"
+  CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$1" "$2")" || exit $?
   shift 2
   if [[ ${1-} == "--" ]]; then
     shift
   fi
 else
-  CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")"
+  CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")" || exit $?
 fi
 
 container_running "$CONTAINER_NAME" || fail "container is not running: $CONTAINER_NAME"

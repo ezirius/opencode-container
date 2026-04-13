@@ -31,7 +31,7 @@ WORKSPACE="$1"
 require_workspace_name "$WORKSPACE"
 require_podman
 
-CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")"
+CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")" || exit $?
 if container_running "$CONTAINER_NAME"; then
   podman stop "$CONTAINER_NAME" >/dev/null
   printf 'Stopped container: %s\n' "$CONTAINER_NAME"
