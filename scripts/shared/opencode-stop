@@ -8,7 +8,22 @@ source "$ROOT/lib/shell/common.sh"
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <workspace>
 
-Stop the selected workspace container if it is running."
+Description:
+Stop the resolved workspace container if it is running.
+
+Behaviour:
+- resolves the existing container target for the workspace
+- stops it when running
+- reports when the resolved container is already stopped
+
+Arguments:
+- <workspace> : workspace name
+
+Examples:
+- $(basename "$0") demo
+
+Notes:
+- if more than one container target exists for the workspace, the command will prompt for which container to stop."
 fi
 
 [[ $# -eq 1 ]] || usage_error "$(basename "$0") <workspace>"

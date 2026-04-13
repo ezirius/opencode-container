@@ -8,7 +8,24 @@ source "$ROOT/lib/shell/common.sh"
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <workspace> [podman logs args...]
 
-Show Podman logs for the selected workspace container."
+Description:
+Show Podman logs for the resolved workspace container.
+
+Behaviour:
+- resolves the existing container target for the workspace
+- forwards all remaining arguments directly to \\`podman logs\\`
+
+Arguments:
+- <workspace> : workspace name
+- [podman logs args...] : flags or arguments passed through to \\`podman logs\\`
+
+Examples:
+- $(basename "$0") demo
+- $(basename "$0") demo --tail 50
+- $(basename "$0") demo -f
+
+Notes:
+- if more than one container target exists for the workspace, the command will prompt for the container to inspect."
 fi
 
 [[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [podman logs args...]"

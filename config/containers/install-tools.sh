@@ -54,7 +54,7 @@ download_github_asset_with_checksums_file() {
 
   checksums_path="$(mktemp)"
   curl -fsSL "$checksums_url" -o "$checksums_path"
-  sha256="$(grep "  $asset_name$" "$checksums_path" | awk '{print $1}')"
+  sha256="$(grep -F "  $asset_name" "$checksums_path" | awk '{print $1}' | head -n 1)"
   rm -f "$checksums_path"
   [[ -n "$sha256" ]] || {
     printf 'failed to resolve sha256 from checksum file for %s\n' "$asset_name" >&2

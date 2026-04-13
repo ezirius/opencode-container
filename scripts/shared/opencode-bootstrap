@@ -8,7 +8,25 @@ source "$ROOT/lib/shell/common.sh"
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <workspace> [opencode args...]
 
-Select a workspace target once, start or reuse it, then open OpenCode in that same container."
+Description:
+Select one workspace target, start or reuse it, then open OpenCode in that same container.
+
+Behaviour:
+- resolves one target for the workspace
+- starts or reuses that exact target container
+- forwards any remaining arguments to the in-container \\`opencode\\` command
+
+Arguments:
+- <workspace> : workspace name
+- [opencode args...] : arguments forwarded to \\`opencode\\`
+
+Examples:
+- $(basename "$0") demo
+- $(basename "$0") demo --help
+- $(basename "$0") demo -- model list
+
+Notes:
+- if more than one target exists for the workspace, the command will prompt once and reuse the selected target for the whole bootstrap flow."
 fi
 
 [[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [opencode args...]"

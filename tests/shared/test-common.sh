@@ -62,6 +62,9 @@ case "$1" in
         printf '%s' "${GIT_MOCK_TOPLEVEL:-$(pwd)}"
         printf '\n'
         ;;
+      --abbrev-ref)
+        printf '%s\n' "${GIT_MOCK_BRANCH:-main}"
+        ;;
       *)
         exit 0
         ;;
@@ -92,15 +95,21 @@ assert_eq "opencode-local:test-1.4.3-main-20260410-163440-ab12cd3" "$(image_ref 
 assert_eq "1.4.3" "$(resolve_upstream_selector 1.4.3)" "exact upstream selector stays unchanged"
 assert_eq "1.4.3" "$(resolve_upstream_selector v1.4.3)" "v-prefixed upstream selector normalizes"
 assert_eq "v1.4.3" "$(upstream_ref_for_selector 1.4.3)" "exact upstream ref gets v prefix"
+assert_eq 'main' "$(upstream_ref_for_selector main)" "main upstream selector resolves to the upstream main branch"
 assert_eq 'opencode-linux-arm64' "$(OPENCODE_CONTAINER_ARCH=arm64 release_binary_package_name)" "release binary package selection follows the container runtime architecture"
 mkdir -p "$TMPROOT/alternate-primary-checkout"
 assert_eq "main" "$(current_wrapper_context "$TMPROOT/alternate-primary-checkout")" "primary checkouts use wrapper context main even when the directory name differs"
+export GIT_MOCK_BRANCH='feature/add-tools'
+assert_eq 'feature-add-tools' "$(current_wrapper_context "$TMPROOT/alternate-primary-checkout")" "primary checkout feature branches derive a distinct wrapper context"
+unset GIT_MOCK_BRANCH
 mkdir -p "$TMPROOT/opencode-container-worktrees/feature.alpha"
 export GIT_MOCK_GIT_DIR='.git/worktrees/feature.alpha'
 export GIT_MOCK_COMMON_DIR='.git'
 export GIT_MOCK_TOPLEVEL="$TMPROOT/opencode-container-worktrees/feature.alpha"
 assert_eq 'feature.alpha' "$(current_wrapper_context "$TMPROOT/opencode-container-worktrees/feature.alpha")" "linked worktrees use the sanitised worktree directory name as the wrapper context"
 unset GIT_MOCK_GIT_DIR GIT_MOCK_COMMON_DIR GIT_MOCK_TOPLEVEL
+assert_function_rejects 'sanitize_name "!!!"' 'failed to derive a safe name from: !!!' "$TMPROOT/sanitize-name.out"
+assert_function_rejects 'sanitize_name "!!!"' 'failed to derive a safe name from: !!!' "$TMPROOT/sanitize-empty.out"
 
 ensure_workspace_layout general
 seed_workspace_config_env_file general

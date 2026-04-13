@@ -393,7 +393,7 @@ case "$subcommand" in
     case "$format" in
       '{{.State.Running}}') printf '%s\n' "$status" ;;
       '{{.ImageName}}') printf '%s\n' "$image_ref" ;;
-      '{{range .Mounts}}{{println .Destination "\t" .Source}}{{end}}')
+      '{{range .Mounts}}{{printf "%s\t%s\n" .Destination .Source}}{{end}}')
         [[ -f "$STATE_DIR/mount_home_$name" ]] && printf '/home/opencode\t%s\n' "$(cat "$STATE_DIR/mount_home_$name")"
         [[ -f "$STATE_DIR/mount_workspace_$name" ]] && printf '/workspace/opencode-workspace\t%s\n' "$(cat "$STATE_DIR/mount_workspace_$name")"
         [[ -f "$STATE_DIR/mount_development_$name" ]] && printf '/workspace/opencode-development\t%s\n' "$(cat "$STATE_DIR/mount_development_$name")"
@@ -559,7 +559,7 @@ assert_contains "$STATE_DIR/build-default.out" 'Build source: official release v
 assert_contains "$STATE_DIR/build-default.out" 'Built image: opencode-local:test-1.4.3-main-20260410-170000-deffeed' 'default build resolves to the latest stable release identity'
 
 "$ROOT/scripts/shared/opencode-build" test main > "$STATE_DIR/build-main.out"
-assert_contains "$STATE_DIR/build-main.out" 'Build source: upstream source ref dev' 'main build uses upstream source ref'
+assert_contains "$STATE_DIR/build-main.out" 'Build source: upstream source ref main' 'main build uses upstream source ref'
 assert_contains "$STATE_DIR/build-main.out" 'Built image: opencode-local:test-main-main-20260410-163440-ab12cd3' 'main build creates immutable image ref'
 assert_contains "$STATE_DIR/podman.log" 'Containerfile.source-base' 'main build uses source-base containerfile'
 
@@ -696,6 +696,8 @@ printf '%s\n' "$DEVELOPMENT_ROOT-old" > "$STATE_DIR/mount_development_opencode-r
 assert_contains "$STATE_DIR/podman.log" 'rm -f opencode-remount-test-1.4.3-main' 'start recreates the container when the configured development mount changes'
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-stray-test-1.4.3-main' '' '' '' '' '' true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+assert_not_contains <(project_container_rows) 'opencode-stray-test-1.4.3-main' 'unlabelled prefix-matching containers are ignored by project container discovery'
 
 podman rm -f opencode-fixed-test-1.4.3-main >/dev/null
 
@@ -743,7 +745,8 @@ assert_contains "$STATE_DIR/stop.out" 'Stopped container: opencode-general-test-
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-feature-xyz-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 feature-xyz 20260410-163440-ab12cd3 >> "$STATE_DIR/images.tsv"
 OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-start" branchy test 1.4.3 --version > "$STATE_DIR/start-with-args.out"
 assert_contains "$STATE_DIR/podman.log" '--name opencode-branchy-test-1.4.3-feature-xyz' 'start with args creates the selected wrapper-context container'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-branchy-test-1.4.3-feature-xyz /bin/sh -lc' 'start with args preserves selected wrapper context when delegating to open'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-branchy-test-1.4.3-feature-xyz /bin/sh -lc' 'start with args forwards directly into the selected container'
+assert_not_contains "$STATE_DIR/podman.log" 'opencode-open' 'start with args does not re-resolve the target through opencode-open'
 podman rm -f opencode-branchy-test-1.4.3-feature-xyz >/dev/null
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"

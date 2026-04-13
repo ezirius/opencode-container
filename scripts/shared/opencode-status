@@ -8,7 +8,21 @@ source "$ROOT/lib/shell/common.sh"
 if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") <workspace>
 
-Show the current status for one workspace container."
+Description:
+Show the current status for the resolved workspace container.
+
+Behaviour:
+- resolves the existing container target for the workspace
+- prints image, runtime, mount, and managed-server status information
+
+Arguments:
+- <workspace> : workspace name
+
+Examples:
+- $(basename "$0") demo
+
+Notes:
+- if more than one container target exists for the workspace, the command will prompt for which container to inspect."
 fi
 
 [[ $# -eq 1 ]] || usage_error "$(basename "$0") <workspace>"

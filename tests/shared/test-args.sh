@@ -36,4 +36,38 @@ assert_rejects "$ROOT/scripts/shared/opencode-start" '<workspace> <production|te
 assert_rejects "$ROOT/scripts/shared/opencode-open" '<workspace> <production|test> <upstream>' demo production
 assert_rejects "$ROOT/scripts/shared/opencode-shell" '<workspace> <production|test> <upstream>' demo production
 
+BUILD_HELP="$($ROOT/scripts/shared/opencode-build --help 2>&1)"
+[[ "$BUILD_HELP" == *'Description:'* ]]
+[[ "$BUILD_HELP" == *'Accepted [upstream] values:'* ]]
+
+BOOTSTRAP_HELP="$($ROOT/scripts/shared/opencode-bootstrap --help 2>&1)"
+[[ "$BOOTSTRAP_HELP" == *'Behaviour:'* ]]
+[[ "$BOOTSTRAP_HELP" == *'Examples:'* ]]
+
+START_HELP="$($ROOT/scripts/shared/opencode-start --help 2>&1)"
+[[ "$START_HELP" == *'Notes:'* ]]
+[[ "$START_HELP" == *'use `--`'* ]]
+
+OPEN_HELP="$($ROOT/scripts/shared/opencode-open --help 2>&1)"
+[[ "$OPEN_HELP" == *'Description:'* ]]
+[[ "$OPEN_HELP" == *'use `--`'* ]]
+
+SHELL_HELP="$($ROOT/scripts/shared/opencode-shell --help 2>&1)"
+[[ "$SHELL_HELP" == *'Description:'* ]]
+[[ "$SHELL_HELP" == *'interactive shell'* ]]
+
+LOGS_HELP="$($ROOT/scripts/shared/opencode-logs --help 2>&1)"
+[[ "$LOGS_HELP" == *'podman logs'* ]]
+[[ "$LOGS_HELP" == *'--tail 50'* ]]
+
+STATUS_HELP="$($ROOT/scripts/shared/opencode-status --help 2>&1)"
+[[ "$STATUS_HELP" == *'resolved workspace container'* ]]
+
+STOP_HELP="$($ROOT/scripts/shared/opencode-stop --help 2>&1)"
+[[ "$STOP_HELP" == *'already stopped'* ]]
+
+REMOVE_HELP="$($ROOT/scripts/shared/opencode-remove --help 2>&1)"
+[[ "$REMOVE_HELP" == *'All, but newest'* ]]
+[[ "$REMOVE_HELP" == *'containers first and then all images'* ]]
+
 echo "Argument contract checks passed"

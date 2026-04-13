@@ -68,7 +68,13 @@ fail() {
 }
 
 usage_error() {
-  echo "Usage: $*" >&2
+  local usage="$*"
+  local command_name
+  command_name="${usage%% *}"
+  echo "Usage: $usage" >&2
+  if [[ -n "$command_name" ]]; then
+    echo "See \`$command_name --help\` for details." >&2
+  fi
   exit 1
 }
 
@@ -127,7 +133,10 @@ expand_home_path() {
 
 sanitize_name() {
   local raw="$1"
-  printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//'
+  local sanitized
+  sanitized="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+  [[ -n "$sanitized" ]] || fail "failed to derive a safe name from: $raw"
+  printf '%s' "$sanitized"
 }
 
 normalize_absolute_path() {
@@ -478,7 +487,7 @@ upstream_ref_for_selector() {
   local resolved
   resolved="$(resolve_upstream_selector "$selector")"
   if [[ "$resolved" == "main" ]]; then
-    printf '%s' 'dev'
+    printf '%s' 'main'
   else
     printf 'v%s' "$resolved"
   fi
@@ -557,9 +566,14 @@ current_wrapper_context() {
 
   require_git
   local workdir="${1:-${ROOT:-$(pwd)}}"
-  local toplevel base fallback_repo
+  local toplevel base fallback_repo current_branch
   if git_is_primary_worktree "$workdir"; then
-    printf 'main'
+    current_branch="$(git_current_branch "$workdir" 2>/dev/null || true)"
+    if [[ -z "$current_branch" || "$current_branch" == "main" ]]; then
+      printf 'main'
+    else
+      sanitize_name "$current_branch"
+    fi
     return 0
   fi
 
@@ -709,7 +723,7 @@ container_image_ref() {
 
 container_mount_source_for_destination() {
   local name="$1" destination="$2"
-  podman inspect -f '{{range .Mounts}}{{println .Destination "\t" .Source}}{{end}}' "$name" 2>/dev/null | while IFS=$'\t' read -r row_destination row_source; do
+  podman inspect -f '{{range .Mounts}}{{printf "%s\t%s\n" .Destination .Source}}{{end}}' "$name" 2>/dev/null | while IFS=$'\t' read -r row_destination row_source; do
     [[ "$row_destination" == "$destination" ]] || continue
     printf '%s' "$row_source"
     return 0
@@ -784,6 +798,7 @@ project_container_rows() {
     wrapper="$(container_label "$name" "$OPENCODE_LABEL_WRAPPER")"
     commitstamp="$(container_label "$name" "$OPENCODE_LABEL_COMMITSTAMP")"
     image_ref="$(container_image_ref "$name")"
+    [[ -n "$workspace" && -n "$lane" && -n "$upstream" && -n "$wrapper" && -n "$commitstamp" ]] || continue
     status="stopped"
     container_running "$name" && status="running"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
@@ -1061,15 +1076,14 @@ create_or_replace_container() {
   if [[ -n "$server_publish_spec" ]]; then
     run_args+=( -p "$server_publish_spec" )
   fi
+  if development_root_exists; then
+    run_args+=( -v "$(development_mount_spec)" )
+  fi
   run_args+=(
     -v "$(workspace_home_mount_spec "$workspace" "$image_ref")"
     -v "$(workspace_mount_spec "$workspace")"
     "$image_ref"
   )
-
-  if development_root_exists; then
-    run_args+=( -v "$(development_mount_spec)" )
-  fi
 
   podman "${run_args[@]}" >/dev/null
 }
@@ -1337,7 +1351,7 @@ clone_upstream_source() {
 
   require_git
   if [[ "$ref" == "dev" || "$ref" == "main" ]]; then
-    git clone --depth 1 --branch dev "$OPENCODE_REPO_URL" "$destination" >/dev/null 2>&1 || fail "failed to clone upstream dev"
+    git clone --depth 1 --branch main "$OPENCODE_REPO_URL" "$destination" >/dev/null 2>&1 || fail "failed to clone upstream main"
     return 0
   fi
 

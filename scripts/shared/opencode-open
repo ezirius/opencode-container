@@ -11,7 +11,27 @@ if [[ ${1-} == "--help" ]]; then
        $(basename "$0") <workspace> <production|test> <upstream> [opencode args...]
        $(basename "$0") <workspace> <production|test> <upstream> -- [opencode args...]
 
-Open OpenCode by execing into the running container for one workspace."
+Description:
+Open OpenCode by execing into the running container for one workspace.
+
+Behaviour:
+- resolves the running container target for the workspace, or a specific lane/upstream container when given explicitly
+- forwards any remaining arguments to the in-container \\`opencode\\` command
+
+Arguments:
+- <workspace> : workspace name
+- <production|test> : optional explicit lane selector
+- <upstream> : optional explicit upstream selector for an existing container target
+- [opencode args...] : arguments forwarded to \\`opencode\\`
+
+Examples:
+- $(basename "$0") demo
+- $(basename "$0") demo -- --help
+- $(basename "$0") demo production 1.4.3 -- --help
+
+Notes:
+- use \\`--\\` when the first forwarded argument would otherwise look like a wrapper selector such as \\`test\\` or \\`production\\`
+- this command requires the resolved container to already be running."
 fi
 
 [[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [<production|test> <upstream>] [opencode args...]"
