@@ -70,13 +70,13 @@ install_direct_binary() {
 }
 
 install_from_tar_archive() {
-  local archive_path="$1" binary_name="$2" target_name="$3"
+  local archive_path="$1" asset_name="$2" binary_name="$3" target_name="$4"
   local tmpdir extracted_path
   tmpdir="$(mktemp -d)"
-  case "$archive_path" in
+  case "$asset_name" in
     *.tar.gz|*.tgz) tar -xzf "$archive_path" -C "$tmpdir" ;;
     *.tar.xz) tar -xJf "$archive_path" -C "$tmpdir" ;;
-    *) printf 'unsupported archive format: %s\n' "$archive_path" >&2; exit 1 ;;
+    *) printf 'unsupported archive format: %s\n' "$asset_name" >&2; exit 1 ;;
   esac
   extracted_path="$(find "$tmpdir" -type f -name "$binary_name" | head -n 1)"
   [[ -n "$extracted_path" ]] || {
@@ -163,7 +163,7 @@ install_watchexec() {
   esac
   tmpfile="$(mktemp)"
   download_github_asset_with_digest 'watchexec/watchexec' "$OPENCODE_TOOL_WATCHEXEC_VERSION" "$asset_name" "$tmpfile"
-  install_from_tar_archive "$tmpfile" watchexec watchexec
+  install_from_tar_archive "$tmpfile" "$asset_name" watchexec watchexec
   rm -f "$tmpfile"
 }
 
@@ -183,7 +183,7 @@ install_xh() {
       rm -rf /var/lib/apt/lists/*
       ;;
     *)
-      install_from_tar_archive "$tmpfile" xh xh
+      install_from_tar_archive "$tmpfile" "$asset_name" xh xh
       ;;
   esac
   rm -f "$tmpfile"
@@ -198,7 +198,7 @@ install_jj() {
   esac
   tmpfile="$(mktemp)"
   download_github_asset_with_digest 'jj-vcs/jj' "$OPENCODE_TOOL_JJ_VERSION" "$asset_name" "$tmpfile"
-  install_from_tar_archive "$tmpfile" jj jj
+  install_from_tar_archive "$tmpfile" "$asset_name" jj jj
   rm -f "$tmpfile"
 }
 
@@ -211,7 +211,7 @@ install_worktrunk() {
   esac
   tmpfile="$(mktemp)"
   download_github_asset_with_digest 'max-sixty/worktrunk' "$OPENCODE_TOOL_WORKTRUNK_VERSION" "$asset_name" "$tmpfile"
-  install_from_tar_archive "$tmpfile" wt wt
+  install_from_tar_archive "$tmpfile" "$asset_name" wt wt
   ln -sf /usr/local/bin/wt /usr/local/bin/worktrunk
   rm -f "$tmpfile"
 }
@@ -253,7 +253,7 @@ install_doggo() {
   esac
   tmpfile="$(mktemp)"
   download_github_asset_with_digest 'mr-karan/doggo' "$OPENCODE_TOOL_DOGGO_VERSION" "$asset_name" "$tmpfile"
-  install_from_tar_archive "$tmpfile" doggo doggo
+  install_from_tar_archive "$tmpfile" "$asset_name" doggo doggo
   rm -f "$tmpfile"
 }
 
@@ -266,7 +266,7 @@ install_grpcurl() {
   esac
   tmpfile="$(mktemp)"
   download_github_asset_with_checksums_file 'fullstorydev/grpcurl' "$OPENCODE_TOOL_GRPCURL_VERSION" "$asset_name" "grpcurl_${OPENCODE_TOOL_GRPCURL_VERSION#v}_checksums.txt" "$tmpfile"
-  install_from_tar_archive "$tmpfile" grpcurl grpcurl
+  install_from_tar_archive "$tmpfile" "$asset_name" grpcurl grpcurl
   rm -f "$tmpfile"
 }
 
@@ -292,7 +292,7 @@ install_csvlens() {
   esac
   tmpfile="$(mktemp)"
   download_github_asset_with_digest 'YS-L/csvlens' "$OPENCODE_TOOL_CSVLENS_VERSION" "$asset_name" "$tmpfile"
-  install_from_tar_archive "$tmpfile" csvlens csvlens
+  install_from_tar_archive "$tmpfile" "$asset_name" csvlens csvlens
   rm -f "$tmpfile"
 }
 
@@ -312,7 +312,7 @@ install_tlrc() {
       rm -rf /var/lib/apt/lists/*
       ;;
     *)
-      install_from_tar_archive "$tmpfile" tlrc tlrc
+      install_from_tar_archive "$tmpfile" "$asset_name" tlrc tlrc
       ;;
   esac
   rm -f "$tmpfile"
