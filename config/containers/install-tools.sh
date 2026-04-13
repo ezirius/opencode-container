@@ -69,6 +69,23 @@ install_direct_binary() {
   install -m 755 "$binary_path" "/usr/local/bin/$target_name"
 }
 
+temp_asset_path() {
+  local asset_name="$1"
+  local suffix=""
+
+  case "$asset_name" in
+    *.deb) suffix='.deb' ;;
+    *.tar.gz|*.tgz) suffix='.tar.gz' ;;
+    *.tar.xz) suffix='.tar.xz' ;;
+  esac
+
+  if [[ -n "$suffix" ]]; then
+    mktemp --suffix="$suffix"
+  else
+    mktemp
+  fi
+}
+
 install_from_tar_archive() {
   local archive_path="$1" asset_name="$2" binary_name="$3" target_name="$4"
   local tmpdir extracted_path
@@ -143,7 +160,7 @@ install_uv() {
     arm64) asset_name='uv-aarch64-unknown-linux-gnu.tar.gz' ;;
     *) printf 'unsupported architecture for uv\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'astral-sh/uv' "$OPENCODE_TOOL_UV_VERSION" "$asset_name" "$tmpfile"
   tmpdir="$(mktemp -d)"
   tar -xzf "$tmpfile" -C "$tmpdir"
@@ -161,7 +178,7 @@ install_watchexec() {
     arm64) asset_name="watchexec-${OPENCODE_TOOL_WATCHEXEC_VERSION#v}-aarch64-unknown-linux-gnu.tar.xz" ;;
     *) printf 'unsupported architecture for watchexec\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'watchexec/watchexec' "$OPENCODE_TOOL_WATCHEXEC_VERSION" "$asset_name" "$tmpfile"
   install_from_tar_archive "$tmpfile" "$asset_name" watchexec watchexec
   rm -f "$tmpfile"
@@ -174,7 +191,7 @@ install_xh() {
     arm64) asset_name="xh-v${OPENCODE_TOOL_XH_VERSION#v}-aarch64-unknown-linux-musl.tar.gz" ;;
     *) printf 'unsupported architecture for xh\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'ducaale/xh' "$OPENCODE_TOOL_XH_VERSION" "$asset_name" "$tmpfile"
   case "$asset_name" in
     *.deb)
@@ -196,7 +213,7 @@ install_jj() {
     arm64) asset_name="jj-${OPENCODE_TOOL_JJ_VERSION}-aarch64-unknown-linux-musl.tar.gz" ;;
     *) printf 'unsupported architecture for jj\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'jj-vcs/jj' "$OPENCODE_TOOL_JJ_VERSION" "$asset_name" "$tmpfile"
   install_from_tar_archive "$tmpfile" "$asset_name" jj jj
   rm -f "$tmpfile"
@@ -209,7 +226,7 @@ install_worktrunk() {
     arm64) asset_name='worktrunk-aarch64-unknown-linux-musl.tar.xz' ;;
     *) printf 'unsupported architecture for worktrunk\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'max-sixty/worktrunk' "$OPENCODE_TOOL_WORKTRUNK_VERSION" "$asset_name" "$tmpfile"
   install_from_tar_archive "$tmpfile" "$asset_name" wt wt
   ln -sf /usr/local/bin/wt /usr/local/bin/worktrunk
@@ -223,7 +240,7 @@ install_dive() {
     arm64) asset_name="dive_${OPENCODE_TOOL_DIVE_VERSION#v}_linux_arm64.deb" ;;
     *) printf 'unsupported architecture for dive\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_checksums_file 'wagoodman/dive' "$OPENCODE_TOOL_DIVE_VERSION" "$asset_name" "dive_${OPENCODE_TOOL_DIVE_VERSION#v}_checksums.txt" "$tmpfile"
   apt-get update
   apt-get install -y --no-install-recommends "$tmpfile"
@@ -238,7 +255,7 @@ install_sops() {
     arm64) asset_name="sops-${OPENCODE_TOOL_SOPS_VERSION}.linux.arm64" ;;
     *) printf 'unsupported architecture for sops\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'getsops/sops' "$OPENCODE_TOOL_SOPS_VERSION" "$asset_name" "$tmpfile"
   install_direct_binary "$tmpfile" sops
   rm -f "$tmpfile"
@@ -251,7 +268,7 @@ install_doggo() {
     arm64) asset_name="doggo_${OPENCODE_TOOL_DOGGO_VERSION#v}_Linux_arm64.tar.gz" ;;
     *) printf 'unsupported architecture for doggo\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'mr-karan/doggo' "$OPENCODE_TOOL_DOGGO_VERSION" "$asset_name" "$tmpfile"
   install_from_tar_archive "$tmpfile" "$asset_name" doggo doggo
   rm -f "$tmpfile"
@@ -264,7 +281,7 @@ install_grpcurl() {
     arm64) asset_name="grpcurl_${OPENCODE_TOOL_GRPCURL_VERSION#v}_linux_arm64.tar.gz" ;;
     *) printf 'unsupported architecture for grpcurl\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_checksums_file 'fullstorydev/grpcurl' "$OPENCODE_TOOL_GRPCURL_VERSION" "$asset_name" "grpcurl_${OPENCODE_TOOL_GRPCURL_VERSION#v}_checksums.txt" "$tmpfile"
   install_from_tar_archive "$tmpfile" "$asset_name" grpcurl grpcurl
   rm -f "$tmpfile"
@@ -277,7 +294,7 @@ install_websocat() {
     arm64) asset_name='websocat.aarch64-unknown-linux-musl' ;;
     *) printf 'unsupported architecture for websocat\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'vi/websocat' "$OPENCODE_TOOL_WEBSOCAT_VERSION" "$asset_name" "$tmpfile"
   install_direct_binary "$tmpfile" websocat
   rm -f "$tmpfile"
@@ -290,7 +307,7 @@ install_csvlens() {
     arm64) asset_name='csvlens-aarch64-unknown-linux-gnu.tar.xz' ;;
     *) printf 'unsupported architecture for csvlens\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'YS-L/csvlens' "$OPENCODE_TOOL_CSVLENS_VERSION" "$asset_name" "$tmpfile"
   install_from_tar_archive "$tmpfile" "$asset_name" csvlens csvlens
   rm -f "$tmpfile"
@@ -303,7 +320,7 @@ install_tlrc() {
     arm64) asset_name="tlrc-${OPENCODE_TOOL_TLRC_VERSION}-aarch64-unknown-linux-gnu.tar.gz" ;;
     *) printf 'unsupported architecture for tlrc\n' >&2; exit 1 ;;
   esac
-  tmpfile="$(mktemp)"
+  tmpfile="$(temp_asset_path "$asset_name")"
   download_github_asset_with_digest 'tldr-pages/tlrc' "$OPENCODE_TOOL_TLRC_VERSION" "$asset_name" "$tmpfile"
   case "$asset_name" in
     *.deb)
