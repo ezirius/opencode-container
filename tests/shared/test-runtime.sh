@@ -731,6 +731,14 @@ assert_contains "$STATE_DIR/status.out" 'Lane: test' 'status reports lane'
 assert_contains "$STATE_DIR/status.out" 'Upstream: 1.4.3' 'status reports upstream'
 assert_not_contains "$STATE_DIR/status.out" 'Server: http://127.0.0.1:' 'status does not report a server URL for workspaces without configured host server ports'
 
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-production-1.4.3-main' second production 1.4.3 main 20260410-163440-ab12cd3 false 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-logs" second --tail 7 > "$STATE_DIR/logs-second-picker.out"
+assert_contains "$STATE_DIR/podman.log" 'logs --tail 7 opencode-second-production-1.4.3-main' 'logs can select among multiple matching containers'
+OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-status" second > "$STATE_DIR/status-second-picker.out"
+assert_contains "$STATE_DIR/status-second-picker.out" 'Lane: production' 'status can select among multiple matching containers without tripping nounset array handling'
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-shell" second -- env > "$STATE_DIR/shell-second-picker.out"
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-workspace opencode-second-test-1.4.3-main /bin/sh -lc' 'shell can select among multiple matching containers'
+
 "$ROOT/scripts/shared/opencode-status" general > "$STATE_DIR/status-general.out"
 assert_contains "$STATE_DIR/status-general.out" 'Server: http://127.0.0.1:5098' 'status reports the verified server URL for workspaces with configured host server ports'
 
@@ -753,7 +761,8 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-mai
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >> "$STATE_DIR/containers.tsv"
 printf '4\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" containers > "$STATE_DIR/remove-container-ui.out" 2>&1
-assert_contains "$STATE_DIR/remove-container-ui.out" 'container | opencode-general-test-1.4.3-main | general | test | 1.4.3 | main | 20260410-163440-ab12cd3 | running' 'remove containers uses the same formatted container rows as mixed mode'
+assert_contains "$STATE_DIR/remove-container-ui.out" 'selection                         workspace  lane        upstream  wrapper  commit                   status' 'remove containers shows aligned headers'
+assert_contains "$STATE_DIR/remove-container-ui.out" 'opencode-general-test-1.4.3-main  general    test        1.4.3     main     20260410-163440-ab12cd3  true' 'remove containers uses aligned container rows'
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' > "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >> "$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >> "$STATE_DIR/containers.tsv"
@@ -762,7 +771,7 @@ assert_contains "$STATE_DIR/remove-container.out" 'Removed container: opencode-g
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
 printf '3\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" images > "$STATE_DIR/remove-image-ui.out" 2>&1
-assert_contains "$STATE_DIR/remove-image-ui.out" 'image | opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 | test | 1.4.3 | main | 20260410-163440-ab12cd3' 'remove images uses the same formatted image rows as mixed mode'
+assert_contains "$STATE_DIR/remove-image-ui.out" '-          test        1.4.3     main     20260410-163440-ab12cd3  image only' 'remove images keeps image rows aligned under the metadata columns'
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 > "$STATE_DIR/images.tsv"
 OPENCODE_SELECT_INDEX=3 "$ROOT/scripts/shared/opencode-remove" images > "$STATE_DIR/remove-image.out"
 assert_contains "$STATE_DIR/remove-image.out" 'Removed image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'remove image removes selected image'

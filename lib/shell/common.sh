@@ -49,7 +49,7 @@ OPENCODE_GITHUB_API_BASE="${OPENCODE_GITHUB_API_BASE:-https://api.github.com}"
 OPENCODE_NPM_REGISTRY_BASE="${OPENCODE_NPM_REGISTRY_BASE:-https://registry.npmjs.org}"
 OPENCODE_UBUNTU_LTS_VERSION="${OPENCODE_UBUNTU_LTS_VERSION:-24.04}"
 OPENCODE_TOOL_BUN_VERSION="${OPENCODE_TOOL_BUN_VERSION:-1.3.12}"
-OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/.local/share/opencode-container}"
+OPENCODE_BASE_ROOT="${OPENCODE_BASE_ROOT:-$HOME/Documents/Ezirius/.applications-data/containers-artifici/opencode-container}"
 OPENCODE_DEVELOPMENT_ROOT="${OPENCODE_DEVELOPMENT_ROOT:-$HOME/Development/OpenCode}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-latest}"
 OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX:-}"
@@ -377,7 +377,7 @@ container_runtime_env_file() {
 }
 
 runtime_home_dir() {
-  printf '%s' '/home/opencode'
+  printf '%s' '/root'
 }
 
 workspace_mount_spec() {
@@ -871,7 +871,7 @@ select_menu_option() {
   local prompt="$1"
   shift
   local options=("$@")
-  local index=1 choice
+  local index=1 choice index_width option_count
 
   [[ ${#options[@]} -gt 0 ]] || fail "no options available"
   if [[ -n "$OPENCODE_SELECT_INDEX" ]]; then
@@ -883,8 +883,11 @@ select_menu_option() {
   fi
 
   printf '%s\n' "$prompt" >&2
+  option_count="${#options[@]}"
+  index_width="${#option_count}"
+
   for choice in "${options[@]}"; do
-    printf '%d. %s\n' "$index" "$choice" >&2
+    printf '%*d. %s\n' "$index_width" "$index" "$choice" >&2
     index=$((index + 1))
   done
 
@@ -932,8 +935,8 @@ container_picker_display_rows() {
 resolve_row_from_picker() {
   local prompt="$1"
   local rows="$2"
-  local selection selection_line
-  local display_rows=() formatted_options=()
+  local selection selection_line display_count=0 formatted_count=0
+  local display_rows=() formatted_options=() header_line="" divider_line=""
 
   [[ -n "$rows" ]] || fail "no options available"
 
@@ -948,11 +951,20 @@ resolve_row_from_picker() {
   fi
 
   while IFS= read -r selection_line; do
+    [[ -n "$selection_line" ]] || continue
     formatted_options+=("$selection_line")
+    formatted_count=$((formatted_count + 1))
+    if [[ "$formatted_count" -eq 1 ]]; then
+      header_line="$selection_line"
+    elif [[ "$formatted_count" -eq 2 ]]; then
+      divider_line="$selection_line"
+    fi
   done < <(format_picker_table "${display_rows[@]}")
 
-  prompt+=$'\n'"${formatted_options[0]}"
-  prompt+=$'\n'"${formatted_options[1]}"
+  [[ "$formatted_count" -ge 3 ]] || fail "failed to format container picker options"
+
+  prompt+=$'\n'"$header_line"
+  prompt+=$'\n'"$divider_line"
   selection="$(select_menu_option "$prompt" "${formatted_options[@]:2}")"
   selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
   [[ -n "$selection_line" ]] || fail "failed to resolve selected container target"
@@ -961,8 +973,8 @@ resolve_row_from_picker() {
 
 resolve_target_details_for_workspace() {
   local workspace="$1"
-  local rows selection selection_line
-  local display_rows=() formatted_options=() prompt kind ref lane upstream wrapper commitstamp status image_ref
+  local rows selection selection_line display_count=0 formatted_count=0
+  local display_rows=() formatted_options=() header_line="" divider_line="" prompt kind ref lane upstream wrapper commitstamp status image_ref
 
   rows="$(workspace_target_rows "$workspace")"
   [[ -n "$rows" ]] || fail "no OpenCode targets found for workspace '$workspace'"
@@ -978,12 +990,19 @@ resolve_target_details_for_workspace() {
   fi
 
   while IFS= read -r selection_line; do
+    [[ -n "$selection_line" ]] || continue
     formatted_options+=("$selection_line")
+    formatted_count=$((formatted_count + 1))
+    if [[ "$formatted_count" -eq 1 ]]; then
+      header_line="$selection_line"
+    elif [[ "$formatted_count" -eq 2 ]]; then
+      divider_line="$selection_line"
+    fi
   done < <(format_picker_table "${display_rows[@]}")
 
   prompt="Select a target for workspace '$workspace'"
-  prompt+=$'\n'"${formatted_options[0]}"
-  prompt+=$'\n'"${formatted_options[1]}"
+  prompt+=$'\n'"$header_line"
+  prompt+=$'\n'"$divider_line"
   selection="$(select_menu_option "$prompt" "${formatted_options[@]:2}")"
   selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
   [[ -n "$selection_line" ]] || fail "failed to resolve selected workspace target"
@@ -1017,7 +1036,11 @@ resolve_container_for_workspace() {
   local workspace="$1" rows row name
   rows="$(workspace_container_rows "$workspace")"
   [[ -n "$rows" ]] || fail "no existing container found for workspace '$workspace'"
-  row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
+  if [[ $(printf '%s\n' "$rows" | sed '/^$/d' | wc -l | tr -d ' ') == "1" ]]; then
+    row="$rows"
+  else
+    row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
+  fi
   IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref <<< "$row"
   printf '%s' "$name"
 }
@@ -1415,17 +1438,17 @@ COPY config/containers/install-tools.sh /tmp/opencode-install-tools.sh
 RUN bash /tmp/opencode-install-tools.sh \
   && useradd -m -s /bin/bash opencode \
   && mkdir -p /workspace/opencode-workspace \
-  && chown -R opencode:opencode /workspace /home/opencode \
+  && chown -R opencode:opencode /workspace /root \
   && rm -f /tmp/opencode-tool-versions.conf /tmp/opencode-install-tools.sh
 
 COPY --from=build /tmp/opencode /usr/local/bin/opencode
 COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
 RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 
-USER opencode
+USER root
 WORKDIR /workspace/opencode-workspace
 
-ENV HOME=/home/opencode
+ENV HOME=/root
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]

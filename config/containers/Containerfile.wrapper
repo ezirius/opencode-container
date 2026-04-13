@@ -27,7 +27,7 @@ COPY config/containers/install-tools.sh /tmp/opencode-install-tools.sh
 RUN bash /tmp/opencode-install-tools.sh \
   && useradd -m -s /bin/bash opencode \
   && mkdir -p /workspace/opencode-workspace \
-  && chown -R opencode:opencode /workspace /home/opencode \
+  && chown -R opencode:opencode /workspace /run \
   && rm -f /tmp/opencode-tool-versions.conf /tmp/opencode-install-tools.sh
 
 RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIVE_SHA512" \
@@ -44,7 +44,7 @@ RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 USER opencode
 WORKDIR /workspace/opencode-workspace
 
-ENV HOME=/home/opencode
+ENV HOME=/root
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]
