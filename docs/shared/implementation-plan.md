@@ -1,5 +1,7 @@
 # OpenCode Container Implementation Plan
 
+> Historical design reference. The repository has since implemented this plan and then centralised more operational constants into `config/shared/opencode.conf`. Treat `README.md` and `docs/shared/usage.md` as the current user-facing behaviour docs, and treat this file as the original architecture and migration record.
+
 ## Goal
 
 Rebuild `opencode-container` so it follows the same wrapper model as `hindsight-container` wherever that model fits OpenCode cleanly.
@@ -17,6 +19,11 @@ The target wrapper should:
 The wrapper should document this as a tooling-driven decision: the runtime is now wrapper-owned so official-release builds and `main` source builds can share one stable operating-system and tooling surface.
 
 `shared` means the files are intended to work on both macOS and Linux. `macos` means macOS-only.
+
+Current-state note:
+
+- the repository currently uses `config/shared/opencode.conf` as the canonical wrapper config file for defaults and operational constants
+- the repository currently uses `config/containers/Containerfile.source-base.template` rather than embedding the source-build Containerfile inside shell code
 
 The directory structure should be:
 
@@ -266,18 +273,25 @@ Wrapper-owned config should consist of:
 
 `config/shared/opencode.conf` is only for wrapper defaults and wrapper metadata. It is not an OpenCode application config file.
 
-It should contain only wrapper-level settings such as:
+It should contain wrapper-level settings such as:
 
 - default base root
 - local image name
 - project prefix
+- label namespace and label keys
+- configured lane names
+- upstream selector defaults and aliases
 - upstream repo URL
 - GitHub API base URL
 - npm registry base URL for official release packages
 - pinned Ubuntu LTS version
+- workspace directory naming
+- in-container path layout
+- managed-server hostname, port, and health path
+- container restart policy
 - development root mount source
 
-`config/shared/tool-versions.conf` should pin wrapper-owned shared-tool versions separately from the main runtime defaults.
+`config/shared/tool-versions.conf` should pin wrapper-owned build-tool versions separately from the main runtime defaults.
 
 It must not contain OpenCode-native settings such as:
 
@@ -317,8 +331,8 @@ Target runtime behavior:
 - the container is long-lived
 - the container starts with a thin wrapper entrypoint or command that loads wrapper env files if present
 - the container then runs a simple keepalive process
-- if `OPENCODE_HOST_SERVER_PORT` is configured for the workspace, the wrapper starts and verifies a managed `opencode serve --hostname 0.0.0.0 --port 4096` process
-- the wrapper-managed server contract is always host `<configured-port>` to container `4096`
+- if `OPENCODE_HOST_SERVER_PORT` is configured for the workspace, the wrapper starts and verifies a managed `opencode serve` process using the configured hostname and configured managed-server container port from `config/shared/opencode.conf`
+- the wrapper-managed server contract is always host `<configured-port>` to container `OPENCODE_MANAGED_SERVER_CONTAINER_PORT`
 - `opencode-open` uses `podman exec`
 - `opencode-shell` uses `podman exec`
 
@@ -354,22 +368,22 @@ Do not add `bootstrap-test`.
 Match Hindsight's command shapes as closely as possible:
 
 - `opencode-build <lane> [upstream]`
-- `opencode-bootstrap <workspace> [opencode args...]`
-- `opencode-start <workspace>`
-- `opencode-start <workspace> -- [opencode args...]`
-- `opencode-start <workspace> <lane> <upstream> [opencode args...]`
-- `opencode-start <workspace> <lane> <upstream> -- [opencode args...]`
-- `opencode-open <workspace> [opencode args...]`
-- `opencode-open <workspace> -- [opencode args...]`
-- `opencode-open <workspace> <lane> <upstream> [opencode args...]`
-- `opencode-open <workspace> <lane> <upstream> -- [opencode args...]`
-- `opencode-shell <workspace> [command args...]`
-- `opencode-shell <workspace> -- [command args...]`
-- `opencode-shell <workspace> <lane> <upstream> [command args...]`
-- `opencode-shell <workspace> <lane> <upstream> -- [command args...]`
-- `opencode-logs <workspace> [podman logs args...]`
-- `opencode-status <workspace>`
-- `opencode-stop <workspace>`
+- `opencode-bootstrap [<workspace>] [opencode args...]`
+- `opencode-start [<workspace>]`
+- `opencode-start [<workspace>] -- [opencode args...]`
+- `opencode-start [<workspace>] <lane> <upstream> [opencode args...]`
+- `opencode-start [<workspace>] <lane> <upstream> -- [opencode args...]`
+- `opencode-open [<workspace>] [opencode args...]`
+- `opencode-open [<workspace>] -- [opencode args...]`
+- `opencode-open [<workspace>] <lane> <upstream> [opencode args...]`
+- `opencode-open [<workspace>] <lane> <upstream> -- [opencode args...]`
+- `opencode-shell [<workspace>] [command args...]`
+- `opencode-shell [<workspace>] -- [command args...]`
+- `opencode-shell [<workspace>] <lane> <upstream> [command args...]`
+- `opencode-shell [<workspace>] <lane> <upstream> -- [command args...]`
+- `opencode-logs [<workspace>] [podman logs args...]`
+- `opencode-status [<workspace>]`
+- `opencode-stop [<workspace>]`
 - `opencode-remove`
 - `opencode-remove containers`
 - `opencode-remove images`
@@ -380,7 +394,12 @@ This means:
 
 - no extra args: run `opencode`
 - extra args: run `opencode "$@"`
-- use `--` when the first forwarded argument would otherwise look like a wrapper lane selector such as `test` or `production`
+- use `--` when the first forwarded argument would otherwise look like a configured wrapper lane selector
+
+Current-state note:
+
+- omitting `<workspace>` now opens an alphabetical workspace picker from `OPENCODE_BASE_ROOT`
+- a leading `--` selects the workspace picker first when the remaining arguments begin with wrapper selectors or option flags
 
 If `opencode-start` receives trailing OpenCode args, it should start or reuse the selected target and then delegate to `opencode-open` against that same resolved target.
 
@@ -463,7 +482,7 @@ Remove display columns:
 
 `All, but newest` means:
 
-- for containers: leave the preferred container per workspace, where `production` wins over `test` and commit timestamp breaks ties within the same lane
+- for containers: leave the preferred container per workspace, where the configured production lane wins over the configured test lane and commit timestamp breaks ties within the same lane
 - for images: leave the image serving each kept newest container
 - for mixed mode: leave the preferred container per workspace and the image serving it
 

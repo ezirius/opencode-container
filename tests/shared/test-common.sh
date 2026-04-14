@@ -5,31 +5,44 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 assert_eq() {
-  local expected="$1"
-  local actual="$2"
-  local message="$3"
-  if [[ "$expected" != "$actual" ]]; then
-    printf 'assertion failed: %s\nexpected: %s\nactual:   %s\n' "$message" "$expected" "$actual" >&2
-    exit 1
-  fi
+	local expected="$1"
+	local actual="$2"
+	local message="$3"
+	if [[ "$expected" != "$actual" ]]; then
+		printf 'assertion failed: %s\nexpected: %s\nactual:   %s\n' "$message" "$expected" "$actual" >&2
+		exit 1
+	fi
+}
+
+assert_not_contains() {
+	local file="$1"
+	local needle="$2"
+	local message="$3"
+	if grep -Fq -- "$needle" "$file"; then
+		printf 'assertion failed: %s\nunexpected: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
+		exit 1
+	fi
 }
 
 assert_contains() {
-  local file="$1"
-  local needle="$2"
-  local message="$3"
-  grep -Fq -- "$needle" "$file" || { printf 'assertion failed: %s\nmissing: %s\nfile: %s\n' "$message" "$needle" "$file" >&2; exit 1; }
+	local file="$1"
+	local needle="$2"
+	local message="$3"
+	grep -Fq -- "$needle" "$file" || {
+		printf 'assertion failed: %s\nmissing: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
+		exit 1
+	}
 }
 
 assert_function_rejects() {
-  local command="$1"
-  local expected="$2"
-  local output_file="$3"
-  if bash -lc "source '$ROOT/lib/shell/common.sh'; OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT'; OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT'; $command" > "$output_file" 2>&1; then
-    printf 'assertion failed: command should have failed\ncommand: %s\n' "$command" >&2
-    exit 1
-  fi
-  assert_contains "$output_file" "$expected" 'function reports the expected validation failure'
+	local command="$1"
+	local expected="$2"
+	local output_file="$3"
+	if bash -lc "ROOT='$ROOT'; source '$ROOT/lib/shell/common.sh'; OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT'; OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT'; $command" >"$output_file" 2>&1; then
+		printf 'assertion failed: command should have failed\ncommand: %s\n' "$command" >&2
+		exit 1
+	fi
+	assert_contains "$output_file" "$expected" 'function reports the expected validation failure'
 }
 
 TMPROOT="$(mktemp -d)"
@@ -37,7 +50,7 @@ trap 'rm -rf "$TMPROOT"' EXIT
 MOCK_BIN="$TMPROOT/bin"
 mkdir -p "$MOCK_BIN"
 
-cat > "$MOCK_BIN/git" <<'EOF'
+cat >"$MOCK_BIN/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -97,6 +110,8 @@ assert_eq "1.4.3" "$(resolve_upstream_selector v1.4.3)" "v-prefixed upstream sel
 assert_eq "v1.4.3" "$(upstream_ref_for_selector 1.4.3)" "exact upstream ref gets v prefix"
 assert_eq 'main' "$(upstream_ref_for_selector main)" "main upstream selector resolves to the upstream main branch"
 assert_eq 'opencode-linux-arm64' "$(OPENCODE_CONTAINER_ARCH=arm64 release_binary_package_name)" "release binary package selection follows the container runtime architecture"
+assert_eq 'shipit' "$(OPENCODE_LANE_PRODUCTION=shipit bash -lc 'ROOT="$1"; source "$1/lib/shell/common.sh"; printf %s "$OPENCODE_LANE_PRODUCTION"' bash "$ROOT")" "environment overrides still win over shared config for representative lane values"
+assert_eq 'manual-context' "$(OPENCODE_WRAPPER_CONTEXT_OVERRIDE=manual-context current_wrapper_context "$TMPROOT/alternate-primary-checkout")" "wrapper context override wins over git-derived context"
 mkdir -p "$TMPROOT/alternate-primary-checkout"
 assert_eq "main" "$(current_wrapper_context "$TMPROOT/alternate-primary-checkout")" "primary checkouts use wrapper context main even when the directory name differs"
 export GIT_MOCK_BRANCH='feature/add-tools'
@@ -111,88 +126,108 @@ unset GIT_MOCK_GIT_DIR GIT_MOCK_COMMON_DIR GIT_MOCK_TOPLEVEL
 assert_function_rejects 'sanitize_name "!!!"' 'failed to derive a safe name from: !!!' "$TMPROOT/sanitize-name.out"
 assert_function_rejects 'sanitize_name "!!!"' 'failed to derive a safe name from: !!!' "$TMPROOT/sanitize-empty.out"
 
+mkdir -p "$TMPROOT/workspaces/zeta" "$TMPROOT/workspaces/alpha" "$TMPROOT/workspaces/gamma"
+assert_eq $'alpha\ngamma\nzeta' "$(workspace_names_from_base_root)" "workspace names are listed in alphabetical order"
+assert_eq 'manual' "$(resolve_workspace_argument manual)" "explicit workspace values bypass selection"
+assert_eq 'alpha' "$(OPENCODE_SELECT_INDEX=1 resolve_workspace_argument '')" "workspace selection chooses the first alphabetical workspace"
+assert_eq 'gamma' "$(OPENCODE_SELECT_INDEX=2 resolve_workspace_argument '')" "workspace selection honours the chosen alphabetical index"
+assert_function_rejects "OPENCODE_BASE_ROOT='$TMPROOT/no-workspaces'; resolve_workspace_argument ''" 'no workspaces found under' "$TMPROOT/no-workspaces.out"
+
 ensure_workspace_layout general
 seed_workspace_config_env_file general
 test -d "$TMPROOT/workspaces/general/opencode-home"
 test -d "$TMPROOT/workspaces/general/opencode-workspace"
 test -f "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env"
+printf '# keep me\nOPENCODE_MODEL=test\n' >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env"
+ensure_workspace_layout general
+seed_workspace_config_env_file general
+assert_contains "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" 'OPENCODE_MODEL=test' 'workspace seeding preserves existing config env content'
+assert_contains "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" '# keep me' 'workspace seeding is non-destructive when config env already exists'
 
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=5096
 MALICIOUS=$(touch /tmp/opencode-common-test-malicious)
 EOF
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=5097
 EOF
 assert_eq '5097' "$(workspace_server_port general)" "workspace server port uses parsed assignment values with secrets overriding config"
 test ! -e /tmp/opencode-common-test-malicious
 
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 export   OPENCODE_HOST_SERVER_PORT=5098
 OPENCODE_HOST_SERVER_PORT=5099
 EOF
 rm -f "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/secrets.env"
 assert_eq '5099' "$(workspace_server_port general)" "workspace env parsing keeps the last matching assignment and accepts spaced export syntax"
 
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 export OPENCODE_HOST_SERVER_PORT="5100" # comment
 EOF
 assert_eq '5100' "$(workspace_server_port general)" "workspace server port parsing accepts quoted values with inline comments"
 
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=abc
 EOF
 assert_function_rejects 'workspace_server_port general' 'OPENCODE_HOST_SERVER_PORT must be numeric' "$TMPROOT/invalid-port-alpha.out"
 
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=65536
 EOF
 assert_function_rejects 'workspace_server_port general' 'OPENCODE_HOST_SERVER_PORT must be between 1 and 65535' "$TMPROOT/invalid-port-range.out"
 
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=5098
 EOF
-cat > "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
+cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=
 EOF
 assert_eq '' "$(workspace_env_value general OPENCODE_HOST_SERVER_PORT)" "empty secrets assignments override config assignments"
+assert_eq '' "$(workspace_env_value general MISSING_KEY)" "workspace env lookup returns empty output for missing keys"
+
+printf '1\n' | env -u OPENCODE_SELECT_INDEX bash -lc 'ROOT="$1"; source "$1/lib/shell/common.sh"; printf "%s" "$(select_menu_option "Choose" one two)"' bash "$ROOT" >"$TMPROOT/select-valid.out" 2>"$TMPROOT/select-valid.err"
+assert_eq '1' "$(cat "$TMPROOT/select-valid.out")" "select_menu_option returns the chosen numeric option"
+printf 'x\n9\n2\n' | env -u OPENCODE_SELECT_INDEX bash -lc 'ROOT="$1"; source "$1/lib/shell/common.sh"; printf "%s" "$(select_menu_option "Choose" one two)"' bash "$ROOT" >"$TMPROOT/select-invalid.out" 2>"$TMPROOT/select-invalid.err"
+assert_eq '2' "$(cat "$TMPROOT/select-invalid.out")" "select_menu_option ignores non-numeric and out-of-range input until a valid choice is entered"
+assert_contains "$TMPROOT/select-invalid.err" 'Select an option [1-2]:' 'select_menu_option reprompts after invalid input'
+assert_function_rejects 'select_menu_option "Choose" one two </dev/null' 'selection aborted' "$TMPROOT/select-aborted.out"
 
 ENTRYPOINT_CONFIG="$TMPROOT/entrypoint-config.env"
 ENTRYPOINT_SECRETS="$TMPROOT/entrypoint-secrets.env"
 ENTRYPOINT_RUNTIME="$TMPROOT/entrypoint-runtime.env"
 ENTRYPOINT_TARGET="$TMPROOT/entrypoint-target.txt"
 
-printf 'OPENCODE_HOST_SERVER_PORT="5101" # comment\r\nTOKEN=$(touch /tmp/opencode-entrypoint-test)\r\n' > "$ENTRYPOINT_CONFIG"
-printf 'SECRET_TOKEN=abc123\r\n' > "$ENTRYPOINT_SECRETS"
+printf 'OPENCODE_HOST_SERVER_PORT="5101" # comment\r\nTOKEN=$(touch /tmp/opencode-entrypoint-test)\r\n' >"$ENTRYPOINT_CONFIG"
+printf 'SECRET_TOKEN=abc123\r\n' >"$ENTRYPOINT_SECRETS"
 OPENCODE_WRAPPER_RUNTIME_ENV_FILE="$ENTRYPOINT_RUNTIME" \
-OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
-OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
-  sh "$ROOT/config/containers/entrypoint.sh" sh -c '. "$OPENCODE_WRAPPER_RUNTIME_ENV_FILE"; printf "%s\n%s\n%s\n" "$OPENCODE_HOST_SERVER_PORT" "$TOKEN" "$SECRET_TOKEN"' > "$TMPROOT/entrypoint-values.out"
+	OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
+	OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
+	sh "$ROOT/config/containers/entrypoint.sh" sh -c '. "$OPENCODE_WRAPPER_RUNTIME_ENV_FILE"; printf "%s\n%s\n%s\n" "$OPENCODE_HOST_SERVER_PORT" "$TOKEN" "$SECRET_TOKEN"' >"$TMPROOT/entrypoint-values.out"
 assert_contains "$TMPROOT/entrypoint-values.out" '5101' 'entrypoint exports quoted config values with inline comments correctly'
 assert_contains "$TMPROOT/entrypoint-values.out" '$(touch /tmp/opencode-entrypoint-test)' 'entrypoint treats command substitutions as literal values'
 assert_contains "$TMPROOT/entrypoint-values.out" 'abc123' 'entrypoint loads secrets after config'
 test ! -e /tmp/opencode-entrypoint-test
 assert_contains "$ENTRYPOINT_RUNTIME" "export OPENCODE_HOST_SERVER_PORT='5101'" 'entrypoint writes exported runtime assignments'
 
-printf 'SECRET_TOKEN=base\nMESSAGE="value # kept"\nSPACED="  keep me  "\nNAME_WITH_QUOTE="O'"'"'Brien"\n' > "$ENTRYPOINT_CONFIG"
-printf 'SECRET_TOKEN=override\nSPACED=\n' > "$ENTRYPOINT_SECRETS"
+printf 'SECRET_TOKEN=base\nMESSAGE="value # kept"\nSPACED="  keep me  "\nNAME_WITH_QUOTE="O'"'"'Brien"\n' >"$ENTRYPOINT_CONFIG"
+printf 'SECRET_TOKEN=override\nSPACED=\n' >"$ENTRYPOINT_SECRETS"
 OPENCODE_WRAPPER_RUNTIME_ENV_FILE="$ENTRYPOINT_RUNTIME" \
-OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
-OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
-  sh "$ROOT/config/containers/entrypoint.sh" true
+	OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
+	OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
+	sh "$ROOT/config/containers/entrypoint.sh" true
 bash -n "$ENTRYPOINT_RUNTIME"
 assert_contains "$ENTRYPOINT_RUNTIME" "export SECRET_TOKEN='override'" 'entrypoint keeps the last matching secret assignment'
 assert_contains "$ENTRYPOINT_RUNTIME" "export MESSAGE='value # kept'" 'entrypoint preserves literal hash characters inside quoted values'
 assert_contains "$ENTRYPOINT_RUNTIME" "export SPACED=''" 'entrypoint allows empty secret overrides'
 assert_contains "$ENTRYPOINT_RUNTIME" "export NAME_WITH_QUOTE='O'\\''Brien'" 'entrypoint escapes embedded single quotes safely'
 
-printf 'protected\n' > "$ENTRYPOINT_TARGET"
+printf 'protected\n' >"$ENTRYPOINT_TARGET"
 ln -sf "$ENTRYPOINT_TARGET" "$ENTRYPOINT_RUNTIME"
 OPENCODE_WRAPPER_RUNTIME_ENV_FILE="$ENTRYPOINT_RUNTIME" \
-OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
-OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
-  sh "$ROOT/config/containers/entrypoint.sh" true
-assert_eq 'protected' "$(tr -d '\n' < "$ENTRYPOINT_TARGET")" "entrypoint does not overwrite symlink targets when recreating the runtime env file"
+	OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
+	OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
+	sh "$ROOT/config/containers/entrypoint.sh" true
+assert_eq 'protected' "$(tr -d '\n' <"$ENTRYPOINT_TARGET")" "entrypoint does not overwrite symlink targets when recreating the runtime env file"
 
 assert_eq "false" "$(bash -lc 'source "$1" && if use_exec_tty; then printf true; else printf false; fi' bash "$ROOT/lib/shell/common.sh")" "non-interactive exec keeps stdin only"
 

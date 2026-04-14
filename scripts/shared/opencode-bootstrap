@@ -6,13 +6,15 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") <workspace> [opencode args...]
+  show_help "Usage: $(basename "$0") [<workspace>] [opencode args...]
+       $(basename "$0") -- [opencode args...]
 
 Description:
 Select one workspace target, start or reuse it, then open OpenCode in that same container.
 
 Behaviour:
 - resolves one target for the workspace
+- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
 - starts or reuses that exact target container
 - forwards any remaining arguments to the in-container \\`opencode\\` command
 
@@ -23,16 +25,24 @@ Arguments:
 Examples:
 - $(basename "$0") demo
 - $(basename "$0") demo --help
+- $(basename "$0") -- --help
 - $(basename "$0") demo -- model list
 
 Notes:
+- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
+- when omitting \\`<workspace>\\`, use a leading \\`--\\` before forwarded OpenCode arguments
 - if more than one target exists for the workspace, the command will prompt once and reuse the selected target for the whole bootstrap flow."
 fi
 
-[[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [opencode args...]"
-WORKSPACE="$1"
-shift
-require_workspace_name "$WORKSPACE"
+if [[ $# -gt 0 && "$1" != "--" ]]; then
+  WORKSPACE="$(resolve_workspace_argument "$1")"
+  shift
+else
+  WORKSPACE="$(resolve_workspace_argument '')"
+  if [[ ${1-} == "--" ]]; then
+    shift
+  fi
+fi
 require_podman
 ensure_workspace_layout "$WORKSPACE"
 seed_workspace_config_env_file "$WORKSPACE"

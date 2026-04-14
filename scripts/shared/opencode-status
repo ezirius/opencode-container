@@ -6,14 +6,15 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") <workspace>
+  show_help "Usage: $(basename "$0") [<workspace>]
 
 Description:
 Show the current status for the resolved workspace container.
 
 Behaviour:
 - resolves the existing container target for the workspace
-- prints image, runtime, mount, and managed-server status information
+- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
+- prints image, mount, and available managed-server information
 
 Arguments:
 - <workspace> : workspace name
@@ -22,12 +23,16 @@ Examples:
 - $(basename "$0") demo
 
 Notes:
+- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
 - if more than one container target exists for the workspace, the command will prompt for which container to inspect."
 fi
 
-[[ $# -eq 1 ]] || usage_error "$(basename "$0") <workspace>"
-WORKSPACE="$1"
-require_workspace_name "$WORKSPACE"
+[[ $# -le 1 ]] || usage_error "$(basename "$0") <workspace>"
+if [[ $# -eq 1 ]]; then
+  WORKSPACE="$(resolve_workspace_argument "$1")"
+else
+  WORKSPACE="$(resolve_workspace_argument '')"
+fi
 require_podman
 
 CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")" || exit $?

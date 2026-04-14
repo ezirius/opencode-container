@@ -6,27 +6,37 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") <production|test> [upstream]
+  show_help "Usage: $(basename "$0") $(lane_usage_text) [upstream]
 
 Build an immutable local Ubuntu-based OpenCode wrapper image.
 
-If [upstream] is omitted, the wrapper builds the latest stable official OpenCode release.
+If the lane is omitted, the wrapper prompts for the configured production or test lane.
+If [upstream] is omitted, the wrapper prompts for an upstream version.
 
 Accepted [upstream] values:
-- main
-- latest
+- $OPENCODE_UPSTREAM_MAIN_SELECTOR
+- $OPENCODE_DEFAULT_UPSTREAM_SELECTOR
 - an exact stable release tag"
 fi
 
-[[ $# -ge 1 && $# -le 2 ]] || usage_error "$(basename "$0") <production|test> [upstream]"
-
-LANE="$1"
-UPSTREAM_SELECTOR="${2:-latest}"
+[[ $# -le 2 ]] || usage_error "$(basename "$0") $(lane_usage_text) [upstream]"
 
 require_podman
 require_python3
-validate_lane "$LANE"
+
+if [[ $# -ge 1 ]]; then
+  LANE="$1"
+else
+  LANE="$(select_lane)"
+fi
+
 validate_build_context "$LANE"
+
+if [[ $# -ge 2 ]]; then
+  UPSTREAM_SELECTOR="$2"
+else
+  UPSTREAM_SELECTOR="$(select_upstream_selector)"
+fi
 
 validate_upstream_selector "$UPSTREAM_SELECTOR"
 notify_if_newer_ubuntu_lts_exists
@@ -42,7 +52,7 @@ if image_exists "$TARGET_IMAGE"; then
   exit 0
 fi
 
-if [[ "$UPSTREAM_RESOLVED" == "main" ]]; then
+if [[ "$UPSTREAM_RESOLVED" == "$OPENCODE_UPSTREAM_MAIN_SELECTOR" ]]; then
   build_source_image "$UPSTREAM_REF" "$TARGET_IMAGE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP"
   printf 'Build source: upstream source ref %s\n' "$UPSTREAM_REF"
 else

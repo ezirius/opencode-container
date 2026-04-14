@@ -6,42 +6,52 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") <workspace> [opencode args...]
-       $(basename "$0") <workspace> -- [opencode args...]
-       $(basename "$0") <workspace> <production|test> <upstream> [opencode args...]
-       $(basename "$0") <workspace> <production|test> <upstream> -- [opencode args...]
+  show_help "Usage: $(basename "$0") [<workspace>] [opencode args...]
+       $(basename "$0") [<workspace>] -- [opencode args...]
+       $(basename "$0") [<workspace>] $(lane_usage_text) <upstream> [opencode args...]
+       $(basename "$0") [<workspace>] $(lane_usage_text) <upstream> -- [opencode args...]
+       $(basename "$0") -- $(lane_usage_text) <upstream> [opencode args...]
+       $(basename "$0") -- -- [opencode args...]
 
 Description:
 Start or reuse a persistent OpenCode workspace container.
 
 Behaviour:
 - with only <workspace>, resolve the preferred target for that workspace and start or reuse it
+- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
 - with an explicit lane and upstream, select the matching local image and start or recreate the matching container
 - any remaining arguments are forwarded to the in-container \\`opencode\\` command after the container is ready
 
 Arguments:
 - <workspace> : workspace name
-- <production|test> : optional explicit lane selector
-- <upstream> : optional explicit upstream selector; accepted values are \\`main\\`, \\`latest\\`, or an exact stable release tag
+- $(lane_usage_text) : optional explicit lane selector
+- <upstream> : optional explicit upstream selector; accepted values are \\`$OPENCODE_UPSTREAM_MAIN_SELECTOR\\`, \\`$OPENCODE_DEFAULT_UPSTREAM_SELECTOR\\`, or an exact stable release tag
 - [opencode args...] : arguments forwarded to the in-container \\`opencode\\` command
 
 Examples:
 - $(basename "$0") demo
-- $(basename "$0") demo production 1.4.3
-- $(basename "$0") demo production 1.4.3 -- --help
+- $(basename "$0") demo $OPENCODE_LANE_PRODUCTION $OPENCODE_VERSION
+- $(basename "$0") -- $OPENCODE_LANE_TEST $OPENCODE_VERSION
+- $(basename "$0") demo $OPENCODE_LANE_PRODUCTION $OPENCODE_VERSION -- --help
 
 Notes:
-- use \\`--\\` when the first forwarded argument would otherwise look like a wrapper selector such as \\`test\\` or \\`production\\`
-- the mounted .config/opencode/config.env file is snapshotted when the container starts
-- optional .config/opencode/secrets.env is snapshotted second
+- use \\`--\\` when the first forwarded argument would otherwise look like a wrapper selector such as \\`$OPENCODE_LANE_TEST\\` or \\`$OPENCODE_LANE_PRODUCTION\\`
+- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
+- when omitting \\`<workspace>\\`, a leading \\`--\\` selects the picker first so explicit lane selectors or forwarded arguments are parsed after the workspace choice
+- the mounted $OPENCODE_WORKSPACE_CONFIG_SUBDIR/config.env file is snapshotted when the container starts
+- optional $OPENCODE_WORKSPACE_CONFIG_SUBDIR/secrets.env is snapshotted second
 - if you change either file, restart the container to apply the new values."
 fi
 
-[[ $# -ge 1 ]] || usage_error "$(basename "$0") <workspace> [<production|test> <upstream>] [opencode args...]"
-
-WORKSPACE="$1"
-shift
-require_workspace_name "$WORKSPACE"
+if [[ $# -gt 0 && "$1" != "--" ]]; then
+  WORKSPACE="$(resolve_workspace_argument "$1")"
+  shift
+else
+  WORKSPACE="$(resolve_workspace_argument '')"
+  if [[ ${1-} == "--" ]]; then
+    shift
+  fi
+fi
 PAYLOAD_ONLY=0
 
 if [[ ${1-} == "--" ]]; then
@@ -49,15 +59,15 @@ if [[ ${1-} == "--" ]]; then
   PAYLOAD_ONLY=1
 fi
 
-if [[ "$PAYLOAD_ONLY" == "0" && $# == 1 && ( "$1" == "production" || "$1" == "test" ) ]]; then
-  usage_error "$(basename "$0") <workspace> <production|test> <upstream> [opencode args...]"
+if [[ "$PAYLOAD_ONLY" == "0" && $# == 1 ]] && is_lane "$1"; then
+  usage_error "$(basename "$0") <workspace> $(lane_usage_text) <upstream> [opencode args...]"
 fi
 
 require_podman
 ensure_workspace_layout "$WORKSPACE"
 seed_workspace_config_env_file "$WORKSPACE"
 
-if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 && ( "$1" == "production" || "$1" == "test" ) ]]; then
+if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 ]] && is_lane "$1"; then
   LANE="$1"
   UPSTREAM_SELECTOR="$2"
   shift 2

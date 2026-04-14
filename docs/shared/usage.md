@@ -8,6 +8,7 @@ This wrapper now uses:
 - deterministic container names
 - picker-based workspace commands
 - latest-stable-release-first builds into a wrapper-owned Ubuntu runtime
+- a minimal runtime image with OpenCode plus a small apt-installed base
 - source builds for upstream `main`
 - no mutable shared-image upgrade flow
 
@@ -17,13 +18,16 @@ Use:
 
 - `./scripts/shared/opencode-build <production|test> <upstream>`
 - `./scripts/shared/opencode-build <production|test>`
+- `./scripts/shared/opencode-build`
 
 Where:
 
-- `lane` is `production` or `test`
-- `upstream` is `main`, `latest`, or an exact release tag such as `1.4.3`
+- `lane` is the configured production or test lane name from `config/shared/opencode.conf`
+- `upstream` is the configured main selector, the configured default selector, or an exact release tag such as `1.4.3`
 
-If `upstream` is omitted, the script builds the latest stable official OpenCode release.
+If `lane` is omitted, the script prompts for the configured production or test lane.
+
+If `upstream` is omitted, the script prompts for an upstream version. The upstream picker shows the configured main selector plus exact stable releases newest to oldest.
 
 Rules:
 
@@ -48,22 +52,25 @@ Test builds:
 
 The workspace-facing commands are:
 
-- `./scripts/shared/opencode-bootstrap <workspace> [opencode args...]`
-- `./scripts/shared/opencode-start <workspace>`
-- `./scripts/shared/opencode-start <workspace> -- [opencode args...]`
-- `./scripts/shared/opencode-start <workspace> <lane> <upstream> [opencode args...]`
-- `./scripts/shared/opencode-start <workspace> <lane> <upstream> -- [opencode args...]`
-- `./scripts/shared/opencode-open <workspace> [opencode args...]`
-- `./scripts/shared/opencode-open <workspace> -- [opencode args...]`
-- `./scripts/shared/opencode-open <workspace> <lane> <upstream> [opencode args...]`
-- `./scripts/shared/opencode-open <workspace> <lane> <upstream> -- [opencode args...]`
-- `./scripts/shared/opencode-shell <workspace> [command args...]`
-- `./scripts/shared/opencode-shell <workspace> -- [command args...]`
-- `./scripts/shared/opencode-shell <workspace> <lane> <upstream> [command args...]`
-- `./scripts/shared/opencode-shell <workspace> <lane> <upstream> -- [command args...]`
-- `./scripts/shared/opencode-logs <workspace> [podman logs args...]`
-- `./scripts/shared/opencode-status <workspace>`
-- `./scripts/shared/opencode-stop <workspace>`
+- `./scripts/shared/opencode-bootstrap [<workspace>] [opencode args...]`
+- `./scripts/shared/opencode-start [<workspace>]`
+- `./scripts/shared/opencode-start [<workspace>] -- [opencode args...]`
+- `./scripts/shared/opencode-start [<workspace>] <lane> <upstream> [opencode args...]`
+- `./scripts/shared/opencode-start [<workspace>] <lane> <upstream> -- [opencode args...]`
+- `./scripts/shared/opencode-open [<workspace>] [opencode args...]`
+- `./scripts/shared/opencode-open [<workspace>] -- [opencode args...]`
+- `./scripts/shared/opencode-open [<workspace>] <lane> <upstream> [opencode args...]`
+- `./scripts/shared/opencode-open [<workspace>] <lane> <upstream> -- [opencode args...]`
+- `./scripts/shared/opencode-shell [<workspace>] [command args...]`
+- `./scripts/shared/opencode-shell [<workspace>] -- [command args...]`
+- `./scripts/shared/opencode-shell [<workspace>] <lane> <upstream> [command args...]`
+- `./scripts/shared/opencode-shell [<workspace>] <lane> <upstream> -- [command args...]`
+- `./scripts/shared/opencode-logs [<workspace>] [podman logs args...]`
+- `./scripts/shared/opencode-status [<workspace>]`
+- `./scripts/shared/opencode-stop [<workspace>]`
+
+If `<workspace>` is omitted, these commands prompt with workspace names from `OPENCODE_BASE_ROOT` in alphabetical order.
+Use a leading `--` when you want the workspace picker first and the remaining arguments begin with wrapper selectors or option flags.
 
 Behavior:
 
@@ -72,7 +79,7 @@ Behavior:
 - `opencode-open`, `opencode-shell`, `opencode-logs`, `opencode-status`, and `opencode-stop` operate on existing containers only
 - `opencode-open` forwards trailing args into `opencode`
 - `opencode-shell` runs commands in `/workspace/opencode-workspace`
-- use `--` when the first application or shell argument would otherwise look like a wrapper lane selector such as `test` or `production`
+- use `--` when the first application or shell argument would otherwise look like a configured wrapper lane selector
 
 ## Remove
 
@@ -92,7 +99,7 @@ With no argument, the mixed picker shows containers first and then images.
 
 `All, but newest` means:
 
-- for containers: keep the preferred container per workspace, where `production` wins over `test` and commit timestamp breaks ties within the same lane
+- for containers: keep the preferred container per workspace, where the configured production lane wins over the configured test lane and commit timestamp breaks ties within the same lane
 - for images: keep the image serving each kept newest container
 - in mixed mode: keep the preferred container per workspace and the image serving it
 
@@ -102,34 +109,32 @@ With no argument, the mixed picker shows containers first and then images.
 
 Each workspace uses:
 
-- `<workspace-root>/opencode-home`
-- `<workspace-root>/opencode-workspace`
-- `<workspace-root>/opencode-workspace/.config/opencode`
+- `<workspace-root>/<OPENCODE_WORKSPACE_HOME_DIRNAME>`
+- `<workspace-root>/<OPENCODE_WORKSPACE_DIRNAME>`
+- `<workspace-root>/<OPENCODE_WORKSPACE_DIRNAME>/<OPENCODE_WORKSPACE_CONFIG_SUBDIR>`
 
 Directory mappings are:
 
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-home` -> `/root`
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace` -> `/workspace/opencode-workspace`
-- `OPENCODE_BASE_ROOT/<workspace>/opencode-workspace/.config/opencode` -> `/workspace/opencode-workspace/.config/opencode`
-- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-development` when that host path exists
+- `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_HOME_DIRNAME>` -> `OPENCODE_CONTAINER_RUNTIME_HOME`
+- `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>` -> `OPENCODE_CONTAINER_WORKSPACE_DIR`
+- `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>/<OPENCODE_WORKSPACE_CONFIG_SUBDIR>` -> `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`
+- `OPENCODE_DEVELOPMENT_ROOT` -> `OPENCODE_CONTAINER_DEVELOPMENT_DIR` when that host path exists
 
 OpenCode remains responsible for its own home/state layout under that runtime home.
 
 ## Wrapper Runtime Config
 
 Wrapper defaults are defined in `config/shared/opencode.conf`.
-Pinned shared-tool versions are defined in `config/shared/tool-versions.conf`.
 
 Workspace runtime files are:
 
 - `config/shared/opencode.conf`
-- `config/shared/tool-versions.conf`
 - `config.env`
 - `secrets.env`
 
 File roles are:
 
-- `config/shared/opencode.conf` for wrapper-wide defaults, host roots, and canonical in-container path layout
+- `config/shared/opencode.conf` for wrapper-wide defaults, host roots, canonical in-container path layout, label keys, lane names, upstream selector defaults, and managed-server settings
 - `config.env` for workspace-scoped non-secret wrapper settings
 - `secrets.env` for workspace-scoped secret wrapper settings
 
@@ -155,14 +160,14 @@ Rules:
 
 Example intent:
 
-- `config.env`: non-secret values such as `OPENCODE_HOST_SERVER_PORT=4096`
+- `config.env`: non-secret values such as `OPENCODE_HOST_SERVER_PORT=<host-port>`
 - `secrets.env`: API keys, tokens, passwords, and other secrets only
 
-If `OPENCODE_HOST_SERVER_PORT` is set for a workspace, the wrapper starts `opencode serve --hostname 0.0.0.0 --port 4096` inside the container and publishes that internal port to host `127.0.0.1`.
+If `OPENCODE_HOST_SERVER_PORT` is set for a workspace, the wrapper starts `opencode serve --hostname "$OPENCODE_MANAGED_SERVER_HOSTNAME" --port "$OPENCODE_MANAGED_SERVER_CONTAINER_PORT"` inside the container and publishes that internal port to host `127.0.0.1`.
 
 - `OPENCODE_HOST_SERVER_PORT=<port>` uses a fixed host port
 - if `OPENCODE_HOST_SERVER_PORT` is unset, the wrapper does not start a managed server and `opencode-status` does not show a server URL
-- the wrapper-managed server contract is always host `<configured-port>` to container `4096`
+- the wrapper-managed server contract is always host `<configured-port>` to container `OPENCODE_MANAGED_SERVER_CONTAINER_PORT`
 
 ## Environment Overrides
 
@@ -174,6 +179,7 @@ If `OPENCODE_HOST_SERVER_PORT` is set for a workspace, the wrapper starts `openc
 - `OPENCODE_NPM_REGISTRY_BASE`
 - `OPENCODE_UBUNTU_LTS_VERSION`
 - `OPENCODE_DEVELOPMENT_ROOT`
+- representative operational constants from `config/shared/opencode.conf`, such as lane names or upstream selector defaults
 
 `OPENCODE_HOST_SERVER_PORT` is configured per workspace in `config.env` or `secrets.env`, not as a wrapper-global environment override.
 
@@ -196,49 +202,14 @@ Optional real-build smoke checks can be enabled with:
 
 This requires a working `podman` environment and intentionally performs a real Ubuntu runtime build.
 
-## Shared Toolbox
+## Runtime Image
 
-The owned Ubuntu runtime includes a standard shared toolbox:
+The owned Ubuntu runtime is intentionally minimal.
 
-- `git`
-- `ripgrep`
-- `fd`
-- `python`
-- `jq`
-- `direnv`
-- `just`
-- `yq`
-- `uv`
-- `delta`
-- `watchexec`
-- `shellcheck`
-- `podman`
-- `eza`
-- `bat`
-- `zoxide`
-- `xh`
-- `gh`
-- `jj`
-- `wt`
-- `worktrunk` symlink
-- `basedpyright`
-- `pytest`
-- `ruff`
-- `skopeo`
-- `dive`
-- `buildah`
-- `age`
-- `sops`
-- `doggo`
-- `grpcurl`
-- `websocat`
-- `podman-compose`
-- `hyperfine`
-- `duf`
-- `lnav`
-- `shfmt`
-- `strace`
-- `miller`
-- `csvlens`
-- `caddy`
-- `tlrc`
+It includes OpenCode plus the small apt-installed base needed for the wrapper image to run cleanly:
+
+- `bash`
+- `ca-certificates`
+- `curl`
+- `tar`
+- `tini`

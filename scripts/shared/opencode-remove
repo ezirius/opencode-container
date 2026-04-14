@@ -17,7 +17,7 @@ Behaviour:
 - with \\`images\\`, show only image targets
 - \\`All\\` removes all selected target types
 - mixed-mode \\`All\\` removes all containers first and then all images
-- \\`All, but newest\\` keeps one preferred container per workspace, where \\`production\\` beats \\`test\\` and commit timestamp breaks ties within a lane
+- \\`All, but newest\\` keeps one preferred container per workspace, where \\`$OPENCODE_LANE_PRODUCTION\\` beats \\`$OPENCODE_LANE_TEST\\` and commit timestamp breaks ties within a lane
 - image retention keeps the image serving each kept container
 
 Arguments:
@@ -40,7 +40,7 @@ require_podman
 
 container_lane_rank() {
   local lane="$1"
-  if [[ "$lane" == "production" ]]; then
+  if [[ "$lane" == "$OPENCODE_LANE_PRODUCTION" ]]; then
     printf '0'
   else
     printf '1'
@@ -310,25 +310,23 @@ remove_mixed() {
 
   selected="${options[$((choice_index - 2))]}"
   IFS=$'\t' read -r target _workspace _lane _upstream _wrapper _commitstamp _status <<< "$selected"
-  if printf '%s\n' "$container_rows" | grep -Fq "${target}"; then
-    while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
-      [[ -n "$name" ]] || continue
-      if [[ "$target" == "$name" ]]; then
-        podman rm -f "$name" >/dev/null
-        printf 'Removed container: %s\n' "$name"
-        return 0
-      fi
-    done <<< "$container_rows"
-  else
-    while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
-      [[ -n "$ref" ]] || continue
-      if [[ "$target" == "$ref" ]]; then
-        podman rmi "$ref" >/dev/null
-        printf 'Removed image: %s\n' "$ref"
-        return 0
-      fi
-    done <<< "$image_rows"
-  fi
+  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+    [[ -n "$name" ]] || continue
+    if [[ "$target" == "$name" ]]; then
+      podman rm -f "$name" >/dev/null
+      printf 'Removed container: %s\n' "$name"
+      return 0
+    fi
+  done <<< "$container_rows"
+
+  while IFS=$'\t' read -r ref _lane _upstream _wrapper _commitstamp; do
+    [[ -n "$ref" ]] || continue
+    if [[ "$target" == "$ref" ]]; then
+      podman rmi "$ref" >/dev/null
+      printf 'Removed image: %s\n' "$ref"
+      return 0
+    fi
+  done <<< "$image_rows"
 
   fail "failed to resolve selected removal target"
 }

@@ -1,0 +1,45 @@
+FROM oven/bun:__OPENCODE_TOOL_BUN_VERSION__ AS build
+
+WORKDIR /src
+COPY source/ /src/
+RUN bun install
+RUN bun run --cwd packages/opencode build --single --skip-embed-web-ui
+RUN set -eu; \
+    matches="$(find /src/packages/opencode/dist -type f -path '*/bin/opencode')"; \
+    count="$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')"; \
+    [ "$count" = "1" ] || { printf 'expected exactly one opencode binary, found %s\n' "$count" >&2; exit 1; }; \
+    cp "$matches" /tmp/opencode
+
+FROM ubuntu:__OPENCODE_UBUNTU_LTS_VERSION__
+
+ARG OPENCODE_CONTAINER_WORKSPACE_DIR=__OPENCODE_CONTAINER_WORKSPACE_DIR__
+ARG OPENCODE_CONTAINER_RUNTIME_HOME=__OPENCODE_CONTAINER_RUNTIME_HOME__
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    tar \
+    tini \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd -m -s /bin/bash opencode \
+  && mkdir -p "$OPENCODE_CONTAINER_WORKSPACE_DIR" "$OPENCODE_CONTAINER_RUNTIME_HOME" \
+  && chown -R root:root /workspace "$OPENCODE_CONTAINER_RUNTIME_HOME"
+
+COPY --from=build /tmp/opencode /usr/local/bin/opencode
+COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
+RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
+
+USER root
+WORKDIR $OPENCODE_CONTAINER_WORKSPACE_DIR
+
+ENV HOME=$OPENCODE_CONTAINER_RUNTIME_HOME
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
+CMD ["sleep", "infinity"]
