@@ -33,7 +33,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && useradd -m -s /bin/bash opencode \
   && mkdir -p "${OPENCODE_CONTAINER_WORKSPACE_DIR}" "${OPENCODE_CONTAINER_RUNTIME_HOME}" \
-  && chown -R root:root /workspace /run "${OPENCODE_CONTAINER_RUNTIME_HOME}"
+  && chown -R root:root /workspace "${OPENCODE_CONTAINER_RUNTIME_HOME}"
 
 RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIVE_SHA512" \
   && tmpdir="$(mktemp -d)" \
