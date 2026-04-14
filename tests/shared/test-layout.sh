@@ -38,6 +38,8 @@ grep -q '^__pycache__/$' "$ROOT/.gitignore"
 grep -q '^\.tmp/$' "$ROOT/.gitignore"
 grep -q '^ARG UBUNTU_VERSION$' "$ROOT/config/containers/Containerfile.wrapper"
 grep -q '^FROM ubuntu:\${UBUNTU_VERSION}$' "$ROOT/config/containers/Containerfile.wrapper"
+[[ "$(grep -c '^ARG OPENCODE_CONTAINER_WORKSPACE_DIR$' "$ROOT/config/containers/Containerfile.wrapper")" == '2' ]]
+[[ "$(grep -c '^ARG OPENCODE_CONTAINER_RUNTIME_HOME$' "$ROOT/config/containers/Containerfile.wrapper")" == '2' ]]
 grep -q '^RUN apt-get update \\' "$ROOT/config/containers/Containerfile.wrapper"
 grep -q '^  && apt-get install -y --no-install-recommends \\' "$ROOT/config/containers/Containerfile.wrapper"
 ! grep -q '/tmp/opencode-install-tools.sh' "$ROOT/config/containers/Containerfile.wrapper"
