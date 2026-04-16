@@ -17,6 +17,7 @@ bash -n \
 	"$ROOT/tests/shared/test-args.sh" \
 	"$ROOT/tests/shared/test-layout.sh" \
 	"$ROOT/tests/shared/test-common.sh" \
+	"$ROOT/tests/shared/test-image-packages.sh" \
 	"$ROOT/tests/shared/test-runtime.sh" \
 	"$ROOT/tests/shared/test-build-smoke.sh"
 
@@ -25,6 +26,7 @@ sh -n "$ROOT/config/containers/entrypoint.sh"
 "$ROOT/tests/shared/test-args.sh"
 "$ROOT/tests/shared/test-layout.sh"
 "$ROOT/tests/shared/test-common.sh"
+bash "$ROOT/tests/shared/test-image-packages.sh"
 "$ROOT/tests/shared/test-runtime.sh"
 bash "$ROOT/tests/shared/test-build-smoke.sh"
 

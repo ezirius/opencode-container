@@ -188,6 +188,7 @@ It includes OpenCode plus the small apt-installed base needed for the wrapper im
 - `bash`
 - `ca-certificates`
 - `curl`
+- `git`
 - `tar`
 - `tini`
 
