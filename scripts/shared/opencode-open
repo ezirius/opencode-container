@@ -6,38 +6,41 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") [<workspace>] [opencode args...]
-       $(basename "$0") [<workspace>] -- [opencode args...]
-       $(basename "$0") [<workspace>] $(lane_usage_text) <upstream> [opencode args...]
-       $(basename "$0") [<workspace>] $(lane_usage_text) <upstream> -- [opencode args...]
-       $(basename "$0") -- $(lane_usage_text) <upstream> [opencode args...]
+  show_help "Usage: $(basename "$0") [<workspace>] [project] [opencode args...]
+       $(basename "$0") [<workspace>] [project] -- [opencode args...]
+       $(basename "$0") [<workspace>] $(lane_usage_text) <upstream> [project] [opencode args...]
+       $(basename "$0") [<workspace>] $(lane_usage_text) <upstream> [project] -- [opencode args...]
+       $(basename "$0") -- $(lane_usage_text) <upstream> [project] [opencode args...]
        $(basename "$0") -- -- [opencode args...]
 
 Description:
-Open OpenCode by execing into the running container for one workspace.
+Open OpenCode by execing into the resolved container for one workspace.
 
 Behaviour:
-- resolves the running container target for the workspace, or a specific lane/upstream container when given explicitly
-- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
-- forwards any remaining arguments to the in-container \\`opencode\\` command
+- resolves the container target for the workspace, or a specific lane/upstream container when given explicitly
+- with no <workspace>, prompt with workspace names from \`OPENCODE_BASE_ROOT\` in alphabetical order
+- require a direct-child project from \`OPENCODE_DEVELOPMENT_ROOT\`, using an explicit \`[project]\` when provided or the project picker otherwise
+- forwards any remaining arguments to the in-container \`opencode\` command
 
 Arguments:
 - <workspace> : workspace name
 - $(lane_usage_text) : optional explicit lane selector
 - <upstream> : optional explicit upstream selector for an existing container target
-- [opencode args...] : arguments forwarded to \\`opencode\\`
+- [project] : optional explicit direct-child project name under \`OPENCODE_DEVELOPMENT_ROOT\`; if omitted, the wrapper prompts for one
+- [opencode args...] : arguments forwarded to \`opencode\`
 
 Examples:
 - $(basename "$0") demo
-- $(basename "$0") demo -- --help
+- $(basename "$0") demo beta -- --help
 - $(basename "$0") -- $OPENCODE_LANE_TEST $OPENCODE_VERSION -- --help
-- $(basename "$0") demo $OPENCODE_LANE_PRODUCTION $OPENCODE_VERSION -- --help
+- $(basename "$0") demo $OPENCODE_LANE_PRODUCTION $OPENCODE_VERSION beta -- --help
 
 Notes:
-- use \\`--\\` when the first forwarded argument would otherwise look like a wrapper selector such as \\`$OPENCODE_LANE_TEST\\` or \\`$OPENCODE_LANE_PRODUCTION\\`
-- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
-- when omitting \\`<workspace>\\`, use a leading \\`--\\` before explicit lane selectors or forwarded arguments
-- this command requires the resolved container to already be running."
+- use \`--\` when the first forwarded argument would otherwise look like a wrapper selector such as \`$OPENCODE_LANE_TEST\` or \`$OPENCODE_LANE_PRODUCTION\`
+- omitting \`<workspace>\` opens an alphabetical workspace picker from \`OPENCODE_BASE_ROOT\`
+- omitting \`[project]\` opens an alphabetical direct-child project picker from \`OPENCODE_DEVELOPMENT_ROOT\`
+- when omitting \`[project]\` and forwarding payload arguments, use \`--\` before the payload so the wrapper prompts for a project before parsing payload arguments
+- when omitting \`<workspace>\`, use a leading \`--\` before explicit lane selectors or forwarded arguments."
 fi
 
 if [[ $# -gt 0 && "$1" != "--" ]]; then
@@ -56,21 +59,47 @@ if [[ ${1-} == "--" ]]; then
   PAYLOAD_ONLY=1
 fi
 
-if [[ "$PAYLOAD_ONLY" == "0" && $# == 1 ]] && is_lane "$1"; then
+if [[ "$PAYLOAD_ONLY" == "0" && $# == 1 ]] && is_lane "$1" && ! project_name_exists "$1"; then
   usage_error "$(basename "$0") <workspace> $(lane_usage_text) <upstream> [opencode args...]"
 fi
 
 require_podman
 
-if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 ]] && is_lane "$1"; then
-  CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$1" "$2")" || exit $?
-  shift 2
+consume_project_selection() {
+  if [[ "$PAYLOAD_ONLY" == "0" && $# -gt 0 && "${1-}" != "--" ]]; then
+    PROJECT_NAME="$(resolve_selected_project_name "$1")"
+    shift
+  else
+    PROJECT_NAME="$(resolve_selected_project_name '')"
+  fi
   if [[ ${1-} == "--" ]]; then
     shift
   fi
+  REMAINING_ARGS=("$@")
+}
+
+REMAINING_ARGS=("$@")
+
+if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 ]] && is_lane "$1"; then
+  LANE="$1"
+  UPSTREAM_SELECTOR="$2"
+  CONTAINER_NAME="$(resolve_existing_explicit_container "$WORKSPACE" "$LANE" "$UPSTREAM_SELECTOR")" || exit $?
+  shift 2
+  UPSTREAM_RESOLVED="$(resolve_upstream_selector "$UPSTREAM_SELECTOR")"
 else
   CONTAINER_NAME="$(resolve_container_for_workspace "$WORKSPACE")" || exit $?
+  LANE="$(container_label "$CONTAINER_NAME" "$OPENCODE_LABEL_LANE")"
+  UPSTREAM_RESOLVED="$(container_label "$CONTAINER_NAME" "$OPENCODE_LABEL_UPSTREAM")"
 fi
 
-container_running "$CONTAINER_NAME" || fail "container is not running: $CONTAINER_NAME"
+consume_project_selection "$@"
+if [[ ${#REMAINING_ARGS[@]} -gt 0 ]]; then
+  set -- "${REMAINING_ARGS[@]}"
+else
+  set --
+fi
+IMAGE_REF="$(container_image_ref "$CONTAINER_NAME")"
+WRAPPER_CONTEXT="$(container_label "$CONTAINER_NAME" "$OPENCODE_LABEL_WRAPPER")"
+COMMITSTAMP="$(container_label "$CONTAINER_NAME" "$OPENCODE_LABEL_COMMITSTAMP")"
+require_running_container_matches_image_and_runtime "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$PROJECT_NAME"
 exec_opencode_in_container "$CONTAINER_NAME" "$@"

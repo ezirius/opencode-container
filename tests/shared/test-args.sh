@@ -5,6 +5,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
+README_DOC="$ROOT/README.md"
+USAGE_DOC="$ROOT/docs/shared/usage.md"
+
 assert_contains() {
 	local file="$1" needle="$2" message="$3"
 	grep -Fq -- "$needle" "$file" || {
@@ -71,21 +74,25 @@ BOOTSTRAP_HELP="$($ROOT/scripts/shared/opencode-bootstrap --help 2>&1)"
 START_HELP="$($ROOT/scripts/shared/opencode-start --help 2>&1)"
 [[ "$START_HELP" == *'Notes:'* ]]
 [[ "$START_HELP" == *'use `--`'* ]]
+[[ "$START_HELP" == *'[project]'* ]]
 
 OPEN_HELP="$($ROOT/scripts/shared/opencode-open --help 2>&1)"
 [[ "$OPEN_HELP" == *'Description:'* ]]
 [[ "$OPEN_HELP" == *'use `--`'* ]]
+[[ "$OPEN_HELP" == *'[project]'* ]]
 
 SHELL_HELP="$($ROOT/scripts/shared/opencode-shell --help 2>&1)"
 [[ "$SHELL_HELP" == *'Description:'* ]]
 [[ "$SHELL_HELP" == *'interactive shell'* ]]
+[[ "$SHELL_HELP" == *'selected project directory'* ]]
 
 LOGS_HELP="$($ROOT/scripts/shared/opencode-logs --help 2>&1)"
 [[ "$LOGS_HELP" == *'podman logs'* ]]
 [[ "$LOGS_HELP" == *'--tail 50'* ]]
 
 STATUS_HELP="$($ROOT/scripts/shared/opencode-status --help 2>&1)"
-[[ "$STATUS_HELP" == *'resolved workspace container'* ]]
+[[ "$STATUS_HELP" == *'grouped diagnostic summary'* ]]
+[[ "$STATUS_HELP" == *'status never prints secret values'* ]]
 
 STOP_HELP="$($ROOT/scripts/shared/opencode-stop --help 2>&1)"
 [[ "$STOP_HELP" == *'already stopped'* ]]
@@ -95,11 +102,25 @@ REMOVE_HELP="$($ROOT/scripts/shared/opencode-remove --help 2>&1)"
 [[ "$REMOVE_HELP" == *'containers first and then all images'* ]]
 
 assert_exit_zero "'$ROOT/scripts/shared/opencode-start' --help ignored trailing args" "$TMPDIR/start-help.out"
-assert_contains "$TMPDIR/start-help.out" 'Usage: opencode-start [<workspace>] [opencode args...]' 'help output wins even when extra trailing args are present'
+assert_contains "$TMPDIR/start-help.out" 'Usage: opencode-start [<workspace>] [project] [opencode args...]' 'help output wins even when extra trailing args are present'
 assert_exit_zero "OPENCODE_LANE_PRODUCTION=shipit OPENCODE_LANE_TEST=try '$ROOT/scripts/shared/opencode-build' --help" "$TMPDIR/build-help-config.out"
 assert_contains "$TMPDIR/build-help-config.out" 'Usage: opencode-build <shipit|try> [upstream]' 'build help reflects configured lane names'
 assert_exit_zero "OPENCODE_UPSTREAM_MAIN_SELECTOR=trunk OPENCODE_DEFAULT_UPSTREAM_SELECTOR=stable '$ROOT/scripts/shared/opencode-build' --help" "$TMPDIR/build-help-upstream.out"
 assert_contains "$TMPDIR/build-help-upstream.out" '- trunk' 'build help reflects configured main upstream selector'
 assert_contains "$TMPDIR/build-help-upstream.out" '- stable' 'build help reflects configured default upstream selector'
+
+assert_contains "$README_DOC" 'OpenCode global config in `~/.config/opencode/opencode.json`' 'README documents OpenCode global config path'
+assert_contains "$README_DOC" 'selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-project`' 'README documents the project mount and in-container workdir'
+assert_contains "$README_DOC" 'picker order for project-facing commands is workspace, then target or container, then project' 'README documents picker order'
+assert_contains "$README_DOC" 'Keep the current pin and continue' 'README documents the Ubuntu LTS keep option'
+assert_contains "$README_DOC" 'Update `config/shared/opencode.conf` to the newer Ubuntu LTS pin and continue' 'README documents the Ubuntu LTS update option'
+assert_contains "$README_DOC" 'Cancel the build without changing the pin' 'README documents the Ubuntu LTS cancel option'
+
+assert_contains "$USAGE_DOC" 'selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT`, mounted at `/workspace/opencode-project`' 'usage documents the project mount'
+assert_contains "$USAGE_DOC" 'project-facing command picker order is workspace, then target or container, then project' 'usage documents picker order'
+assert_contains "$USAGE_DOC" '`opencode-open` starts in `/workspace/opencode-project`' 'usage documents open workdir'
+assert_contains "$USAGE_DOC" '`opencode-shell` runs commands in `/workspace/opencode-project`' 'usage documents shell workdir'
+assert_contains "$USAGE_DOC" 'OpenCode global config in `~/.config/opencode/opencode.json`' 'usage documents OpenCode global config path'
+assert_contains "$USAGE_DOC" 'OpenCode project config in the selected project root as `opencode.json` and `.opencode/`' 'usage documents OpenCode project config paths'
 
 echo "Argument contract checks passed"
