@@ -110,6 +110,11 @@ append_env_assignments() {
     case "$line" in
       [A-Za-z_][A-Za-z0-9_]*=*)
         key=${line%%=*}
+        case "$key" in
+          OPENCODE_CONFIG|OPENCODE_CONFIG_DIR)
+            continue
+            ;;
+        esac
         value=${line#*=}
         value=$(normalise_assignment_value "$value")
         printf 'export %s=' "$key" >> "$TMP_RUNTIME_ENV_FILE"

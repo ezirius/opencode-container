@@ -97,8 +97,8 @@ if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 ]] && is_lane "$1"; then
   IMAGE_REF="$(newest_matching_image_ref "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" 2>/dev/null || true)"
   [[ -n "$IMAGE_REF" ]] || fail "no local image found for lane=$LANE upstream=$UPSTREAM_RESOLVED wrapper=$WRAPPER_CONTEXT (run opencode-build first)"
   COMMITSTAMP="$(image_label "$IMAGE_REF" "$OPENCODE_LABEL_COMMITSTAMP")"
-  CONTAINER_NAME="$(container_name "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT")"
   consume_project_selection "$@"
+  CONTAINER_NAME="$(container_name "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$PROJECT_NAME")"
   if [[ ${#REMAINING_ARGS[@]} -gt 0 ]]; then
     set -- "${REMAINING_ARGS[@]}"
   else

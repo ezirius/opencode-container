@@ -449,8 +449,6 @@ seed_workspace_config_env_file() {
 # Use secrets.env for tokens, keys, passwords, and other secrets.
 #
 # Non-secret examples:
-  # OPENCODE_CONFIG=~/.config/opencode/opencode.json
-  # OPENCODE_CONFIG_DIR=.opencode
 # OPENCODE_MODEL=anthropic/claude-sonnet-4-5
 # OPENCODE_HOST_SERVER_PORT=$OPENCODE_MANAGED_SERVER_CONTAINER_PORT
 EOF
@@ -595,6 +593,22 @@ project_root_dir() {
 	local project_name="$1"
 	require_project_name "$project_name"
 	printf '%s/%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "$project_name"
+}
+
+container_selected_project_name() {
+	local container_name="$1"
+	local project_name project_mount
+	project_name="$(container_label "$container_name" "$OPENCODE_LABEL_PROJECT" 2>/dev/null || true)"
+	if [[ -n "$project_name" && "$project_name" != "<no value>" ]]; then
+		printf '%s' "$project_name"
+		return 0
+	fi
+	project_mount="$(container_mount_source_for_destination "$container_name" "$(container_project_dir)" 2>/dev/null || true)"
+	if [[ -n "$project_mount" ]]; then
+		printf '%s' "${project_mount##*/}"
+		return 0
+	fi
+	printf '%s' 'global'
 }
 
 container_project_dir() {
@@ -962,7 +976,13 @@ container_name() {
 	local lane="$2"
 	local upstream="$3"
 	local wrapper="$4"
-	printf '%s-%s-%s-%s-%s' "$OPENCODE_PROJECT_PREFIX" "$workspace" "$lane" "$upstream" "$wrapper"
+	local project_scope="${5-}"
+	if [[ -n "$project_scope" ]]; then
+		require_project_name "$project_scope"
+	else
+		project_scope='global'
+	fi
+	printf '%s-%s-%s-%s-%s-%s' "$OPENCODE_PROJECT_PREFIX" "$workspace" "$lane" "$upstream" "$wrapper" "$project_scope"
 }
 
 normalize_image_ref() {
@@ -1539,6 +1559,7 @@ create_or_replace_container() {
 		-e "OPENCODE_WRAPPER_CONFIG_ENV_FILE=$(container_config_env_file)"
 		-e "OPENCODE_WRAPPER_SECRETS_ENV_FILE=$(container_secrets_env_file)"
 		--label "$OPENCODE_LABEL_WORKSPACE=$workspace"
+		--label "$OPENCODE_LABEL_PROJECT=${selected_project_name:-global}"
 		--label "$OPENCODE_LABEL_LANE=$lane"
 		--label "$OPENCODE_LABEL_UPSTREAM=$upstream"
 		--label "$OPENCODE_LABEL_WRAPPER=$wrapper"
@@ -1712,18 +1733,23 @@ ensure_managed_server_for_container() {
 
 start_or_reuse_target() {
 	local workspace="$1" kind="$2" ref="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7" project_name="${8-}"
-	local resolved_container_name
+	local resolved_container_name selected_project_name
 	local existing_image_ref
 
 	if [[ "$kind" == "container" ]]; then
 		existing_image_ref="$(container_image_ref "$ref")"
 		[[ -n "$existing_image_ref" ]] || fail "failed to resolve backing image for container: $ref"
-		ensure_running_container_matches_image_and_runtime "$ref" "$existing_image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
-		printf '%s' "$ref"
+		resolved_container_name="$ref"
+		if [[ -n "$project_name" ]]; then
+			selected_project_name="$(resolve_selected_project_name "$project_name")"
+			resolved_container_name="$(container_name "$workspace" "$lane" "$upstream" "$wrapper" "$selected_project_name")"
+		fi
+		ensure_running_container_matches_image_and_runtime "$resolved_container_name" "$existing_image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
+		printf '%s' "$resolved_container_name"
 		return 0
 	fi
 
-	resolved_container_name="$(container_name "$workspace" "$lane" "$upstream" "$wrapper")"
+	resolved_container_name="$(container_name "$workspace" "$lane" "$upstream" "$wrapper" "$project_name")"
 	ensure_running_container_matches_image_and_runtime "$resolved_container_name" "$ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
 	printf '%s' "$resolved_container_name"
 }

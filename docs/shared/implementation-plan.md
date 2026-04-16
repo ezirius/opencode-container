@@ -302,12 +302,14 @@ It must not contain OpenCode-native settings such as:
 - TUI settings
 - agents, commands, plugins, or themes
 
-Those OpenCode-native settings stay upstream-native under `/root/.config/opencode` or in project-local OpenCode config.
+Those OpenCode-native settings stay upstream-native under `/root/.config/opencode`, `/root/.config/opencode/tui.json`, or in project-local OpenCode config such as `opencode.json`, `tui.json`, `AGENTS.md`, and `.opencode/`.
 
 Rules:
 
 - `.env` files are wrapper runtime inputs
-- OpenCode-native config stays in upstream-native JSON or JSONC files under `/root/.config/opencode`
+- OpenCode-native global config stays in upstream-native JSON or JSONC files under `/root/.config/opencode`
+- OpenCode-native project config stays in the selected project root
+- OpenCode-native project-scoped session and message data stays under `/root/.local/share/opencode/project/<project-slug>/storage/`
 - wrapper-owned defaults such as the Ubuntu LTS base version must be pinned in config, checked for newer suitable versions during build, and never changed silently
 - the current implementation performs that newer-version notification for the pinned Ubuntu LTS base
 - wrapper config or secrets changes must be applied by container restart only

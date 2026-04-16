@@ -125,7 +125,9 @@ Required mounts are:
 The workspace config directory remains inside the mounted workspace tree at `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`.
 
 OpenCode remains responsible for its own home/state layout under that runtime home.
-OpenCode global config in `~/.config/opencode/opencode.json` and OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remain app-owned.
+OpenCode global config in `~/.config/opencode/opencode.json` and OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remain app-owned. OpenCode project-scoped session and message data stays under `~/.local/share/opencode/project/<project-slug>/storage/` inside the mounted runtime home.
+
+The selected project is part of container identity, so different projects in the same workspace resolve to different container names even when they share the same runtime home.
 
 ## Wrapper Runtime Config
 

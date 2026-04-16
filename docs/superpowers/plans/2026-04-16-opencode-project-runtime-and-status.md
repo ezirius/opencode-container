@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Split OpenCode global versus project config correctly, require project selection from the development base, add the `/workspace/opencode-project` mount, and make status/reporting and pinned-version handling match the repo rules.
+**Goal:** Split OpenCode global versus project config correctly, require project selection from the development base, add the `/workspace/opencode-project` mount, make selected project part of container identity, and keep status/reporting and pinned-version handling aligned with the repo rules.
 
-**Architecture:** Keep wrapper-wide defaults in `config/shared/opencode.conf`, keep workspace-scoped wrapper env in `config.env` and `secrets.env`, keep OpenCode global config in `~/.config/opencode`, and treat the selected direct child project under `OPENCODE_DEVELOPMENT_ROOT` as the upstream-native project root at `/workspace/opencode-project`. Make the selected project part of runtime compatibility so container recreation stays deterministic, and update status output to report the four-mount contract and readable diagnostics.
+**Architecture:** Keep wrapper-wide defaults in `config/shared/opencode.conf`, keep workspace-scoped wrapper env in `config.env` and `secrets.env`, keep OpenCode global config in `~/.config/opencode`, and treat the selected direct child project under `OPENCODE_DEVELOPMENT_ROOT` as the upstream-native project root at `/workspace/opencode-project`. Make the selected project part of container identity so multiple projects in one workspace can run concurrently without sharing a container name, keep OpenCode project-scoped session state under `~/.local/share/opencode/project/<project-slug>/storage/`, and filter wrapper env so it cannot redirect OpenCode's own config discovery.
 
 **Tech Stack:** Bash, Podman, shell test suite in `tests/shared/*.sh`, Markdown docs.
 

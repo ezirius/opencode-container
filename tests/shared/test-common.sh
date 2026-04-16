@@ -103,7 +103,8 @@ assert_eq "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/confi
 assert_eq "/workspace/opencode-workspace" "$(container_workspace_dir)" "container workspace dir is correct"
 assert_eq "/workspace/opencode-workspace/.config/opencode" "$(container_config_dir)" "container config dir is correct"
 assert_eq "$TMPROOT/opencode-development:/workspace/opencode-development" "$(development_mount_spec)" "development mount uses configured root"
-assert_eq "opencode-general-production-1.4.3-main" "$(container_name general production 1.4.3 main)" "container name uses deterministic identity"
+assert_eq "opencode-general-production-1.4.3-main-global" "$(container_name general production 1.4.3 main)" "container name defaults to a global project scope when no project is selected"
+assert_eq "opencode-general-production-1.4.3-main-alpha" "$(container_name general production 1.4.3 main alpha)" "container name includes the selected project in runtime identity"
 assert_eq "opencode-local:test-1.4.3-main-20260410-163440-ab12cd3" "$(image_ref test 1.4.3 main 20260410-163440-ab12cd3)" "image ref uses immutable identity"
 assert_eq "1.4.3" "$(resolve_upstream_selector 1.4.3)" "exact upstream selector stays unchanged"
 assert_eq "1.4.3" "$(resolve_upstream_selector v1.4.3)" "v-prefixed upstream selector normalizes"
@@ -143,6 +144,11 @@ ensure_workspace_layout general
 seed_workspace_config_env_file general
 assert_contains "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" 'OPENCODE_MODEL=test' 'workspace seeding preserves existing config env content'
 assert_contains "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" '# keep me' 'workspace seeding is non-destructive when config env already exists'
+
+rm -f "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env"
+seed_workspace_config_env_file general
+assert_not_contains "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" 'OPENCODE_CONFIG=' 'workspace seeding does not advertise OpenCode config path overrides'
+assert_not_contains "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" 'OPENCODE_CONFIG_DIR=' 'workspace seeding does not advertise OpenCode config directory overrides'
 
 cat >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
 OPENCODE_HOST_SERVER_PORT=5096
@@ -220,6 +226,16 @@ assert_contains "$ENTRYPOINT_RUNTIME" "export SECRET_TOKEN='override'" 'entrypoi
 assert_contains "$ENTRYPOINT_RUNTIME" "export MESSAGE='value # kept'" 'entrypoint preserves literal hash characters inside quoted values'
 assert_contains "$ENTRYPOINT_RUNTIME" "export SPACED=''" 'entrypoint allows empty secret overrides'
 assert_contains "$ENTRYPOINT_RUNTIME" "export NAME_WITH_QUOTE='O'\\''Brien'" 'entrypoint escapes embedded single quotes safely'
+
+printf 'OPENCODE_CONFIG=/tmp/override.json\nOPENCODE_CONFIG_DIR=/tmp/override-dir\nOPENCODE_MODEL=test-model\n' >"$ENTRYPOINT_CONFIG"
+printf '' >"$ENTRYPOINT_SECRETS"
+OPENCODE_WRAPPER_RUNTIME_ENV_FILE="$ENTRYPOINT_RUNTIME" \
+	OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
+	OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
+	sh "$ROOT/config/containers/entrypoint.sh" true
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export OPENCODE_CONFIG=' 'entrypoint strips wrapper attempts to override the OpenCode config file path'
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export OPENCODE_CONFIG_DIR=' 'entrypoint strips wrapper attempts to override the OpenCode config directory'
+assert_contains "$ENTRYPOINT_RUNTIME" "export OPENCODE_MODEL='test-model'" 'entrypoint still keeps allowed OpenCode runtime variables'
 
 printf 'protected\n' >"$ENTRYPOINT_TARGET"
 ln -sf "$ENTRYPOINT_TARGET" "$ENTRYPOINT_RUNTIME"

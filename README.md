@@ -108,7 +108,9 @@ OpenCode-native state remains app-owned inside that runtime home, including loca
 - `~/.local/state/opencode`
 - `~/.cache/opencode`
 
-OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remains app-owned. For `opencode-open` and `opencode-shell`, the default in-container workdir is `/workspace/opencode-project`.
+OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remains app-owned. OpenCode project-scoped session and message data remains app-owned under `~/.local/share/opencode/project/<project-slug>/storage/`. For `opencode-open` and `opencode-shell`, the default in-container workdir is `/workspace/opencode-project`.
+
+Container identity includes the selected project so multiple projects in one workspace can run concurrently without sharing the same container name.
 
 ## Wrapper Config
 

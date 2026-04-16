@@ -110,6 +110,8 @@ assert_contains "$TMPDIR/build-help-upstream.out" '- trunk' 'build help reflects
 assert_contains "$TMPDIR/build-help-upstream.out" '- stable' 'build help reflects configured default upstream selector'
 
 assert_contains "$README_DOC" 'OpenCode global config in `~/.config/opencode/opencode.json`' 'README documents OpenCode global config path'
+assert_contains "$README_DOC" 'OpenCode project-scoped session and message data remains app-owned under `~/.local/share/opencode/project/<project-slug>/storage/`' 'README documents upstream project-scoped session storage under the runtime home'
+assert_contains "$README_DOC" 'Container identity includes the selected project so multiple projects in one workspace can run concurrently without sharing the same container name.' 'README documents project-aware container identity'
 assert_contains "$README_DOC" 'selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-project`' 'README documents the project mount and in-container workdir'
 assert_contains "$README_DOC" 'picker order for project-facing commands is workspace, then target or container, then project' 'README documents picker order'
 assert_contains "$README_DOC" 'Keep the current pin and continue' 'README documents the Ubuntu LTS keep option'
@@ -122,5 +124,7 @@ assert_contains "$USAGE_DOC" '`opencode-open` starts in `/workspace/opencode-pro
 assert_contains "$USAGE_DOC" '`opencode-shell` runs commands in `/workspace/opencode-project`' 'usage documents shell workdir'
 assert_contains "$USAGE_DOC" 'OpenCode global config in `~/.config/opencode/opencode.json`' 'usage documents OpenCode global config path'
 assert_contains "$USAGE_DOC" 'OpenCode project config in the selected project root as `opencode.json` and `.opencode/`' 'usage documents OpenCode project config paths'
+assert_contains "$USAGE_DOC" 'OpenCode project-scoped session and message data stays under `~/.local/share/opencode/project/<project-slug>/storage/` inside the mounted runtime home.' 'usage documents upstream project-scoped session storage'
+assert_contains "$USAGE_DOC" 'The selected project is part of container identity, so different projects in the same workspace resolve to different container names even when they share the same runtime home.' 'usage documents project-aware container identity'
 
 echo "Argument contract checks passed"

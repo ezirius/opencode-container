@@ -674,6 +674,8 @@ assert_contains "$STATE_DIR/project-missing-root-create.out" "project 'beta' was
 assert_eq "$DEVELOPMENT_ROOT/beta" "$(project_root_dir beta)" 'project root resolves within the configured development root'
 assert_eq '/workspace/opencode-project' "$(container_project_dir)" 'container project dir uses the fixed wrapper-owned mount point'
 assert_eq "$DEVELOPMENT_ROOT/beta:/workspace/opencode-project" "$(project_mount_spec beta)" 'project mount spec pairs the selected host project with the fixed container project path'
+assert_eq 'opencode-projectmount-test-1.4.3-main-global' "$(container_name projectmount test 1.4.3 main)" 'container identity defaults to a global project scope when no project is selected'
+assert_eq 'opencode-projectmount-test-1.4.3-main-beta' "$(container_name projectmount test 1.4.3 main beta)" 'container identity includes the selected project'
 create_or_replace_container opencode-project-runtime-create-test opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 projectmount test 1.4.3 main 20260410-163440-ab12cd3 beta
 assert_contains "$STATE_DIR/podman.log" 'OPENCODE_CONTAINER_PROJECT_DIR=/workspace/opencode-project' 'container creation exports the fixed project mount path'
 assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-project-runtime-create-test")" 'container creation mounts the selected direct-child project'
@@ -689,8 +691,14 @@ if bash -lc "cd '$ROOT'; export PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BAS
 	exit 1
 fi
 assert_contains "$STATE_DIR/project-deleted-reject.out" "project 'temporary-delete' was not found under $DEVELOPMENT_ROOT" 'runtime validation fails clearly when the selected project has been deleted'
-assert_eq 'opencode-projectmount-test-1.4.3-main' "$(start_or_reuse_target projectmount image 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 main 20260410-163440-ab12cd3 beta)" 'start-or-reuse propagates the selected project through image-backed target creation'
-assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-projectmount-test-1.4.3-main")" 'start-or-reuse mounts the selected project for image-backed targets'
+assert_eq 'opencode-projectmount-test-1.4.3-main-beta' "$(start_or_reuse_target projectmount image 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 main 20260410-163440-ab12cd3 beta)" 'start-or-reuse propagates the selected project through image-backed target creation'
+assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-projectmount-test-1.4.3-main-beta")" 'start-or-reuse mounts the selected project for image-backed targets'
+create_or_replace_container opencode-projectmount-test-1.4.3-main-alpha opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 projectmount test 1.4.3 main 20260410-163440-ab12cd3 alpha
+create_or_replace_container opencode-projectmount-test-1.4.3-main-beta opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 projectmount test 1.4.3 main 20260410-163440-ab12cd3 beta
+assert_eq "$DEVELOPMENT_ROOT/alpha" "$(cat "$STATE_DIR/mount_project_opencode-projectmount-test-1.4.3-main-alpha")" 'alpha project container keeps its own selected project mount'
+assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-projectmount-test-1.4.3-main-beta")" 'beta project container keeps its own selected project mount'
+assert_eq "$TMPDIR/workspaces/projectmount/opencode-home" "$(cat "$STATE_DIR/mount_home_opencode-projectmount-test-1.4.3-main-alpha")" 'alpha project container still uses the shared workspace home'
+assert_eq "$TMPDIR/workspaces/projectmount/opencode-home" "$(cat "$STATE_DIR/mount_home_opencode-projectmount-test-1.4.3-main-beta")" 'beta project container still uses the shared workspace home'
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-project-mount-test-1.4.3-main' projectmount test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\n' "$TMPDIR/workspaces/projectmount/opencode-home" >"$STATE_DIR/mount_home_opencode-project-mount-test-1.4.3-main"
 printf '%s\n' "$TMPDIR/workspaces/projectmount/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-project-mount-test-1.4.3-main"
@@ -768,8 +776,8 @@ printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-gener
 	printf 'assertion failed: shell should refuse stopped containers instead of starting them\n' >&2
 	exit 1
 }
-assert_contains "$STATE_DIR/shell-stopped.out" 'container is not running: opencode-general-test-1.4.3-main' 'shell rejects stopped containers instead of starting them'
-assert_not_contains "$STATE_DIR/podman.log" 'start opencode-general-test-1.4.3-main' 'shell does not start stopped containers implicitly'
+assert_contains "$STATE_DIR/shell-stopped.out" 'container is not running:' 'shell rejects stopped containers instead of starting them'
+assert_not_contains "$STATE_DIR/podman.log" 'start opencode-general-test-1.4.3-main-beta' 'shell does not start stopped containers implicitly'
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\n' "$TMPDIR/workspaces/second/opencode-home" >"$STATE_DIR/mount_home_opencode-second-test-1.4.3-main"
@@ -781,7 +789,7 @@ printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-secon
 assert_contains "$STATE_DIR/shell-explicit-project-no-payload.out" 'mock exec' 'shell accepts an explicit project even when no command args remain'
 assert_contains "$STATE_DIR/podman.log" 'exec /bin/sh' 'shell opens an interactive shell when explicit project selection leaves no command args'
 "$ROOT/scripts/shared/opencode-bootstrap" second beta -- --version >"$STATE_DIR/bootstrap.out"
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'bootstrap reuses the resolved target and opens OpenCode in the selected project directory'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main-beta /bin/sh -lc' 'bootstrap reuses the resolved target and opens OpenCode in the selected project directory'
 : >"$STATE_DIR/podman.log"
 "$ROOT/scripts/shared/opencode-bootstrap" second beta >"$STATE_DIR/bootstrap-no-payload.out"
 assert_contains "$STATE_DIR/bootstrap-no-payload.out" 'mock exec' 'bootstrap accepts an explicit project even when no OpenCode args remain'
@@ -794,9 +802,8 @@ printf '2\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-st
 assert_contains "$STATE_DIR/start-picker.out" "Select a target for workspace 'picker'" 'start still shows the target picker for implicit target resolution'
 assert_contains "$STATE_DIR/start-picker.out" 'Select a project from' 'start requires project selection after resolving the workspace target'
 assert_line_order "$STATE_DIR/start-picker.out" "Select a target for workspace 'picker'" 'Select a project from' 'start resolves the target before prompting for the project'
-assert_contains "$STATE_DIR/start-picker.out" '  Name: opencode-picker-test-1.4.3-main' 'start can select an image row and create the matching workspace container'
-assert_contains "$STATE_DIR/podman.log" 'rm -f opencode-picker-test-1.4.3-main' 'selecting a newer image row replaces the stale workspace container'
-assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-picker-test-1.4.3-main")" 'target-selected start mounts the chosen project into the recreated container'
+assert_contains "$STATE_DIR/start-picker.out" '  Name: opencode-picker-test-1.4.3-main-beta' 'start can select an image row and create the matching project-specific container'
+assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-picker-test-1.4.3-main-beta")" 'target-selected start mounts the chosen project into the recreated container'
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
 
@@ -833,7 +840,7 @@ printf '2\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-sh
 assert_contains "$STATE_DIR/shell-second-picker.out" "Select a container for workspace 'second'" 'shell can still select among multiple matching containers'
 assert_contains "$STATE_DIR/shell-second-picker.out" 'Select a project from' 'shell requires project selection after choosing a matching container'
 assert_line_order "$STATE_DIR/shell-second-picker.out" "Select a container for workspace 'second'" 'Select a project from' 'shell resolves the matching container before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'shell can select among multiple matching containers'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project' 'shell can select among multiple matching containers and exec in the selected project directory'
 
 printf '%s	%s	%s	%s	%s	%s	%s	%s
 printf '%s
@@ -864,9 +871,9 @@ assert_contains "$STATE_DIR/stop.out" 'Stopped container: opencode-general-test-
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-feature-xyz-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 feature-xyz 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
 OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-start" branchy test 1.4.3 beta -- --version >"$STATE_DIR/start-with-args.out"
-assert_contains "$STATE_DIR/podman.log" '--name opencode-branchy-test-1.4.3-feature-xyz' 'start with args creates the selected wrapper-context container'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-branchy-test-1.4.3-feature-xyz /bin/sh -lc' 'start with args forwards directly into the selected container'
-podman rm -f opencode-branchy-test-1.4.3-feature-xyz >/dev/null
+assert_contains "$STATE_DIR/podman.log" '--name opencode-branchy-test-1.4.3-feature-xyz-beta' 'start with args creates the selected wrapper-context container'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-branchy-test-1.4.3-feature-xyz-beta /bin/sh -lc' 'start with args forwards directly into the selected container'
+podman rm -f opencode-branchy-test-1.4.3-feature-xyz-beta >/dev/null
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
