@@ -43,6 +43,7 @@ grep -q '^FROM ubuntu:\${UBUNTU_VERSION}$' "$ROOT/config/containers/Containerfil
 [[ "$(grep -c '^ARG OPENCODE_CONTAINER_RUNTIME_HOME$' "$ROOT/config/containers/Containerfile.wrapper")" == '2' ]]
 grep -q '^RUN apt-get update \\' "$ROOT/config/containers/Containerfile.wrapper"
 grep -q '^  && apt-get install -y --no-install-recommends \\' "$ROOT/config/containers/Containerfile.wrapper"
+grep -q '^    git \\' "$ROOT/config/containers/Containerfile.wrapper"
 ! grep -q '/tmp/opencode-install-tools.sh' "$ROOT/config/containers/Containerfile.wrapper"
 ! grep -q '/tmp/opencode-tool-versions.conf' "$ROOT/config/containers/Containerfile.wrapper"
 ! grep -q 'chown -R root:root /workspace /run ' "$ROOT/config/containers/Containerfile.wrapper"
@@ -50,6 +51,9 @@ grep -q '^LABEL opencode.wrapper.lane=' "$ROOT/config/containers/Containerfile.w
 grep -q '^RUN test -n "\$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "\$OPENCODE_RELEASE_ARCHIVE_SHA512"' "$ROOT/config/containers/Containerfile.wrapper"
 grep -q '^RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint$' "$ROOT/config/containers/Containerfile.wrapper"
 grep -q '^ENTRYPOINT \["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"\]$' "$ROOT/config/containers/Containerfile.wrapper"
+grep -q '^RUN apt-get update \\' "$ROOT/config/containers/Containerfile.source-base.template"
+grep -q '^  && apt-get install -y --no-install-recommends \\' "$ROOT/config/containers/Containerfile.source-base.template"
+grep -q '^    git \\' "$ROOT/config/containers/Containerfile.source-base.template"
 grep -q 'CONTAINER_WORKSPACE_DIR="\${OPENCODE_CONTAINER_WORKSPACE_DIR:?missing OPENCODE_CONTAINER_WORKSPACE_DIR}"' "$ROOT/config/containers/entrypoint.sh"
 grep -q 'RUNTIME_ENV_FILE="\${OPENCODE_WRAPPER_RUNTIME_ENV_FILE:-\$CONTAINER_RUNTIME_ENV_FILE}"' "$ROOT/config/containers/entrypoint.sh"
 grep -q '^TMP_RUNTIME_ENV_FILE="\$(mktemp "\${RUNTIME_ENV_FILE}.XXXXXX")"$' "$ROOT/config/containers/entrypoint.sh"
