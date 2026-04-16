@@ -71,14 +71,16 @@ The workspace-facing commands are:
 
 If `<workspace>` is omitted, these commands prompt with workspace names from `OPENCODE_BASE_ROOT` in alphabetical order.
 Use a leading `--` when you want the workspace picker first and the remaining arguments begin with wrapper selectors or option flags.
+For project-facing commands, direct-child project selection from `OPENCODE_DEVELOPMENT_ROOT` is mandatory, and project-facing command picker order is workspace, then target or container, then project.
 
 Behavior:
 
 - `opencode-bootstrap` picks a target once, starts or reuses it, then opens OpenCode in that same container
 - `opencode-start` may select image-only targets or existing containers for the workspace
 - `opencode-open`, `opencode-shell`, `opencode-logs`, `opencode-status`, and `opencode-stop` operate on existing containers only
+- `opencode-open` starts in `/workspace/opencode-project`
 - `opencode-open` forwards trailing args into `opencode`
-- `opencode-shell` runs commands in `/workspace/opencode-workspace`
+- `opencode-shell` runs commands in `/workspace/opencode-project`
 - use `--` when the first application or shell argument would otherwise look like a configured wrapper lane selector
 
 ## Remove
@@ -113,14 +115,17 @@ Each workspace uses:
 - `<workspace-root>/<OPENCODE_WORKSPACE_DIRNAME>`
 - `<workspace-root>/<OPENCODE_WORKSPACE_DIRNAME>/<OPENCODE_WORKSPACE_CONFIG_SUBDIR>`
 
-Directory mappings are:
+Required mounts are:
 
 - `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_HOME_DIRNAME>` -> `OPENCODE_CONTAINER_RUNTIME_HOME`
 - `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>` -> `OPENCODE_CONTAINER_WORKSPACE_DIR`
-- `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>/<OPENCODE_WORKSPACE_CONFIG_SUBDIR>` -> `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`
-- `OPENCODE_DEVELOPMENT_ROOT` -> `OPENCODE_CONTAINER_DEVELOPMENT_DIR` when that host path exists
+- `OPENCODE_DEVELOPMENT_ROOT` -> `OPENCODE_CONTAINER_DEVELOPMENT_DIR`
+- selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT`, mounted at `/workspace/opencode-project`
+
+The workspace config directory remains inside the mounted workspace tree at `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`.
 
 OpenCode remains responsible for its own home/state layout under that runtime home.
+OpenCode global config in `~/.config/opencode/opencode.json` and OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remain app-owned.
 
 ## Wrapper Runtime Config
 
@@ -138,6 +143,11 @@ File roles are:
 - `config.env` for workspace-scoped non-secret wrapper settings
 - `secrets.env` for workspace-scoped secret wrapper settings
 
+OpenCode-native config lives separately from those wrapper files:
+
+- OpenCode global config in `~/.config/opencode/opencode.json`
+- OpenCode project config in the selected project root as `opencode.json` and `.opencode/`
+
 Wrapper files used at runtime are:
 
 - `config/shared/opencode.conf`
@@ -150,7 +160,7 @@ Rules:
 - `config/shared/opencode.conf` is wrapper-only and not OpenCode-native config
 - `config/shared/opencode.conf` is for wrapper-wide defaults, not workspace runtime overrides
 - wrapper-owned defaults such as the Ubuntu LTS base version are pinned in config and only changed deliberately
-- the build currently checks the Ubuntu LTS pin for newer suitable versions and reports when it is behind
+- when the build detects a newer suitable Ubuntu LTS, it prompts you to keep the current pin and continue, update `config/shared/opencode.conf` to the newer Ubuntu LTS pin and continue, or cancel the build without changing the pin
 - `config.env` is seeded automatically as a commented starter file
 - `secrets.env` is optional
 - `config.env` and `secrets.env` are parsed as environment assignments and are not executed as shell scripts

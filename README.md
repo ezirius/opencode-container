@@ -51,6 +51,8 @@ Workspace commands:
 
 If `<workspace>` is omitted, the wrapper lists workspace names from `OPENCODE_BASE_ROOT` in alphabetical order and prompts you to choose one. Use a leading `--` when you want the picker first and the remaining arguments begin with wrapper selectors or option flags.
 
+For project-facing commands, direct-child project selection from `OPENCODE_DEVELOPMENT_ROOT` is mandatory. The picker order for project-facing commands is workspace, then target or container, then project.
+
 ## Version Model
 
 Accepted upstream selectors:
@@ -67,7 +69,11 @@ Rules:
 - prerelease, beta, preview, rc, nightly, and other non-stable releases are not selected by default
 
 Wrapper-owned defaults such as the Ubuntu LTS base version are pinned in `config/shared/opencode.conf`.
-Builds currently notify when a newer Ubuntu LTS exists, but they continue using the pinned value until it is deliberately updated.
+When a newer suitable Ubuntu LTS is available during a build, the wrapper prompts for one of three explicit choices:
+
+- Keep the current pin and continue
+- Update `config/shared/opencode.conf` to the newer Ubuntu LTS pin and continue
+- Cancel the build without changing the pin
 
 Image identity:
 
@@ -85,19 +91,24 @@ Each workspace lives under:
 - `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>`
 - `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>/<OPENCODE_WORKSPACE_CONFIG_SUBDIR>`
 
-Directory mappings:
+Required mounts:
 
 - `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_HOME_DIRNAME>` -> `OPENCODE_CONTAINER_RUNTIME_HOME`
 - `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>` -> `OPENCODE_CONTAINER_WORKSPACE_DIR`
-- `OPENCODE_BASE_ROOT/<workspace>/<OPENCODE_WORKSPACE_DIRNAME>/<OPENCODE_WORKSPACE_CONFIG_SUBDIR>` -> `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`
-- `OPENCODE_DEVELOPMENT_ROOT` -> `OPENCODE_CONTAINER_DEVELOPMENT_DIR` when that host path exists
+- `OPENCODE_DEVELOPMENT_ROOT` -> `OPENCODE_CONTAINER_DEVELOPMENT_DIR`
+- selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-project`
+
+The workspace config directory remains part of the mounted workspace tree at `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`.
 
 OpenCode-native state remains app-owned inside that runtime home, including locations such as:
 
 - `~/.config/opencode`
+- OpenCode global config in `~/.config/opencode/opencode.json`
 - `~/.local/share/opencode`
 - `~/.local/state/opencode`
 - `~/.cache/opencode`
+
+OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remains app-owned. For `opencode-open` and `opencode-shell`, the default in-container workdir is `/workspace/opencode-project`.
 
 ## Wrapper Config
 
@@ -114,6 +125,11 @@ File roles:
 - `config/shared/opencode.conf` stores wrapper-wide defaults and operational constants for all workspaces on that machine
 - `config.env` stores workspace-scoped non-secret wrapper settings
 - `secrets.env` stores workspace-scoped secret wrapper settings
+
+OpenCode-native config lives separately from those wrapper files:
+
+- OpenCode global config in `~/.config/opencode/opencode.json`
+- OpenCode project config in the selected project root as `opencode.json` and `.opencode/`
 
 Wrapper files used at runtime:
 

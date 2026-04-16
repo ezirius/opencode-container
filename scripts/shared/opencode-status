@@ -9,12 +9,12 @@ if [[ ${1-} == "--help" ]]; then
   show_help "Usage: $(basename "$0") [<workspace>]
 
 Description:
-Show the current status for the resolved workspace container.
+Show a grouped diagnostic summary for the resolved workspace container.
 
 Behaviour:
 - resolves the existing container target for the workspace
-- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
-- prints image, mount, and available managed-server information
+- with no <workspace>, prompt with workspace names from \`OPENCODE_BASE_ROOT\` in alphabetical order
+- prints read-only diagnostics for metadata, ports, live mounts, and config-file presence
 
 Arguments:
 - <workspace> : workspace name
@@ -23,8 +23,9 @@ Examples:
 - $(basename "$0") demo
 
 Notes:
-- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
-- if more than one container target exists for the workspace, the command will prompt for which container to inspect."
+- omitting \`<workspace>\` opens an alphabetical workspace picker from \`OPENCODE_BASE_ROOT\`
+- the command will prompt for which container to inspect, even when only one matching container exists
+- status never prints secret values."
 fi
 
 [[ $# -le 1 ]] || usage_error "$(basename "$0") <workspace>"

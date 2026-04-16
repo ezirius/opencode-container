@@ -54,6 +54,7 @@ __env_OPENCODE_WORKSPACE_CONFIG_SUBDIR="${OPENCODE_WORKSPACE_CONFIG_SUBDIR-}"
 __env_OPENCODE_CONTAINER_RUNTIME_HOME="${OPENCODE_CONTAINER_RUNTIME_HOME-}"
 __env_OPENCODE_CONTAINER_WORKSPACE_DIR="${OPENCODE_CONTAINER_WORKSPACE_DIR-}"
 __env_OPENCODE_CONTAINER_DEVELOPMENT_DIR="${OPENCODE_CONTAINER_DEVELOPMENT_DIR-}"
+__env_OPENCODE_CONTAINER_PROJECT_DIR="${OPENCODE_CONTAINER_PROJECT_DIR-}"
 __env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE="${OPENCODE_CONTAINER_RUNTIME_ENV_FILE-}"
 __env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR="${OPENCODE_CONTAINER_RUNTIME_STATE_DIR-}"
 __env_OPENCODE_CONTAINER_RESTART_POLICY="${OPENCODE_CONTAINER_RESTART_POLICY-}"
@@ -106,6 +107,7 @@ fi
 [[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_HOME" ]] || OPENCODE_CONTAINER_RUNTIME_HOME="$__env_OPENCODE_CONTAINER_RUNTIME_HOME"
 [[ -z "$__env_OPENCODE_CONTAINER_WORKSPACE_DIR" ]] || OPENCODE_CONTAINER_WORKSPACE_DIR="$__env_OPENCODE_CONTAINER_WORKSPACE_DIR"
 [[ -z "$__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR" ]] || OPENCODE_CONTAINER_DEVELOPMENT_DIR="$__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR"
+[[ -z "$__env_OPENCODE_CONTAINER_PROJECT_DIR" ]] || OPENCODE_CONTAINER_PROJECT_DIR="$__env_OPENCODE_CONTAINER_PROJECT_DIR"
 [[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE" ]] || OPENCODE_CONTAINER_RUNTIME_ENV_FILE="$__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE"
 [[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR" ]] || OPENCODE_CONTAINER_RUNTIME_STATE_DIR="$__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR"
 [[ -z "$__env_OPENCODE_CONTAINER_RESTART_POLICY" ]] || OPENCODE_CONTAINER_RESTART_POLICY="$__env_OPENCODE_CONTAINER_RESTART_POLICY"
@@ -119,7 +121,7 @@ fi
 [[ -z "$__env_OPENCODE_COMMITSTAMP_OVERRIDE" ]] || OPENCODE_COMMITSTAMP_OVERRIDE="$__env_OPENCODE_COMMITSTAMP_OVERRIDE"
 [[ -z "$__env_OPENCODE_SOURCE_OVERRIDE_DIR" ]] || OPENCODE_SOURCE_OVERRIDE_DIR="$__env_OPENCODE_SOURCE_OVERRIDE_DIR"
 [[ -z "$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK" ]] || OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$__env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK"
-unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_LABEL_NAMESPACE __env_OPENCODE_LABEL_WORKSPACE __env_OPENCODE_LABEL_LANE __env_OPENCODE_LABEL_UPSTREAM __env_OPENCODE_LABEL_UPSTREAM_REF __env_OPENCODE_LABEL_WRAPPER __env_OPENCODE_LABEL_COMMITSTAMP __env_OPENCODE_REPO_URL __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_NPM_REGISTRY_BASE __env_OPENCODE_UBUNTU_LTS_VERSION __env_OPENCODE_VERSION __env_OPENCODE_LANE_PRODUCTION __env_OPENCODE_LANE_TEST __env_OPENCODE_DEFAULT_UPSTREAM_SELECTOR __env_OPENCODE_UPSTREAM_MAIN_SELECTOR __env_OPENCODE_UPSTREAM_DEV_SELECTOR __env_OPENCODE_RELEASE_TAG_PREFIX __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_WORKSPACE_HOME_DIRNAME __env_OPENCODE_WORKSPACE_DIRNAME __env_OPENCODE_WORKSPACE_CONFIG_SUBDIR __env_OPENCODE_CONTAINER_RUNTIME_HOME __env_OPENCODE_CONTAINER_WORKSPACE_DIR __env_OPENCODE_CONTAINER_DEVELOPMENT_DIR __env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE __env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR __env_OPENCODE_CONTAINER_RESTART_POLICY __env_OPENCODE_MANAGED_SERVER_HOSTNAME __env_OPENCODE_MANAGED_SERVER_CONTAINER_PORT __env_OPENCODE_SERVER_HEALTHCHECK_PATH __env_OPENCODE_RUNTIME_SERVER_PID_FILENAME __env_OPENCODE_RUNTIME_SERVER_LOG_FILENAME __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
+unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_LABEL_NAMESPACE __env_OPENCODE_LABEL_WORKSPACE __env_OPENCODE_LABEL_LANE __env_OPENCODE_LABEL_UPSTREAM __env_OPENCODE_LABEL_UPSTREAM_REF __env_OPENCODE_LABEL_WRAPPER __env_OPENCODE_LABEL_COMMITSTAMP __env_OPENCODE_REPO_URL __env_OPENCODE_GITHUB_API_BASE __env_OPENCODE_NPM_REGISTRY_BASE __env_OPENCODE_UBUNTU_LTS_VERSION __env_OPENCODE_VERSION __env_OPENCODE_LANE_PRODUCTION __env_OPENCODE_LANE_TEST __env_OPENCODE_DEFAULT_UPSTREAM_SELECTOR __env_OPENCODE_UPSTREAM_MAIN_SELECTOR __env_OPENCODE_UPSTREAM_DEV_SELECTOR __env_OPENCODE_RELEASE_TAG_PREFIX __env_OPENCODE_BASE_ROOT __env_OPENCODE_DEVELOPMENT_ROOT __env_OPENCODE_WORKSPACE_HOME_DIRNAME __env_OPENCODE_WORKSPACE_DIRNAME __env_OPENCODE_WORKSPACE_CONFIG_SUBDIR __env_OPENCODE_CONTAINER_RUNTIME_HOME __env_OPENCODE_CONTAINER_WORKSPACE_DIR __env_OPENCODE_CONTAINER_DEVELOPMENT_DIR __env_OPENCODE_CONTAINER_PROJECT_DIR __env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE __env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR __env_OPENCODE_CONTAINER_RESTART_POLICY __env_OPENCODE_MANAGED_SERVER_HOSTNAME __env_OPENCODE_MANAGED_SERVER_CONTAINER_PORT __env_OPENCODE_SERVER_HEALTHCHECK_PATH __env_OPENCODE_RUNTIME_SERVER_PID_FILENAME __env_OPENCODE_RUNTIME_SERVER_LOG_FILENAME __env_OPENCODE_SELECT_INDEX __env_OPENCODE_WRAPPER_CONTEXT_OVERRIDE __env_OPENCODE_COMMITSTAMP_OVERRIDE __env_OPENCODE_SOURCE_OVERRIDE_DIR __env_OPENCODE_SKIP_BUILD_CONTEXT_CHECK
 
 [[ -n "${OPENCODE_IMAGE_NAME:-}" ]] || fail "missing OPENCODE_IMAGE_NAME in config/shared/opencode.conf"
 [[ -n "${OPENCODE_PROJECT_PREFIX:-}" ]] || fail "missing OPENCODE_PROJECT_PREFIX in config/shared/opencode.conf"
@@ -150,6 +152,7 @@ unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_LAB
 [[ -n "${OPENCODE_CONTAINER_RUNTIME_HOME:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_HOME in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_WORKSPACE_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_WORKSPACE_DIR in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_DEVELOPMENT_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_DEVELOPMENT_DIR in config/shared/opencode.conf"
+[[ -n "${OPENCODE_CONTAINER_PROJECT_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_PROJECT_DIR in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_RUNTIME_ENV_FILE:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_ENV_FILE in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_RUNTIME_STATE_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_STATE_DIR in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_RESTART_POLICY:-}" ]] || fail "missing OPENCODE_CONTAINER_RESTART_POLICY in config/shared/opencode.conf"
@@ -294,6 +297,38 @@ workspace_names_from_base_root() {
 	printf '%s\n' "${workspace_names[@]}" | sort
 }
 
+project_names_from_development_root() {
+	local development_root candidate project_name
+	local -a project_names=()
+
+	development_root="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+	[[ -d "$development_root" ]] || return 0
+
+	shopt -s nullglob
+	for candidate in "$development_root"/*; do
+		[[ -d "$candidate" && ! -L "$candidate" ]] || continue
+		project_name="${candidate##*/}"
+		[[ -n "$project_name" ]] || continue
+		[[ "$project_name" != */* ]] || continue
+		[[ "$project_name" != *:* ]] || continue
+		[[ "$project_name" != "." && "$project_name" != ".." ]] || continue
+		project_names+=("$project_name")
+	done
+	shopt -u nullglob
+
+	[[ ${#project_names[@]} -gt 0 ]] || return 0
+	printf '%s\n' "${project_names[@]}" | sort
+}
+
+require_project_name() {
+	local project_name="$1"
+	[[ -n "$project_name" ]] || fail "project name must not be empty"
+	[[ "$project_name" != */* ]] || fail "project name must not contain path separators"
+	[[ "$project_name" != *:* ]] || fail "project name must not contain ':'"
+	[[ "$project_name" != "." ]] || fail "project name must not be '.'"
+	[[ "$project_name" != ".." ]] || fail "project name must not be '..'"
+}
+
 select_workspace_name() {
 	local workspace_names selected_index
 	local -a options=()
@@ -308,6 +343,40 @@ select_workspace_name() {
 
 	selected_index="$(select_menu_option "Select a workspace from $(workspace_base_root)" "${options[@]}")"
 	printf '%s' "${options[$((selected_index - 1))]}"
+}
+
+select_project_name() {
+	local project_names selected_index project_name
+	local -a options=()
+
+	project_names="$(project_names_from_development_root)"
+	[[ -n "$project_names" ]] || fail "no projects found under $(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+
+	while IFS= read -r project_name; do
+		[[ -n "$project_name" ]] || continue
+		options+=("$project_name")
+	done <<<"$project_names"
+
+	selected_index="$(select_menu_option "Select a project from $(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "${options[@]}")"
+	printf '%s' "${options[$((selected_index - 1))]}"
+}
+
+resolve_selected_project_name() {
+	local project_name="${1-}"
+	if [[ -n "$project_name" && "$project_name" != "--" ]]; then
+		require_project_name "$project_name"
+		[[ -d "$(project_root_dir "$project_name")" && ! -L "$(project_root_dir "$project_name")" ]] || fail "project '$project_name' was not found under $(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+		printf '%s' "$project_name"
+		return 0
+	fi
+
+	select_project_name
+}
+
+project_name_exists() {
+	local project_name="$1"
+	require_project_name "$project_name"
+	[[ -d "$(project_root_dir "$project_name")" && ! -L "$(project_root_dir "$project_name")" ]]
 }
 
 resolve_workspace_argument() {
@@ -522,6 +591,16 @@ container_development_dir() {
 	printf '%s' "$OPENCODE_CONTAINER_DEVELOPMENT_DIR"
 }
 
+project_root_dir() {
+	local project_name="$1"
+	require_project_name "$project_name"
+	printf '%s/%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "$project_name"
+}
+
+container_project_dir() {
+	printf '%s' "$OPENCODE_CONTAINER_PROJECT_DIR"
+}
+
 container_runtime_state_dir() {
 	printf '%s' "$OPENCODE_CONTAINER_RUNTIME_STATE_DIR"
 }
@@ -547,6 +626,12 @@ workspace_home_mount_spec() {
 
 development_mount_spec() {
 	printf '%s:%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "$(container_development_dir)"
+}
+
+project_mount_spec() {
+	local project_name
+	project_name="$(resolve_selected_project_name "$1")"
+	printf '%s:%s' "$(project_root_dir "$project_name")" "$(container_project_dir)"
 }
 
 development_root_exists() {
@@ -622,13 +707,53 @@ latest = sorted(versions)[-1]
 print(f"{latest[0]}.{latest[1]:02d}")'
 }
 
-notify_if_newer_ubuntu_lts_exists() {
+opencode_shared_config_file() {
+	printf '%s/config/shared/opencode.conf' "$ROOT"
+}
+
+update_pinned_ubuntu_lts_version() {
+	local updated_version="$1"
+	local config_file temp_file line
+	local updated=0
+
+	config_file="$(opencode_shared_config_file)"
+	[[ -f "$config_file" ]] || fail "missing $config_file"
+	require_mktemp
+	temp_file="$(mktemp)"
+
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		if [[ "$line" == OPENCODE_UBUNTU_LTS_VERSION=* ]]; then
+			printf 'OPENCODE_UBUNTU_LTS_VERSION="%s"\n' "$updated_version" >>"$temp_file"
+			updated=1
+		else
+			printf '%s\n' "$line" >>"$temp_file"
+		fi
+	done <"$config_file"
+
+	((updated == 1)) || fail "missing OPENCODE_UBUNTU_LTS_VERSION in $config_file"
+	chmod --reference="$config_file" "$temp_file"
+	mv "$temp_file" "$config_file"
+	OPENCODE_UBUNTU_LTS_VERSION="$updated_version"
+	OPENCODE_UBUNTU_LTS_PIN_UPDATED=1
+}
+
+handle_newer_ubuntu_lts_pin_choice() {
 	local latest_lts
-	latest_lts="$(latest_ubuntu_lts_version 2>/dev/null || true)"
-	[[ -n "$latest_lts" ]] || return 0
-	if [[ "$latest_lts" != "$OPENCODE_UBUNTU_LTS_VERSION" ]]; then
-		printf 'Notice: newer Ubuntu LTS available (%s); build continues with pinned Ubuntu LTS %s\n' "$latest_lts" "$OPENCODE_UBUNTU_LTS_VERSION"
-	fi
+	local selection
+	latest_lts="$(latest_ubuntu_lts_version)"
+	[[ "$latest_lts" != "$OPENCODE_UBUNTU_LTS_VERSION" ]] || return 0
+
+	selection="$(select_menu_option "Newer Ubuntu LTS available ($latest_lts); current pin is $OPENCODE_UBUNTU_LTS_VERSION" \
+		'keep the current pin and continue' \
+		'update the config pin and continue' \
+		'cancel')"
+
+	case "$selection" in
+	1) OPENCODE_UBUNTU_LTS_PIN_UPDATED=0 ;;
+	2) update_pinned_ubuntu_lts_version "$latest_lts" ;;
+	3) fail 'build cancelled' ;;
+	*) fail "unexpected Ubuntu LTS selection: $selection" ;;
+	esac
 }
 
 resolve_upstream_selector() {
@@ -904,21 +1029,40 @@ container_mount_source_for_destination() {
 }
 
 container_mounts_match_workspace_config() {
-	local container_name="$1" workspace="$2" image_ref="$3"
-	local expected_home expected_workspace expected_development actual_home actual_workspace actual_development
+	local container_name="$1" workspace="$2" image_ref="$3" project_name="${4-}"
+	local expected_home expected_workspace expected_development expected_project actual_home actual_workspace actual_development actual_project selected_project_name
 
 	expected_home="$(workspace_home_dir "$workspace")"
 	expected_workspace="$(workspace_dir "$workspace")"
 	expected_development=""
-	if development_root_exists; then
+	expected_project=""
+	if [[ -n "$project_name" ]]; then
+		selected_project_name="$(resolve_selected_project_name "$project_name")"
+		expected_development="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+		expected_project="$(project_root_dir "$selected_project_name")"
+	elif development_root_exists; then
 		expected_development="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
 	fi
 
 	actual_home="$(container_mount_source_for_destination "$container_name" "$(runtime_home_dir)" 2>/dev/null || true)"
 	actual_workspace="$(container_mount_source_for_destination "$container_name" "$(container_workspace_dir)" 2>/dev/null || true)"
 	actual_development="$(container_mount_source_for_destination "$container_name" "$(container_development_dir)" 2>/dev/null || true)"
+	actual_project="$(container_mount_source_for_destination "$container_name" "$(container_project_dir)" 2>/dev/null || true)"
 
-	[[ "$actual_home" == "$expected_home" && "$actual_workspace" == "$expected_workspace" && "$actual_development" == "$expected_development" ]]
+	[[ "$actual_home" == "$expected_home" && "$actual_workspace" == "$expected_workspace" && "$actual_development" == "$expected_development" && "$actual_project" == "$expected_project" ]]
+}
+
+container_project_mount_matches_workspace_config() {
+	local container_name="$1" project_name="${2-}"
+	local expected_project actual_project
+
+	expected_project=""
+	if [[ -n "$project_name" ]]; then
+		expected_project="$(project_root_dir "$(resolve_selected_project_name "$project_name")")"
+	fi
+	actual_project="$(container_mount_source_for_destination "$container_name" "$(container_project_dir)" 2>/dev/null || true)"
+
+	[[ "$actual_project" == "$expected_project" ]]
 }
 
 project_image_refs() {
@@ -1223,41 +1367,158 @@ resolve_container_for_workspace() {
 }
 
 print_container_summary() {
-	local workspace="$1" container_name="$2" status image
-	local server_url development_mount
-	status="stopped"
-	container_running "$container_name" && status="running"
-	if [[ "$status" == "running" ]]; then
-		ensure_managed_server_for_container "$container_name"
-	fi
+	local workspace="$1" container_name="$2"
+	local state image lane upstream wrapper commitstamp configured_host_port actual_host_mapping
+	local actual_home_mount actual_workspace_mount actual_development_mount actual_project_mount
+	local config_file secrets_file
+
+	state="stopped"
+	container_running "$container_name" && state="running"
 	image="$(container_image_ref "$container_name")"
-	server_url="$(server_url_for_container "$container_name" 2>/dev/null || true)"
-	printf 'Container: %s\n' "$container_name"
-	printf 'Workspace: %s\n' "$workspace"
-	printf 'Workspace Dir: %s\n' "$(container_workspace_dir)"
-	printf 'Status: %s\n' "$status"
-	[[ -n "$image" ]] && printf 'Image: %s\n' "$image"
-	[[ -n "$server_url" ]] && printf 'Server: %s\n' "$server_url"
-	[[ -n "$(container_label "$container_name" "$OPENCODE_LABEL_LANE")" ]] && printf 'Lane: %s\n' "$(container_label "$container_name" "$OPENCODE_LABEL_LANE")"
-	[[ -n "$(container_label "$container_name" "$OPENCODE_LABEL_UPSTREAM")" ]] && printf 'Upstream: %s\n' "$(container_label "$container_name" "$OPENCODE_LABEL_UPSTREAM")"
-	[[ -n "$(container_label "$container_name" "$OPENCODE_LABEL_WRAPPER")" ]] && printf 'Wrapper: %s\n' "$(container_label "$container_name" "$OPENCODE_LABEL_WRAPPER")"
-	[[ -n "$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")" ]] && printf 'Commit Stamp: %s\n' "$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")"
-	printf 'Home Mount: %s\n' "$(workspace_home_dir "$workspace")"
-	printf 'Workspace Mount: %s\n' "$(workspace_dir "$workspace")"
-	development_mount='(not mounted)'
-	if development_root_exists; then
-		development_mount="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+	lane="$(container_label "$container_name" "$OPENCODE_LABEL_LANE")"
+	upstream="$(container_label "$container_name" "$OPENCODE_LABEL_UPSTREAM")"
+	wrapper="$(container_label "$container_name" "$OPENCODE_LABEL_WRAPPER")"
+	commitstamp="$(container_label "$container_name" "$OPENCODE_LABEL_COMMITSTAMP")"
+	configured_host_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
+	actual_host_mapping="$(host_port_for_container_port "$container_name" "$OPENCODE_MANAGED_SERVER_CONTAINER_PORT" 2>/dev/null || true)"
+	actual_home_mount="$(container_mount_source_for_destination "$container_name" "$(runtime_home_dir)" 2>/dev/null || true)"
+	actual_workspace_mount="$(container_mount_source_for_destination "$container_name" "$(container_workspace_dir)" 2>/dev/null || true)"
+	actual_development_mount="$(container_mount_source_for_destination "$container_name" "$(container_development_dir)" 2>/dev/null || true)"
+	actual_project_mount="$(container_mount_source_for_destination "$container_name" "$(container_project_dir)" 2>/dev/null || true)"
+	config_file="$(workspace_config_env_file "$workspace")"
+	secrets_file="$(workspace_secrets_env_file "$workspace")"
+
+	status_section 'Container'
+	status_field 'Name' "$(status_plain_value "$container_name")"
+	status_field 'Workspace' "$(status_plain_value "$workspace")"
+	status_field 'State' "$(status_state_value "$state")"
+	status_field 'Image' "$(status_plain_value "$image")"
+	printf '\n'
+
+	status_section 'Build'
+	status_field 'Lane' "$(status_plain_value_or_unset "$lane")"
+	status_field 'Upstream' "$(status_plain_value_or_unset "$upstream")"
+	status_field 'Wrapper' "$(status_plain_value_or_unset "$wrapper")"
+	status_field 'Commit Stamp' "$(status_plain_value_or_unset "$commitstamp")"
+	printf '\n'
+
+	status_section 'Ports'
+	status_field 'Container Port' "$(status_plain_value "${OPENCODE_MANAGED_SERVER_CONTAINER_PORT}/tcp")"
+	status_field 'Host Mapping' "$(status_host_mapping_value "$actual_host_mapping")"
+	status_field 'Configured Host Port' "$(status_configured_port_value "$configured_host_port")"
+	printf '\n'
+
+	status_section 'Mounts'
+	status_field 'Home Mount' "$(status_mount_value "$actual_home_mount" "$(runtime_home_dir)")"
+	status_field 'Workspace Mount' "$(status_mount_value "$actual_workspace_mount" "$(container_workspace_dir)")"
+	status_field 'Development Root Mount' "$(status_mount_value "$actual_development_mount" "$(container_development_dir)")"
+	status_field 'Selected Project Mount' "$(status_mount_value "$actual_project_mount" "$(container_project_dir)")"
+	printf '\n'
+
+	status_section 'Config'
+	status_field 'config.env' "$(status_file_presence_value "$config_file")"
+	status_field 'secrets.env' "$(status_file_presence_value "$secrets_file")"
+}
+
+status_use_colour() {
+	[[ -t 1 && -z "${NO_COLOR:-}" ]]
+}
+
+status_colour_code() {
+	case "$1" in
+	issue) printf '\033[31m' ;;
+	warning) printf '\033[33m' ;;
+	good) printf '\033[32m' ;;
+	*) printf '\033[0m' ;;
+	esac
+}
+
+status_colourise() {
+	local level="$1" text="$2"
+	if status_use_colour; then
+		printf '%b%s%b' "$(status_colour_code "$level")" "$text" "$(status_colour_code normal)"
+		return 0
 	fi
-	printf 'Development Mount: %s\n' "$development_mount"
+	printf '%s' "$text"
+}
+
+status_section() {
+	printf '%s\n' "$1"
+}
+
+status_field() {
+	local label="$1" value="$2"
+	printf '  %s: %s\n' "$label" "$value"
+}
+
+status_plain_value() {
+	printf '%s' "$1"
+}
+
+status_plain_value_or_unset() {
+	local value="$1"
+	if [[ -n "$value" ]]; then
+		printf '%s' "$value"
+		return 0
+	fi
+	status_colourise warning '(unset)'
+}
+
+status_state_value() {
+	local value="$1"
+	case "$value" in
+	running) status_colourise good "$value" ;;
+	stopped) status_colourise warning "$value" ;;
+	*) status_colourise issue "$value" ;;
+	esac
+}
+
+status_host_mapping_value() {
+	local host_port="$1"
+	if [[ -n "$host_port" ]]; then
+		status_colourise good "127.0.0.1:${host_port} -> ${OPENCODE_MANAGED_SERVER_CONTAINER_PORT}/tcp"
+		return 0
+	fi
+	status_colourise warning '(not published)'
+}
+
+status_configured_port_value() {
+	local configured_port="$1"
+	if [[ -n "$configured_port" ]]; then
+		printf '%s' "$configured_port"
+		return 0
+	fi
+	status_colourise warning '(unset)'
+}
+
+status_mount_value() {
+	local source_path="$1" destination_path="$2"
+	if [[ -n "$source_path" ]]; then
+		status_colourise good "${source_path} -> ${destination_path}"
+		return 0
+	fi
+	status_colourise warning '(not mounted)'
+}
+
+status_file_presence_value() {
+	local file_path="$1"
+	if [[ -f "$file_path" ]]; then
+		status_colourise good "present (${file_path})"
+		return 0
+	fi
+	status_colourise warning "missing (${file_path})"
 }
 
 create_or_replace_container() {
-	local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
-	local server_port server_publish_spec
+	local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7" project_name="${8-}"
+	local server_port server_publish_spec selected_project_name=""
 	local -a run_args
 
 	server_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
 	server_publish_spec="$(opencode_server_port_publish_spec "$server_port" 2>/dev/null || true)"
+	if [[ -n "$project_name" ]]; then
+		selected_project_name="$(resolve_selected_project_name "$project_name")"
+	fi
 
 	if container_exists "$container_name"; then
 		podman rm -f "$container_name" >/dev/null
@@ -1271,6 +1532,7 @@ create_or_replace_container() {
 		-e "OPENCODE_CONTAINER_RUNTIME_HOME=$(runtime_home_dir)"
 		-e "OPENCODE_CONTAINER_WORKSPACE_DIR=$(container_workspace_dir)"
 		-e "OPENCODE_CONTAINER_DEVELOPMENT_DIR=$(container_development_dir)"
+		-e "OPENCODE_CONTAINER_PROJECT_DIR=$(container_project_dir)"
 		-e "OPENCODE_CONTAINER_RUNTIME_ENV_FILE=$(container_runtime_env_file)"
 		-e "OPENCODE_CONTAINER_RUNTIME_STATE_DIR=$(container_runtime_state_dir)"
 		-e "OPENCODE_WRAPPER_RUNTIME_ENV_FILE=$(container_runtime_env_file)"
@@ -1285,7 +1547,10 @@ create_or_replace_container() {
 	if [[ -n "$server_publish_spec" ]]; then
 		run_args+=(-p "$server_publish_spec")
 	fi
-	if development_root_exists; then
+	if [[ -n "$selected_project_name" ]]; then
+		run_args+=(-v "$(development_mount_spec)")
+		run_args+=(-v "$(project_mount_spec "$selected_project_name")")
+	elif development_root_exists; then
 		run_args+=(-v "$(development_mount_spec)")
 	fi
 	run_args+=(
@@ -1326,25 +1591,26 @@ container_matches_workspace_runtime_config() {
 	local container_name="$1"
 	local workspace="$2"
 	local image_ref="$3"
+	local project_name="${4-}"
 	container_server_port_matches_workspace_config "$container_name" "$workspace" &&
-		container_mounts_match_workspace_config "$container_name" "$workspace" "$image_ref"
+		container_mounts_match_workspace_config "$container_name" "$workspace" "$image_ref" "$project_name"
 }
 
 ensure_running_container_matches_image_and_runtime() {
-	local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
+	local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7" project_name="${8-}"
 	local current_image_ref
 
 	if container_exists "$container_name"; then
 		current_image_ref="$(container_image_ref "$container_name" 2>/dev/null || true)"
 		if [[ "$current_image_ref" != "$(normalize_image_ref "$image_ref")" ]]; then
-			create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
-		elif ! container_matches_workspace_runtime_config "$container_name" "$workspace" "$image_ref"; then
-			create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+			create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
+		elif ! container_matches_workspace_runtime_config "$container_name" "$workspace" "$image_ref" "$project_name"; then
+			create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
 		elif ! container_running "$container_name"; then
 			podman start "$container_name" >/dev/null
 		fi
 	else
-		create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+		create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
 	fi
 
 	ensure_managed_server_for_container "$container_name"
@@ -1384,11 +1650,11 @@ server_url_for_container_base() {
 
 start_managed_server_in_container() {
 	local container_name="$1"
-	local runtime_env_file workspace_dir runtime_state_dir
+	local runtime_env_file exec_dir runtime_state_dir
 	runtime_env_file="$(container_runtime_env_file)"
-	workspace_dir="$(container_workspace_dir)"
+	exec_dir="$(container_exec_workdir "$container_name")"
 	runtime_state_dir="$(container_runtime_state_dir)"
-	podman exec "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; mkdir -p \"$runtime_state_dir\"; if [ -f \"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_PID_FILENAME\" ] && kill -0 \"\$(cat \"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_PID_FILENAME\")\" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname $OPENCODE_MANAGED_SERVER_HOSTNAME --port $OPENCODE_MANAGED_SERVER_CONTAINER_PORT >\"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_LOG_FILENAME\" 2>&1 & echo \$! >\"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_PID_FILENAME\"" >/dev/null
+	podman exec "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$exec_dir\"; mkdir -p \"$runtime_state_dir\"; if [ -f \"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_PID_FILENAME\" ] && kill -0 \"\$(cat \"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_PID_FILENAME\")\" 2>/dev/null; then exit 0; fi; nohup opencode serve --hostname $OPENCODE_MANAGED_SERVER_HOSTNAME --port $OPENCODE_MANAGED_SERVER_CONTAINER_PORT >\"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_LOG_FILENAME\" 2>&1 & echo \$! >\"$runtime_state_dir/$OPENCODE_RUNTIME_SERVER_PID_FILENAME\"" >/dev/null
 }
 
 server_active_for_container() {
@@ -1427,20 +1693,20 @@ ensure_managed_server_for_container() {
 }
 
 start_or_reuse_target() {
-	local workspace="$1" kind="$2" ref="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7"
+	local workspace="$1" kind="$2" ref="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7" project_name="${8-}"
 	local resolved_container_name
 	local existing_image_ref
 
 	if [[ "$kind" == "container" ]]; then
 		existing_image_ref="$(container_image_ref "$ref")"
 		[[ -n "$existing_image_ref" ]] || fail "failed to resolve backing image for container: $ref"
-		ensure_running_container_matches_image_and_runtime "$ref" "$existing_image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+		ensure_running_container_matches_image_and_runtime "$ref" "$existing_image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
 		printf '%s' "$ref"
 		return 0
 	fi
 
 	resolved_container_name="$(container_name "$workspace" "$lane" "$upstream" "$wrapper")"
-	ensure_running_container_matches_image_and_runtime "$resolved_container_name" "$ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp"
+	ensure_running_container_matches_image_and_runtime "$resolved_container_name" "$ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
 	printf '%s' "$resolved_container_name"
 }
 
@@ -1458,25 +1724,36 @@ exec_podman_interactive_command() {
 	fi
 }
 
+container_exec_workdir() {
+	local container_name="$1"
+	local project_mount
+	project_mount="$(container_mount_source_for_destination "$container_name" "$(container_project_dir)" 2>/dev/null || true)"
+	if [[ -n "$project_mount" ]]; then
+		printf '%s' "$(container_project_dir)"
+		return 0
+	fi
+	printf '%s' "$(container_workspace_dir)"
+}
+
 exec_opencode_in_container() {
 	local container_name="$1"
-	local runtime_env_file workspace_dir
+	local runtime_env_file exec_dir
 	shift
 	runtime_env_file="$(container_runtime_env_file)"
-	workspace_dir="$(container_workspace_dir)"
-	exec_podman_interactive_command exec --workdir "$workspace_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; exec opencode \"\$@\"" sh "$@"
+	exec_dir="$(container_exec_workdir "$container_name")"
+	exec_podman_interactive_command exec --workdir "$exec_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$exec_dir\"; exec opencode \"\$@\"" sh "$@"
 }
 
 exec_shell_in_container() {
 	local container_name="$1"
-	local runtime_env_file workspace_dir
+	local runtime_env_file exec_dir
 	shift
 	runtime_env_file="$(container_runtime_env_file)"
-	workspace_dir="$(container_workspace_dir)"
+	exec_dir="$(container_exec_workdir "$container_name")"
 	if [[ $# -gt 0 ]]; then
-		exec_podman_interactive_command exec --workdir "$workspace_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; exec \"\$@\"" sh "$@"
+		exec_podman_interactive_command exec --workdir "$exec_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$exec_dir\"; exec \"\$@\"" sh "$@"
 	else
-		exec_podman_interactive_command exec --workdir "$workspace_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$workspace_dir\"; exec /bin/sh"
+		exec_podman_interactive_command exec --workdir "$exec_dir" "$container_name" /bin/sh -lc ". \"$runtime_env_file\" 2>/dev/null || true; cd \"$exec_dir\"; exec /bin/sh"
 	fi
 }
 

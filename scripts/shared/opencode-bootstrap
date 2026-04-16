@@ -6,7 +6,8 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") [<workspace>] [opencode args...]
+  show_help "Usage: $(basename "$0") [<workspace>] [project] [opencode args...]
+       $(basename "$0") [<workspace>] [project] -- [opencode args...]
        $(basename "$0") -- [opencode args...]
 
 Description:
@@ -14,23 +15,25 @@ Select one workspace target, start or reuse it, then open OpenCode in that same 
 
 Behaviour:
 - resolves one target for the workspace
-- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
-- starts or reuses that exact target container
-- forwards any remaining arguments to the in-container \\`opencode\\` command
+- with no <workspace>, prompt with workspace names from \`OPENCODE_BASE_ROOT\` in alphabetical order
+- starts or reuses that exact target container with a selected direct-child project from \`OPENCODE_DEVELOPMENT_ROOT\`
+- forwards any remaining arguments to the in-container \`opencode\` command
 
 Arguments:
 - <workspace> : workspace name
-- [opencode args...] : arguments forwarded to \\`opencode\\`
+- [project] : optional explicit direct-child project name under \`OPENCODE_DEVELOPMENT_ROOT\`; if omitted, the wrapper prompts for one
+- [opencode args...] : arguments forwarded to \`opencode\`
 
 Examples:
 - $(basename "$0") demo
-- $(basename "$0") demo --help
+- $(basename "$0") demo beta --help
 - $(basename "$0") -- --help
-- $(basename "$0") demo -- model list
+- $(basename "$0") demo beta -- model list
 
 Notes:
-- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
-- when omitting \\`<workspace>\\`, use a leading \\`--\\` before forwarded OpenCode arguments
+- omitting \`<workspace>\` opens an alphabetical workspace picker from \`OPENCODE_BASE_ROOT\`
+- omitting \`[project]\` opens an alphabetical direct-child project picker from \`OPENCODE_DEVELOPMENT_ROOT\`
+- when omitting \`<workspace>\` or \`[project]\`, use a leading \`--\` before forwarded OpenCode arguments
 - if more than one target exists for the workspace, the command will prompt once and reuse the selected target for the whole bootstrap flow."
 fi
 
@@ -47,8 +50,25 @@ require_podman
 ensure_workspace_layout "$WORKSPACE"
 seed_workspace_config_env_file "$WORKSPACE"
 
+consume_project_selection() {
+  if [[ $# -gt 0 && "${1-}" != "--" ]]; then
+    PROJECT_NAME="$(resolve_selected_project_name "$1")"
+    shift
+  else
+    PROJECT_NAME="$(resolve_selected_project_name '')"
+  fi
+  if [[ ${1-} == "--" ]]; then
+    shift
+  fi
+  REMAINING_ARGS=("$@")
+}
+
+REMAINING_ARGS=("$@")
+
 TARGET_ROW="$(resolve_target_details_for_workspace "$WORKSPACE")"
 IFS=$'\t' read -r TARGET_KIND TARGET_REF LANE UPSTREAM_RESOLVED WRAPPER_CONTEXT COMMITSTAMP _STATUS _IMAGE_REF <<< "$TARGET_ROW"
-CONTAINER_NAME="$(start_or_reuse_target "$WORKSPACE" "$TARGET_KIND" "$TARGET_REF" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP")"
+consume_project_selection "$@"
+set -- "${REMAINING_ARGS[@]}"
+CONTAINER_NAME="$(start_or_reuse_target "$WORKSPACE" "$TARGET_KIND" "$TARGET_REF" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP" "$PROJECT_NAME")"
 
 exec_opencode_in_container "$CONTAINER_NAME" "$@"
