@@ -94,10 +94,13 @@ else
 fi
 
 consume_project_selection "$@"
-set -- "${REMAINING_ARGS[@]}"
+if [[ ${#REMAINING_ARGS[@]} -gt 0 ]]; then
+  set -- "${REMAINING_ARGS[@]}"
+else
+  set --
+fi
 IMAGE_REF="$(container_image_ref "$CONTAINER_NAME")"
 WRAPPER_CONTEXT="$(container_label "$CONTAINER_NAME" "$OPENCODE_LABEL_WRAPPER")"
 COMMITSTAMP="$(container_label "$CONTAINER_NAME" "$OPENCODE_LABEL_COMMITSTAMP")"
-ensure_running_container_matches_image_and_runtime "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP" "$PROJECT_NAME"
-container_running "$CONTAINER_NAME" || fail "container is not running: $CONTAINER_NAME"
+require_running_container_matches_image_and_runtime "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$PROJECT_NAME"
 exec_shell_in_container "$CONTAINER_NAME" "$@"

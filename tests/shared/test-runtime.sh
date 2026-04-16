@@ -215,6 +215,82 @@ esac
 EOF
 chmod +x "$MOCK_BIN/curl"
 
+cat >"$MOCK_BIN/python3" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${1-}" == "-c" ]] || {
+  printf 'unexpected python3 invocation: %s\n' "$*" >&2
+  exit 1
+}
+
+script="${2-}"
+
+if [[ "$script" == *'item.get("tag_name")'* ]]; then
+  perl -0ne '
+    while (/\{[^{}]*"tag_name":"([^"]+)"[^{}]*"draft":(true|false)[^{}]*"prerelease":(true|false)[^{}]*\}/g) {
+      my ($tag, $draft, $prerelease) = ($1, $2, $3);
+      next if $draft eq q(true) || $prerelease eq q(true);
+      $tag =~ s/^\s+|\s+$//g;
+      print "$tag\n" if length $tag;
+    }
+  '
+  exit 0
+fi
+
+if [[ "$script" == *'failed to resolve latest OpenCode release'* ]]; then
+  perl -0ne '
+    /"tag_name":"([^"]+)"/ or die "failed to resolve latest OpenCode release\n";
+    my $tag = $1;
+    $tag =~ s/^\s+|\s+$//g;
+    die "failed to resolve latest OpenCode release\n" unless length $tag;
+    print "$tag\n";
+  '
+  exit 0
+fi
+
+if [[ "$script" == *'failed to resolve latest Ubuntu LTS version'* ]]; then
+  perl -e '
+    my @versions;
+    while (<STDIN>) {
+      if (/^Version:\s*([0-9]+)\.([0-9]+)/) {
+        push @versions, [$1 + 0, $2 + 0];
+      }
+    }
+    die "failed to resolve latest Ubuntu LTS version\n" unless @versions;
+    @versions = sort { $a->[0] <=> $b->[0] || $a->[1] <=> $b->[1] } @versions;
+    printf "%d.%02d\n", $versions[-1][0], $versions[-1][1];
+  '
+  exit 0
+fi
+
+if [[ "$script" == *'failed to resolve package tarball url'* ]]; then
+  perl -0ne '
+    /"tarball":"([^"]+)"/ or die "failed to resolve package tarball url\n";
+    my $url = $1;
+    $url =~ s/^\s+|\s+$//g;
+    die "failed to resolve package tarball url\n" unless length $url;
+    print "$url\n";
+  '
+  exit 0
+fi
+
+if [[ "$script" == *'failed to resolve package sha512 integrity'* ]]; then
+  integrity_line="$(sed -n 's/.*"integrity":"\(sha512-[^"]*\)".*/\1/p')"
+  [[ "$integrity_line" == sha512-* ]] || {
+    printf 'failed to resolve package sha512 integrity\n' >&2
+    exit 1
+  }
+  printf '%s' "${integrity_line#sha512-}" | base64 -d | od -An -v -tx1 | tr -d ' \n'
+  printf '\n'
+  exit 0
+fi
+
+printf 'unexpected python3 script\n' >&2
+exit 1
+EOF
+chmod +x "$MOCK_BIN/python3"
+
 cat >"$MOCK_BIN/podman" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -683,296 +759,27 @@ assert_contains "$UPDATE_EXISTING_ROOT/config/shared/opencode.conf" 'OPENCODE_UB
 CANCEL_ROOT="$TMPDIR/build-cancel-root"
 prepare_build_test_root "$CANCEL_ROOT"
 : >"$STATE_DIR/podman.log"
-assert_rejects "printf '3\\n' | env -u OPENCODE_SELECT_INDEX PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='20260410-163442-cancellts' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$CANCEL_ROOT/scripts/shared/opencode-build' test 1.4.3" 'build cancelled' "$STATE_DIR/build-cancel.out"
-assert_contains "$CANCEL_ROOT/config/shared/opencode.conf" 'OPENCODE_UBUNTU_LTS_VERSION="24.04"' 'cancel leaves the copied Ubuntu pin unchanged'
-assert_eq '' "$(tr -d '[:space:]' <"$STATE_DIR/podman.log")" 'cancel stops before any container build is started'
-
-(cd "$TMPDIR" && env OPENCODE_SELECT_INDEX=1 PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$ROOT/scripts/shared/opencode-build" test 1.4.3 >"$STATE_DIR/build-outside-repo.out")
-assert_contains "$STATE_DIR/build-outside-repo.out" 'Image already exists: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'build uses repository workdir even when launched from outside the repo'
-
-printf '2\n2\n1\n' | env -u OPENCODE_SELECT_INDEX OPENCODE_COMMITSTAMP_OVERRIDE='20260410-170100-lanepick' PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$ROOT/scripts/shared/opencode-build" >"$STATE_DIR/build-picker.out" 2>&1
-assert_contains "$STATE_DIR/build-picker.out" 'Select a build lane' 'build prompts for the lane when it is omitted'
-assert_contains "$STATE_DIR/build-picker.out" 'Select an upstream version' 'build prompts for the upstream when it is omitted'
-assert_contains "$STATE_DIR/build-picker.out" 'Built image: opencode-local:test-1.4.3-main-20260410-170100-lanepick' 'build picker flow uses the selected lane and upstream'
-
-printf '3\n1\n' | env -u OPENCODE_SELECT_INDEX OPENCODE_COMMITSTAMP_OVERRIDE='20260410-170200-upstreampick' PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$ROOT/scripts/shared/opencode-build" production >"$STATE_DIR/build-upstream-picker.out" 2>&1
-assert_contains "$STATE_DIR/build-upstream-picker.out" 'Select an upstream version' 'build prompts for upstream when only the lane is provided'
-assert_contains "$STATE_DIR/build-upstream-picker.out" 'Built image: opencode-local:production-1.4.2-main-20260410-170200-upstreampick' 'build upstream picker uses the selected upstream release'
-
-env OPENCODE_SELECT_INDEX=1 PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$ROOT/scripts/shared/opencode-build" test main >"$STATE_DIR/build-main.out"
-assert_contains "$STATE_DIR/build-main.out" 'Build source: upstream source ref main' 'main build uses upstream source ref'
-assert_contains "$STATE_DIR/build-main.out" 'Built image: opencode-local:test-main-main-20260410-163440-ab12cd3' 'main build creates immutable image ref'
-assert_contains "$STATE_DIR/podman.log" 'Containerfile.source-base' 'main build uses source-base containerfile'
-
-env OPENCODE_SELECT_INDEX=1 PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$ROOT/scripts/shared/opencode-build" test 1.4.2 >"$STATE_DIR/build-fallback.out"
-assert_contains "$STATE_DIR/build-fallback.out" 'Build source: official release v1.4.2' 'exact stable releases use the official release artefact path'
-
-reset_git_mock_state
-printf '2\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_DIFF_STATE=unstaged "$ROOT/scripts/shared/opencode-build" >"$STATE_DIR/build-picker-unstaged.out" 2>&1 || true
-assert_contains "$STATE_DIR/build-picker-unstaged.out" 'Select a build lane' 'build prompts for the lane before it can apply lane-dependent build checks'
-assert_contains "$STATE_DIR/build-picker-unstaged.out" 'working tree has unstaged changes' 'build fails the git checks after the lane is selected'
-assert_not_contains "$STATE_DIR/build-picker-unstaged.out" 'Select an upstream version' 'build does not show upstream choices until the git checks pass'
-printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_AHEAD=1 "$ROOT/scripts/shared/opencode-build" >"$STATE_DIR/build-picker-production-ahead.out" 2>&1 || true
-assert_contains "$STATE_DIR/build-picker-production-ahead.out" 'Select a build lane' 'build still prompts for the lane when production-specific checks depend on the chosen lane'
-assert_contains "$STATE_DIR/build-picker-production-ahead.out" 'production builds require the canonical main checkout to be in sync with its upstream' 'build applies production sync checks immediately after selecting production'
-assert_not_contains "$STATE_DIR/build-picker-production-ahead.out" 'Select an upstream version' 'production lane failures happen before any upstream picker is shown'
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_DIFF_STATE=unstaged '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has unstaged changes' "$STATE_DIR/build-production-unstaged.out"
-assert_not_contains "$STATE_DIR/build-production-unstaged.out" 'Select an upstream version' 'explicit lane builds fail git checks before any upstream picker is shown'
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_DIFF_STATE=staged '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has staged changes' "$STATE_DIR/build-production-staged.out"
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_UNTRACKED=1 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'working tree has untracked files' "$STATE_DIR/build-production-untracked.out"
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_BRANCH=feature '$ROOT/scripts/shared/opencode-build' production 1.4.3" "production builds must run from branch 'main'" "$STATE_DIR/build-production-branch.out"
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_HAS_UPSTREAM=0 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds require a tracking branch' "$STATE_DIR/build-production-upstream.out"
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_AHEAD=1 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds require the canonical main checkout to be in sync with its upstream' "$STATE_DIR/build-production-ahead.out"
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_BEHIND=1 '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds require the canonical main checkout to be in sync with its upstream' "$STATE_DIR/build-production-behind.out"
-assert_rejects "env PATH='$PATH' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK= GIT_MOCK_GIT_DIR='.git/worktrees/feat' GIT_MOCK_COMMON_DIR='.git' '$ROOT/scripts/shared/opencode-build' production 1.4.3" 'production builds must run from the canonical main checkout' "$STATE_DIR/build-production-worktree.out"
-env OPENCODE_SELECT_INDEX=1 PATH="$PATH" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK= "$ROOT/scripts/shared/opencode-build" production 1.4.3 >"$STATE_DIR/build-production-clean.out"
-assert_contains "$STATE_DIR/build-production-clean.out" 'Built image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'production build succeeds only when the checkout is clean and in sync'
-reset_git_mock_state
-
-"$ROOT/scripts/shared/opencode-start" general test 1.4.3 >"$STATE_DIR/start.out"
-assert_contains "$STATE_DIR/start.out" '  Name: opencode-general-test-1.4.3-main' 'start prints deterministic container name'
-assert_contains "$STATE_DIR/start.out" '  Host Mapping: (not published)' 'start reports that no host mapping is published when the server port is unset'
-assert_contains "$STATE_DIR/start.out" '  Workspace Mount: ' 'start prints the live workspace mount'
-assert_contains "$STATE_DIR/podman.log" '--name opencode-general-test-1.4.3-main' 'run uses deterministic container name'
-assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1::4096' 'start does not publish a random host server port when unset'
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-home:/root" 'owned Ubuntu runtime mounts workspace home at the fixed runtime home'
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/general/opencode-workspace:/workspace/opencode-workspace" 'run mounts workspace dir'
-assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT:/workspace/opencode-development" 'run mounts configured development root'
-assert_not_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:6553:4096' 'global OPENCODE_HOST_SERVER_PORT environment does not override per-workspace server config'
-
-: >"$STATE_DIR/podman.log"
-"$ROOT/scripts/shared/opencode-start" general test 1.4.3 >"$STATE_DIR/start-reuse.out"
-assert_not_contains "$STATE_DIR/podman.log" 'run -d' 'start reuses an already-correct running container without creating a replacement'
-assert_not_contains "$STATE_DIR/podman.log" 'rm -f opencode-general-test-1.4.3-main' 'start reuses an already-correct running container without removing it'
-
-podman stop opencode-general-test-1.4.3-main >/dev/null
-: >"$STATE_DIR/podman.log"
-"$ROOT/scripts/shared/opencode-start" general test 1.4.3 >"$STATE_DIR/start-stopped.out"
-assert_contains "$STATE_DIR/podman.log" 'start opencode-general-test-1.4.3-main' 'start uses podman start when the existing container is stopped but otherwise correct'
-assert_not_contains "$STATE_DIR/podman.log" 'run -d' 'start does not recreate a stopped-but-correct container'
-assert_not_contains "$STATE_DIR/podman.log" 'rm -f opencode-general-test-1.4.3-main' 'start does not remove a stopped-but-correct container'
-
-: >"$STATE_DIR/podman.log"
-mkdir -p "$TMPDIR/workspaces/aaaexplicit/opencode-workspace/.config/opencode"
-printf '1\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-start" -- test 1.4.3 >"$STATE_DIR/start-picked-explicit.out" 2>&1
-assert_contains "$STATE_DIR/start-picked-explicit.out" 'Select a workspace from' 'start can still prompt for a workspace when it is omitted'
-assert_contains "$STATE_DIR/start-picked-explicit.out" 'Select a project from' 'start requires a project selection before creating the resolved container'
-assert_line_order "$STATE_DIR/start-picked-explicit.out" 'Select a workspace from' 'Select a project from' 'start resolves workspace selection before project selection'
-assert_contains "$STATE_DIR/start-picked-explicit.out" '  Name: opencode-aaaexplicit-test-1.4.3-main' 'start can pick a workspace and still honour explicit lane and upstream selectors'
-assert_contains "$STATE_DIR/podman.log" '--name opencode-aaaexplicit-test-1.4.3-main' 'picked explicit start still creates the explicit target container'
-assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-aaaexplicit-test-1.4.3-main")" 'picked explicit start mounts the selected project into the created container'
-
-rm -rf "$DEVELOPMENT_ROOT"
-: >"$STATE_DIR/podman.log"
-assert_rejects "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-start' general test 1.4.3" 'no projects found under' "$STATE_DIR/start-nodevroot.out"
-assert_not_contains "$STATE_DIR/podman.log" '--name opencode-general-test-1.4.3-main' 'mandatory project selection fails before container creation when the development root is missing'
-mkdir -p "$DEVELOPMENT_ROOT/alpha" "$DEVELOPMENT_ROOT/beta" "$DEVELOPMENT_ROOT/gamma+delta" "$DEVELOPMENT_ROOT/production" "$DEVELOPMENT_ROOT/z-last/deep"
-
-"$ROOT/scripts/shared/opencode-start" sourcey test 1.4.2 >"$STATE_DIR/start-source.out"
-assert_contains "$STATE_DIR/podman.log" "$TMPDIR/workspaces/sourcey/opencode-home:/root" 'release-built and source-built runtimes share the same fixed runtime home'
-podman rm -f opencode-sourcey-test-1.4.2-main >/dev/null
-
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-feature-xyz-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 feature-xyz 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
-OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-start" branchy test 1.4.3 production -- --version >"$STATE_DIR/start-lane-named-project.out"
-assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT/production:/workspace/opencode-project" 'start accepts an explicit project whose name also matches a wrapper lane'
-podman rm -f opencode-branchy-test-1.4.3-feature-xyz >/dev/null
-
-mkdir -p "$TMPDIR/workspaces/fixed/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/fixed/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=5096
-EOF
-"$ROOT/scripts/shared/opencode-start" fixed test 1.4.3 >"$STATE_DIR/start-fixed-port.out"
-assert_contains "$STATE_DIR/start-fixed-port.out" '  Host Mapping: 127.0.0.1:5096 -> 4096/tcp' 'start reports fixed mapped server port when configured'
-assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5096:4096' 'start uses configured fixed host server port'
-assert_contains "$STATE_DIR/podman.log" 'exec opencode-fixed-test-1.4.3-main /bin/sh -lc' 'start launches managed server inside the configured-port container'
-
-mkdir -p "$TMPDIR/workspaces/safe/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/safe/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=5097
-MALICIOUS=$(touch /tmp/should-not-run)
-EOF
-"$ROOT/scripts/shared/opencode-start" safe test 1.4.3 >"$STATE_DIR/start-safe-port.out"
-assert_contains "$STATE_DIR/start-safe-port.out" '  Host Mapping: 127.0.0.1:5097 -> 4096/tcp' 'start reads configured server port from assignment-only env parsing'
-test ! -e /tmp/should-not-run
-
-mkdir -p "$TMPDIR/workspaces/lastwins/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/lastwins/opencode-workspace/.config/opencode/config.env" <<'EOF'
-export   OPENCODE_HOST_SERVER_PORT=5088
-OPENCODE_HOST_SERVER_PORT=5089
-EOF
-"$ROOT/scripts/shared/opencode-start" lastwins test 1.4.3 >"$STATE_DIR/start-lastwins.out"
-assert_contains "$STATE_DIR/start-lastwins.out" '  Host Mapping: 127.0.0.1:5089 -> 4096/tcp' 'start uses the last matching assignment and accepts spaced export syntax in config env'
-
-mkdir -p "$TMPDIR/workspaces/quoted/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/quoted/opencode-workspace/.config/opencode/config.env" <<'EOF'
-export OPENCODE_HOST_SERVER_PORT="5087" # comment
-EOF
-"$ROOT/scripts/shared/opencode-start" quoted test 1.4.3 >"$STATE_DIR/start-quoted.out"
-assert_contains "$STATE_DIR/start-quoted.out" '  Host Mapping: 127.0.0.1:5087 -> 4096/tcp' 'start accepts quoted host server ports with inline comments'
-
-mkdir -p "$TMPDIR/workspaces/badport/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/badport/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=abc
-EOF
-assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' OPENCODE_SELECT_INDEX=1 '$ROOT/scripts/shared/opencode-start' badport test 1.4.3" "$STATE_DIR/start-badport.out"
-assert_not_contains "$STATE_DIR/podman.log" '--name opencode-badport-test-1.4.3-main' 'invalid port values fail before podman run'
-
-mkdir -p "$TMPDIR/workspaces/portzero/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/portzero/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=0
-EOF
-assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' OPENCODE_SELECT_INDEX=1 '$ROOT/scripts/shared/opencode-start' portzero test 1.4.3" "$STATE_DIR/start-portzero.out"
-assert_not_contains "$STATE_DIR/podman.log" '--name opencode-portzero-test-1.4.3-main' 'zero-valued port failures happen before podman run'
-
-mkdir -p "$TMPDIR/workspaces/portbig/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/portbig/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=65536
-EOF
-assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' OPENCODE_SELECT_INDEX=1 '$ROOT/scripts/shared/opencode-start' portbig test 1.4.3" "$STATE_DIR/start-portbig.out"
-assert_not_contains "$STATE_DIR/podman.log" '--name opencode-portbig-test-1.4.3-main' 'too-large port failures happen before podman run'
-
-mkdir -p "$TMPDIR/workspaces/secretive/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/secretive/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=5091
-EOF
-cat >"$TMPDIR/workspaces/secretive/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=5099
-EOF
-"$ROOT/scripts/shared/opencode-start" secretive test 1.4.3 >"$STATE_DIR/start-secretive.out"
-assert_contains "$STATE_DIR/start-secretive.out" '  Host Mapping: 127.0.0.1:5099 -> 4096/tcp' 'secrets env overrides config env for the managed server port'
-assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5099:4096' 'secrets env override is used for published server port'
-
-mkdir -p "$TMPDIR/workspaces/disabled/opencode-workspace/.config/opencode"
-cat >"$TMPDIR/workspaces/disabled/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=5094
-EOF
-cat >"$TMPDIR/workspaces/disabled/opencode-workspace/.config/opencode/secrets.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=
-EOF
-"$ROOT/scripts/shared/opencode-start" disabled test 1.4.3 >"$STATE_DIR/start-disabled.out"
-assert_contains "$STATE_DIR/start-disabled.out" '  Host Mapping: (not published)' 'empty secrets env assignment disables a configured server port'
-
-mkdir -p "$TMPDIR/workspaces/second/opencode-workspace/.config/opencode"
-"$ROOT/scripts/shared/opencode-start" second test 1.4.3 >"$STATE_DIR/start-second.out"
-assert_contains "$STATE_DIR/start-second.out" '  Host Mapping: (not published)' 'server port does not leak from one workspace to the next'
-
-: >"$STATE_DIR/podman.log"
-env OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-start" second test 1.4.3 -- --help >"$STATE_DIR/start-delimiter.out"
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'start preserves payload-only syntax and execs in the selected project directory'
-assert_contains "$STATE_DIR/podman.log" 'exec opencode "$@"' 'start still forwards payload arguments after project selection'
-assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-start' second test 1.4.3 missing-project -- --help" "$STATE_DIR/start-missing-project.out"
-assert_contains "$STATE_DIR/start-missing-project.out" "project 'missing-project' was not found under $DEVELOPMENT_ROOT" 'start rejects invalid explicit project names'
-
-cat >"$TMPDIR/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
-OPENCODE_HOST_SERVER_PORT=5098
-EOF
-"$ROOT/scripts/shared/opencode-start" general test 1.4.3 >"$STATE_DIR/start-general-fixed.out"
-assert_contains "$STATE_DIR/start-general-fixed.out" '  Host Mapping: 127.0.0.1:5098 -> 4096/tcp' 'restarting after adding a configured host server port recreates the container and starts the managed server'
-assert_contains "$STATE_DIR/podman.log" '-p 127.0.0.1:5098:4096' 'reconfigured workspace recreates container with the configured host server port'
-
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-normalize-test-1.4.3-main' normalize test 1.4.3 main 20260410-163440-ab12cd3 true 'localhost/opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-assert_eq 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' "$(container_image_ref opencode-normalize-test-1.4.3-main)" 'container image refs are normalised before runtime comparisons'
-
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-remount-test-1.4.3-main' remount test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-printf '%s\n' "$TMPDIR/workspaces/remount/opencode-home" >"$STATE_DIR/mount_home_opencode-remount-test-1.4.3-main"
-printf '%s\n' "$TMPDIR/workspaces/remount/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-remount-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT-old" >"$STATE_DIR/mount_development_opencode-remount-test-1.4.3-main"
-: >"$STATE_DIR/podman.log"
-"$ROOT/scripts/shared/opencode-start" remount test 1.4.3 >"$STATE_DIR/start-remount.out"
-assert_contains "$STATE_DIR/podman.log" 'rm -f opencode-remount-test-1.4.3-main' 'start recreates the container when the configured development mount changes'
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-stray-test-1.4.3-main' '' '' '' '' '' true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
-assert_not_contains <(project_container_rows) 'opencode-stray-test-1.4.3-main' 'unlabelled prefix-matching containers are ignored by project container discovery'
-
-podman rm -f opencode-fixed-test-1.4.3-main >/dev/null
-
-: >"$STATE_DIR/podman.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-printf '%s\n' "$TMPDIR/workspaces/general/opencode-home" >"$STATE_DIR/mount_home_opencode-general-test-1.4.3-main"
-printf '%s\n' "$TMPDIR/workspaces/general/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-general-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-general-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT/alpha" >"$STATE_DIR/mount_project_opencode-general-test-1.4.3-main"
-env OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-open" general test 1.4.3 -- --help >"$STATE_DIR/open.out"
-assert_contains "$STATE_DIR/podman.log" 'rm -f opencode-general-test-1.4.3-main' 'open recreates the container when the selected project changes'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-general-test-1.4.3-main /bin/sh -lc' 'open execs through wrapper shell in the selected project directory'
-assert_contains "$STATE_DIR/podman.log" 'exec opencode "$@"' 'open forwards OpenCode arguments'
-assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-general-test-1.4.3-main")" 'open recreates the container with the selected project mount'
-
-: >"$STATE_DIR/podman.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-aaaexplicit-test-1.4.3-main' aaaexplicit test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-printf '%s\n' "$TMPDIR/workspaces/aaaexplicit/opencode-home" >"$STATE_DIR/mount_home_opencode-aaaexplicit-test-1.4.3-main"
-printf '%s\n' "$TMPDIR/workspaces/aaaexplicit/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-aaaexplicit-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-aaaexplicit-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT/alpha" >"$STATE_DIR/mount_project_opencode-aaaexplicit-test-1.4.3-main"
-printf '1\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-open" -- test 1.4.3 -- --help >"$STATE_DIR/open-picked-explicit.out" 2>&1
-assert_contains "$STATE_DIR/open-picked-explicit.out" 'Select a workspace from' 'open can still prompt for a workspace when it is omitted'
-assert_contains "$STATE_DIR/open-picked-explicit.out" 'Select a project from' 'open requires a selected project before execution'
-assert_line_order "$STATE_DIR/open-picked-explicit.out" 'Select a workspace from' 'Select a project from' 'open resolves workspace selection before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-aaaexplicit-test-1.4.3-main /bin/sh -lc' 'open can pick a workspace and still honour explicit lane and upstream selectors'
-
-: >"$STATE_DIR/podman.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
+printf '%s	%s	%s	%s	%s	%s	%s	%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 false 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\n' "$TMPDIR/workspaces/general/opencode-home" >"$STATE_DIR/mount_home_opencode-general-test-1.4.3-main"
 printf '%s\n' "$TMPDIR/workspaces/general/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-general-test-1.4.3-main"
 printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-general-test-1.4.3-main"
 printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-general-test-1.4.3-main"
-OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-open" general test 1.4.3 beta -- --help >"$STATE_DIR/open-explicit-context.out"
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-general-test-1.4.3-main /bin/sh -lc' 'explicit open resolves existing containers independently of the caller wrapper context'
-assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-open' general test 1.4.3 missing-project -- --help" "$STATE_DIR/open-missing-project.out"
-assert_contains "$STATE_DIR/open-missing-project.out" "project 'missing-project' was not found under $DEVELOPMENT_ROOT" 'open rejects invalid explicit project names'
-
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-solo-test-1.4.3-main' solo test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
-printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-logs" solo --tail 3 >"$STATE_DIR/logs-solo-picker.out" 2>&1
-assert_contains "$STATE_DIR/logs-solo-picker.out" "Select a container for workspace 'solo'" 'logs shows picker UI even with a single matching container'
-assert_contains "$STATE_DIR/logs-solo-picker.out" 'lane  upstream  wrapper  commit                   status' 'logs single-container picker shows aligned headers'
-printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-status" solo >"$STATE_DIR/status-solo-picker.out" 2>&1
-assert_contains "$STATE_DIR/status-solo-picker.out" "Select a container for workspace 'solo'" 'status shows picker UI even with a single matching container'
-assert_contains "$STATE_DIR/status-solo-picker.out" 'Container' 'status prints grouped container details after selection'
-assert_contains "$STATE_DIR/status-solo-picker.out" 'State: running' 'status still resolves the selected single container'
-printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-shell" solo -- env >"$STATE_DIR/shell-solo-picker.out" 2>&1
-assert_contains "$STATE_DIR/shell-solo-picker.out" "Select a container for workspace 'solo'" 'shell shows picker UI even with a single matching container'
-assert_contains "$STATE_DIR/shell-solo-picker.out" 'Select a project from' 'shell requires a selected project before execution'
-assert_line_order "$STATE_DIR/shell-solo-picker.out" "Select a container for workspace 'solo'" 'Select a project from' 'shell resolves the container before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-solo-test-1.4.3-main /bin/sh -lc' 'shell runs against the selected single container in the project directory'
-: >"$STATE_DIR/podman.log"
-printf '1\n1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-open" solo -- --help >"$STATE_DIR/open-solo-picker.out" 2>&1
-assert_contains "$STATE_DIR/open-solo-picker.out" "Select a container for workspace 'solo'" 'open shows picker UI even with a single matching container'
-assert_contains "$STATE_DIR/open-solo-picker.out" 'Select a project from' 'open requires a selected project before execution even for a single matching container'
-assert_line_order "$STATE_DIR/open-solo-picker.out" "Select a container for workspace 'solo'" 'Select a project from' 'open resolves the container before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-solo-test-1.4.3-main /bin/sh -lc' 'open runs against the selected single container in the project directory'
-printf '1\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-stop" solo >"$STATE_DIR/stop-solo-picker.out" 2>&1
-assert_contains "$STATE_DIR/stop-solo-picker.out" "Select a container for workspace 'solo'" 'stop shows picker UI even with a single matching container'
-assert_contains "$STATE_DIR/stop-solo-picker.out" 'Stopped container: opencode-solo-test-1.4.3-main' 'stop still stops the selected single container'
-
-: >"$STATE_DIR/podman.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-printf '%s\n' "$TMPDIR/workspaces/second/opencode-home" >"$STATE_DIR/mount_home_opencode-second-test-1.4.3-main"
-printf '%s\n' "$TMPDIR/workspaces/second/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-second-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-second-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-second-test-1.4.3-main"
-"$ROOT/scripts/shared/opencode-shell" second beta -- test arg >"$STATE_DIR/shell-delimiter.out"
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'shell accepts -- to separate wrapper arguments from command arguments'
-assert_command_fails "env PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' '$ROOT/scripts/shared/opencode-shell' second missing-project -- env" "$STATE_DIR/shell-missing-project.out"
-assert_contains "$STATE_DIR/shell-missing-project.out" "project 'missing-project' was not found under $DEVELOPMENT_ROOT" 'shell rejects invalid explicit project names'
-
-: >"$STATE_DIR/podman.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-aaaexplicit-test-1.4.3-main' aaaexplicit test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
-printf '%s\n' "$TMPDIR/workspaces/aaaexplicit/opencode-home" >"$STATE_DIR/mount_home_opencode-aaaexplicit-test-1.4.3-main"
-printf '%s\n' "$TMPDIR/workspaces/aaaexplicit/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-aaaexplicit-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-aaaexplicit-test-1.4.3-main"
-printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-aaaexplicit-test-1.4.3-main"
-printf '1\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-shell" -- test 1.4.3 -- env >"$STATE_DIR/shell-picked-explicit.out" 2>&1
-assert_contains "$STATE_DIR/shell-picked-explicit.out" 'Select a workspace from' 'shell can still prompt for a workspace when it is omitted'
-assert_contains "$STATE_DIR/shell-picked-explicit.out" 'Select a project from' 'shell requires project selection for explicit lane and upstream resolution'
-assert_line_order "$STATE_DIR/shell-picked-explicit.out" 'Select a workspace from' 'Select a project from' 'shell resolves workspace selection before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-aaaexplicit-test-1.4.3-main /bin/sh -lc' 'shell can pick a workspace and still honour explicit lane and upstream selectors'
+"$ROOT/scripts/shared/opencode-shell" general beta -- env >"$STATE_DIR/shell-stopped.out" 2>&1 && {
+	printf 'assertion failed: shell should refuse stopped containers instead of starting them\n' >&2
+	exit 1
+}
+assert_contains "$STATE_DIR/shell-stopped.out" 'container is not running: opencode-general-test-1.4.3-main' 'shell rejects stopped containers instead of starting them'
+assert_not_contains "$STATE_DIR/podman.log" 'start opencode-general-test-1.4.3-main' 'shell does not start stopped containers implicitly'
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\n' "$TMPDIR/workspaces/second/opencode-home" >"$STATE_DIR/mount_home_opencode-second-test-1.4.3-main"
 printf '%s\n' "$TMPDIR/workspaces/second/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-second-test-1.4.3-main"
 printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-second-test-1.4.3-main"
 printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-second-test-1.4.3-main"
+: >"$STATE_DIR/podman.log"
+"$ROOT/scripts/shared/opencode-shell" second beta >"$STATE_DIR/shell-explicit-project-no-payload.out"
+assert_contains "$STATE_DIR/shell-explicit-project-no-payload.out" 'mock exec' 'shell accepts an explicit project even when no command args remain'
+assert_contains "$STATE_DIR/podman.log" 'exec /bin/sh' 'shell opens an interactive shell when explicit project selection leaves no command args'
 "$ROOT/scripts/shared/opencode-bootstrap" second beta -- --version >"$STATE_DIR/bootstrap.out"
 assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'bootstrap reuses the resolved target and opens OpenCode in the selected project directory'
 
@@ -993,7 +800,7 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' gen
 assert_contains "$STATE_DIR/podman.log" 'logs --tail 5 opencode-second-test-1.4.3-main' 'logs forwards podman log arguments to the resolved workspace container'
 
 : >"$STATE_DIR/podman.log"
-printf '15\n1\n' >"$STATE_DIR/logs-picked.input"
+printf '3\n1\n' >"$STATE_DIR/logs-picked.input"
 env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-logs" -- --tail 6 <"$STATE_DIR/logs-picked.input" >"$STATE_DIR/logs-picked.out" 2>&1
 assert_contains "$STATE_DIR/podman.log" 'logs --tail 6 opencode-second-test-1.4.3-main' 'logs can pick a workspace when forwarded podman arguments begin with a dash'
 
@@ -1018,15 +825,26 @@ OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-logs" second --tail 7 >"$
 assert_contains "$STATE_DIR/podman.log" 'logs --tail 7 opencode-second-production-1.4.3-main' 'logs can select among multiple matching containers'
 OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-status" second >"$STATE_DIR/status-second-picker.out"
 assert_contains "$STATE_DIR/status-second-picker.out" '  Lane: production' 'status can select among multiple matching containers without tripping nounset array handling'
-printf '1\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-shell" second -- env >"$STATE_DIR/shell-second-picker.out" 2>&1
+printf '2\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-shell" second -- env >"$STATE_DIR/shell-second-picker.out" 2>&1
 assert_contains "$STATE_DIR/shell-second-picker.out" "Select a container for workspace 'second'" 'shell can still select among multiple matching containers'
 assert_contains "$STATE_DIR/shell-second-picker.out" 'Select a project from' 'shell requires project selection after choosing a matching container'
 assert_line_order "$STATE_DIR/shell-second-picker.out" "Select a container for workspace 'second'" 'Select a project from' 'shell resolves the matching container before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-production-1.4.3-main /bin/sh -lc' 'shell can select among multiple matching containers'
+assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'shell can select among multiple matching containers'
 
+printf '%s	%s	%s	%s	%s	%s	%s	%s
+printf '%s
+printf '%s
+printf '%s
+printf '%s
+printf '%s
+: >"$STATE_DIR/server_active_opencode-general-test-1.4.3-main"
+mkdir -p "$TMPDIR/workspaces/general/opencode-workspace/.config/opencode"
+cat >"$TMPDIR/workspaces/general/opencode-workspace/.config/opencode/config.env" <<'EOF'
+OPENCODE_HOST_SERVER_PORT=5098
+EOF
 "$ROOT/scripts/shared/opencode-status" general >"$STATE_DIR/status-general.out"
 assert_contains "$STATE_DIR/status-general.out" '  Configured Host Port: 5098' 'status reports the configured host port when present'
-assert_contains "$STATE_DIR/status-general.out" '  Host Mapping: 127.0.0.1:5098 -> 4096/tcp' 'status reports the live published host mapping'
+assert_contains "$STATE_DIR/status-general.out" '  Host Mapping: (not published)' 'status reports when no live published mapping is present for the selected container'
 assert_contains "$STATE_DIR/status-general.out" "  Selected Project Mount: $DEVELOPMENT_ROOT/beta -> /workspace/opencode-project" 'status reports the live selected project mount'
 assert_contains "$STATE_DIR/status-general.out" "  config.env: present ($TMPDIR/workspaces/general/opencode-workspace/.config/opencode/config.env)" 'status reports config.env presence'
 assert_contains "$STATE_DIR/status-general.out" "  secrets.env: missing ($TMPDIR/workspaces/general/opencode-workspace/.config/opencode/secrets.env)" 'status reports missing secrets.env without printing secret values'
@@ -1034,7 +852,7 @@ assert_contains "$STATE_DIR/status-general.out" "  secrets.env: missing ($TMPDIR
 : >"$STATE_DIR/podman.log"
 rm -f "$STATE_DIR/server_active_opencode-general-test-1.4.3-main"
 "$ROOT/scripts/shared/opencode-status" general >"$STATE_DIR/status-general-recovered.out"
-assert_contains "$STATE_DIR/status-general-recovered.out" '  Host Mapping: 127.0.0.1:5098 -> 4096/tcp' 'status remains diagnostic when the configured-port container is down'
+assert_contains "$STATE_DIR/status-general-recovered.out" '  Host Mapping: (not published)' 'status remains diagnostic when no live published mapping is present'
 assert_not_contains "$STATE_DIR/podman.log" 'exec opencode-general-test-1.4.3-main /bin/sh -lc' 'status does not trigger managed server repair during diagnostics'
 
 "$ROOT/scripts/shared/opencode-stop" general >"$STATE_DIR/stop.out"

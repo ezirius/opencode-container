@@ -99,13 +99,21 @@ if [[ "$PAYLOAD_ONLY" == "0" && $# -ge 2 ]] && is_lane "$1"; then
   COMMITSTAMP="$(image_label "$IMAGE_REF" "$OPENCODE_LABEL_COMMITSTAMP")"
   CONTAINER_NAME="$(container_name "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT")"
   consume_project_selection "$@"
-  set -- "${REMAINING_ARGS[@]}"
+  if [[ ${#REMAINING_ARGS[@]} -gt 0 ]]; then
+    set -- "${REMAINING_ARGS[@]}"
+  else
+    set --
+  fi
   ensure_running_container_matches_image_and_runtime "$CONTAINER_NAME" "$IMAGE_REF" "$WORKSPACE" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP" "$PROJECT_NAME"
 else
   TARGET_ROW="$(resolve_target_details_for_workspace "$WORKSPACE")"
   IFS=$'\t' read -r TARGET_KIND TARGET_REF LANE UPSTREAM_RESOLVED WRAPPER_CONTEXT COMMITSTAMP _STATUS _IMAGE_REF <<< "$TARGET_ROW"
   consume_project_selection "$@"
-  set -- "${REMAINING_ARGS[@]}"
+  if [[ ${#REMAINING_ARGS[@]} -gt 0 ]]; then
+    set -- "${REMAINING_ARGS[@]}"
+  else
+    set --
+  fi
   CONTAINER_NAME="$(start_or_reuse_target "$WORKSPACE" "$TARGET_KIND" "$TARGET_REF" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP" "$PROJECT_NAME")"
 fi
 

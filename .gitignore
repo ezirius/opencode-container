@@ -13,3 +13,6 @@ __pycache__/
 tmp/
 dist/
 coverage/
+
+# local worktrees
+.worktrees/

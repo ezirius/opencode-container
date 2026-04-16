@@ -1616,6 +1616,24 @@ ensure_running_container_matches_image_and_runtime() {
 	ensure_managed_server_for_container "$container_name"
 }
 
+require_running_container_matches_image_and_runtime() {
+	local container_name="$1" image_ref="$2" workspace="$3" project_name="${4-}"
+	local current_image_ref selected_project_name
+
+	container_exists "$container_name" || fail "container does not exist: $container_name"
+	current_image_ref="$(container_image_ref "$container_name" 2>/dev/null || true)"
+	if [[ "$current_image_ref" != "$(normalize_image_ref "$image_ref")" ]]; then
+		fail "existing container image does not match the expected runtime: $container_name"
+	fi
+	if [[ -n "$project_name" ]]; then
+		selected_project_name="$(resolve_selected_project_name "$project_name")"
+		container_matches_workspace_runtime_config "$container_name" "$workspace" "$image_ref" "$selected_project_name" || fail "selected project '$selected_project_name' does not match the existing container runtime"
+	else
+		container_matches_workspace_runtime_config "$container_name" "$workspace" "$image_ref" || fail "existing container runtime does not match the expected configuration: $container_name"
+	fi
+	container_running "$container_name" || fail "container is not running: $container_name"
+}
+
 server_url_for_container() {
 	local container_name="$1"
 	local workspace port
