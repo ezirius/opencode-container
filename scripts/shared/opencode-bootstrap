@@ -68,7 +68,11 @@ REMAINING_ARGS=("$@")
 TARGET_ROW="$(resolve_target_details_for_workspace "$WORKSPACE")"
 IFS=$'\t' read -r TARGET_KIND TARGET_REF LANE UPSTREAM_RESOLVED WRAPPER_CONTEXT COMMITSTAMP _STATUS _IMAGE_REF <<< "$TARGET_ROW"
 consume_project_selection "$@"
-set -- "${REMAINING_ARGS[@]}"
+if ((${#REMAINING_ARGS[@]})); then
+  set -- "${REMAINING_ARGS[@]}"
+else
+  set --
+fi
 CONTAINER_NAME="$(start_or_reuse_target "$WORKSPACE" "$TARGET_KIND" "$TARGET_REF" "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP" "$PROJECT_NAME")"
 
 exec_opencode_in_container "$CONTAINER_NAME" "$@"

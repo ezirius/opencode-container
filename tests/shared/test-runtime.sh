@@ -782,6 +782,10 @@ assert_contains "$STATE_DIR/shell-explicit-project-no-payload.out" 'mock exec' '
 assert_contains "$STATE_DIR/podman.log" 'exec /bin/sh' 'shell opens an interactive shell when explicit project selection leaves no command args'
 "$ROOT/scripts/shared/opencode-bootstrap" second beta -- --version >"$STATE_DIR/bootstrap.out"
 assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main /bin/sh -lc' 'bootstrap reuses the resolved target and opens OpenCode in the selected project directory'
+: >"$STATE_DIR/podman.log"
+"$ROOT/scripts/shared/opencode-bootstrap" second beta >"$STATE_DIR/bootstrap-no-payload.out"
+assert_contains "$STATE_DIR/bootstrap-no-payload.out" 'mock exec' 'bootstrap accepts an explicit project even when no OpenCode args remain'
+assert_contains "$STATE_DIR/podman.log" 'exec opencode "$@"' 'bootstrap still execs OpenCode when explicit project selection leaves no trailing payload args'
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' test 1.4.3 v1.4.3 main 20260409-120000-deadbee >"$STATE_DIR/images.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
