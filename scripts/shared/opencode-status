@@ -28,7 +28,7 @@ Notes:
 - status never prints secret values."
 fi
 
-[[ $# -le 1 ]] || usage_error "$(basename "$0") <workspace>"
+[[ $# -le 1 ]] || usage_error "$(basename "$0") [<workspace>]"
 if [[ $# -eq 1 ]]; then
   WORKSPACE="$(resolve_workspace_argument "$1")"
 else

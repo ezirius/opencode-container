@@ -3,9 +3,9 @@
 This repository runs OpenCode in a wrapper-owned Ubuntu LTS container using the same local-container model used by `hindsight-container`:
 
 - immutable local wrapper images
-- deterministic workspace container names
+- deterministic project-aware container names
 - picker-based workspace commands
-- persistent OpenCode runtime home at the configured `OPENCODE_CONTAINER_RUNTIME_HOME`
+- persistent OpenCode runtime home fixed at `/home/opencode`
 - wrapper-owned workspace config under the configured `OPENCODE_WORKSPACE_CONFIG_SUBDIR`
 
 ## Layout
@@ -23,49 +23,53 @@ This repository runs OpenCode in a wrapper-owned Ubuntu LTS container using the 
 
 Build immutable images:
 
-1. `./scripts/shared/opencode-build <production|test> [upstream]`
+1. `./scripts/shared/opencode-build <lane> [upstream]`
 
 If the lane is omitted, the wrapper prompts for the configured production or test lane. If `upstream` is omitted, the wrapper prompts for an upstream version.
 
 Workspace commands:
 
-1. `./scripts/shared/opencode-bootstrap [<workspace>] [opencode args...]`
-2. `./scripts/shared/opencode-start [<workspace>]`
-3. `./scripts/shared/opencode-start [<workspace>] -- [opencode args...]`
-4. `./scripts/shared/opencode-start [<workspace>] <production|test> <upstream> [opencode args...]`
-5. `./scripts/shared/opencode-start [<workspace>] <production|test> <upstream> -- [opencode args...]`
-6. `./scripts/shared/opencode-open [<workspace>] [opencode args...]`
-7. `./scripts/shared/opencode-open [<workspace>] -- [opencode args...]`
-8. `./scripts/shared/opencode-open [<workspace>] <production|test> <upstream> [opencode args...]`
-9. `./scripts/shared/opencode-open [<workspace>] <production|test> <upstream> -- [opencode args...]`
-10. `./scripts/shared/opencode-shell [<workspace>] [command args...]`
-11. `./scripts/shared/opencode-shell [<workspace>] -- [command args...]`
-12. `./scripts/shared/opencode-shell [<workspace>] <production|test> <upstream> [command args...]`
-13. `./scripts/shared/opencode-shell [<workspace>] <production|test> <upstream> -- [command args...]`
-14. `./scripts/shared/opencode-logs [<workspace>] [podman logs args...]`
-15. `./scripts/shared/opencode-status [<workspace>]`
-16. `./scripts/shared/opencode-stop [<workspace>]`
-17. `./scripts/shared/opencode-remove`
-18. `./scripts/shared/opencode-remove containers`
-19. `./scripts/shared/opencode-remove images`
+1. `./scripts/shared/opencode-bootstrap [<workspace>] [project] [opencode args...]`
+2. `./scripts/shared/opencode-bootstrap [<workspace>] [project] -- [opencode args...]`
+3. `./scripts/shared/opencode-start [<workspace>] [project] [opencode args...]`
+4. `./scripts/shared/opencode-start [<workspace>] [project] -- [opencode args...]`
+5. `./scripts/shared/opencode-start [<workspace>] <lane> <upstream> [project] [opencode args...]`
+6. `./scripts/shared/opencode-start [<workspace>] <lane> <upstream> [project] -- [opencode args...]`
+7. `./scripts/shared/opencode-open [<workspace>] [project] [opencode args...]`
+8. `./scripts/shared/opencode-open [<workspace>] [project] -- [opencode args...]`
+9. `./scripts/shared/opencode-open [<workspace>] <lane> <upstream> [project] [opencode args...]`
+10. `./scripts/shared/opencode-open [<workspace>] <lane> <upstream> [project] -- [opencode args...]`
+11. `./scripts/shared/opencode-shell [<workspace>] [project] [command args...]`
+12. `./scripts/shared/opencode-shell [<workspace>] [project] -- [command args...]`
+13. `./scripts/shared/opencode-shell [<workspace>] <lane> <upstream> [project] [command args...]`
+14. `./scripts/shared/opencode-shell [<workspace>] <lane> <upstream> [project] -- [command args...]`
+15. `./scripts/shared/opencode-logs [<workspace>] [podman logs args...]`
+16. `./scripts/shared/opencode-status [<workspace>]`
+17. `./scripts/shared/opencode-stop [<workspace>]`
+18. `./scripts/shared/opencode-remove`
+19. `./scripts/shared/opencode-remove mixed`
+20. `./scripts/shared/opencode-remove containers`
+21. `./scripts/shared/opencode-remove images`
 
 If `<workspace>` is omitted, the wrapper lists workspace names from `OPENCODE_BASE_ROOT` in alphabetical order and prompts you to choose one. Use a leading `--` when you want the picker first and the remaining arguments begin with wrapper selectors or option flags.
 
 For project-facing commands, direct-child project selection from `OPENCODE_DEVELOPMENT_ROOT` is mandatory. The picker order for project-facing commands is workspace, then target or container, then project.
 
+For `./scripts/shared/opencode-remove`, `All, but newest` keeps one retained container per workspace by lane rank, newest commitstamp, then lexical container name.
+
 ## Version Model
 
 Accepted upstream selectors:
 
-- `main`
-- `latest`
+- the configured main selector from `config/shared/opencode.conf`
+- the configured default selector from `config/shared/opencode.conf`
 - exact release tags such as `1.4.3`
 
 Rules:
 
-- `main` builds from upstream source
+- the configured main selector builds from upstream source
 - exact stable releases install the official OpenCode release into the wrapper-owned Ubuntu runtime
-- `latest` resolves to the newest stable official release before naming
+- the configured default selector resolves to the newest stable official release before naming
 - prerelease, beta, preview, rc, nightly, and other non-stable releases are not selected by default
 
 Wrapper-owned defaults such as the Ubuntu LTS base version are pinned in `config/shared/opencode.conf`.
@@ -81,7 +85,7 @@ Image identity:
 
 Container identity:
 
-- `opencode-<workspace>-<lane>-<upstream>-<wrapper>`
+- `opencode-<workspace>-<lane>-<upstream>-<wrapper>-<project>`
 
 ## Workspace Layout
 
@@ -100,6 +104,10 @@ Required mounts:
 
 The workspace config directory remains part of the mounted workspace tree at `OPENCODE_CONTAINER_WORKSPACE_DIR/OPENCODE_WORKSPACE_CONFIG_SUBDIR`.
 
+OpenCode runs inside the container as user `opencode` with fixed home `/home/opencode`.
+
+Native OpenCode global config and state stay under `/home/opencode`, including `~/.config/opencode`, `~/.local/share/opencode`, `~/.local/state/opencode`, and `~/.cache/opencode`.
+
 OpenCode-native state remains app-owned inside that runtime home, including locations such as:
 
 - `~/.config/opencode`
@@ -108,7 +116,11 @@ OpenCode-native state remains app-owned inside that runtime home, including loca
 - `~/.local/state/opencode`
 - `~/.cache/opencode`
 
+Project-local discovery starts from `/workspace/opencode-project` after the selected direct-child project is mounted there.
+
 OpenCode project config in the selected project root as `opencode.json` and `.opencode/` remains app-owned. OpenCode project-scoped session and message data remains app-owned under `~/.local/share/opencode/project/<project-slug>/storage/`. For `opencode-open` and `opencode-shell`, the default in-container workdir is `/workspace/opencode-project`.
+
+For `opencode-start`, `opencode-open`, and `opencode-shell`, the wrapper mounts the selected project first, then sets the in-container cwd to `/workspace/opencode-project`, and only then launches OpenCode or the requested shell command.
 
 Container identity includes the selected project so multiple projects in one workspace can run concurrently without sharing the same container name.
 
@@ -132,6 +144,8 @@ OpenCode-native config lives separately from those wrapper files:
 
 - OpenCode global config in `~/.config/opencode/opencode.json`
 - OpenCode project config in the selected project root as `opencode.json` and `.opencode/`
+
+Wrapper env files under `/workspace/opencode-workspace/.config/opencode` remain wrapper-owned and are not native OpenCode config.
 
 Wrapper files used at runtime:
 
@@ -202,7 +216,7 @@ Most operational constants now live in `config/shared/opencode.conf`, including 
 
 Run:
 
-- `tests/shared/test-all.sh`
+- `./tests/shared/test-all.sh`
 
 Optional real-build smoke validation requires:
 

@@ -1,10 +1,12 @@
 ARG UBUNTU_VERSION
+ARG OPENCODE_HOST_UID
+ARG OPENCODE_HOST_GID
 ARG OPENCODE_CONTAINER_WORKSPACE_DIR
-ARG OPENCODE_CONTAINER_RUNTIME_HOME
 FROM ubuntu:${UBUNTU_VERSION}
 
+ARG OPENCODE_HOST_UID
+ARG OPENCODE_HOST_GID
 ARG OPENCODE_CONTAINER_WORKSPACE_DIR
-ARG OPENCODE_CONTAINER_RUNTIME_HOME
 
 ARG OPENCODE_WRAPPER_LANE
 ARG OPENCODE_WRAPPER_UPSTREAM
@@ -35,9 +37,10 @@ RUN apt-get update \
     tar \
     tini \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd -m -s /bin/bash opencode \
-  && mkdir -p "${OPENCODE_CONTAINER_WORKSPACE_DIR}" "${OPENCODE_CONTAINER_RUNTIME_HOME}" \
-  && chown -R root:root /workspace "${OPENCODE_CONTAINER_RUNTIME_HOME}"
+  && groupadd -o -g "$OPENCODE_HOST_GID" opencode \
+  && useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "/home/opencode" -s /bin/bash opencode \
+  && mkdir -p "${OPENCODE_CONTAINER_WORKSPACE_DIR}" "/home/opencode" \
+  && chown -R opencode:opencode /workspace "/home/opencode"
 
 RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIVE_SHA512" \
   && tmpdir="$(mktemp -d)" \
@@ -50,10 +53,10 @@ RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIV
 COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
 RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 
-USER root
+USER opencode
 WORKDIR ${OPENCODE_CONTAINER_WORKSPACE_DIR}
 
-ENV HOME=${OPENCODE_CONTAINER_RUNTIME_HOME}
+ENV HOME=/home/opencode
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]

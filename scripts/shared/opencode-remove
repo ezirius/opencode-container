@@ -6,7 +6,7 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$ROOT/lib/shell/common.sh"
 
 if [[ ${1-} == "--help" ]]; then
-  show_help "Usage: $(basename "$0") [containers|images]
+  show_help "Usage: $(basename "$0") [mixed|containers|images]
 
 Description:
 Remove OpenCode project containers and images.
@@ -17,14 +17,15 @@ Behaviour:
 - with images, show only image targets
 - All removes all selected target types
 - mixed-mode All removes all containers first and then all images
-- All, but newest keeps one preferred container per workspace, where $OPENCODE_LANE_PRODUCTION beats $OPENCODE_LANE_TEST and commit timestamp breaks ties within a lane
+- All, but newest keeps one retained container per workspace by lane rank, newest commitstamp, then lexical container name
 - image retention keeps the image serving each kept container
 
 Arguments:
-- [containers|images] : optional mode selector; omit for mixed mode
+- [mixed|containers|images] : optional mode selector; omit for mixed mode
 
 Examples:
 - $(basename "$0")
+- $(basename "$0") mixed
 - $(basename "$0") containers
 - $(basename "$0") images
 
@@ -33,7 +34,7 @@ Notes:
 - individual selections remove only the selected target."
 fi
 
-[[ $# -le 1 ]] || usage_error "$(basename "$0") [containers|images]"
+[[ $# -le 1 ]] || usage_error "$(basename "$0") [mixed|containers|images]"
 MODE="${1:-mixed}"
 [[ "$MODE" == "mixed" || "$MODE" == "containers" || "$MODE" == "images" ]] || fail "mode must be 'mixed', 'containers', or 'images'"
 require_podman
@@ -48,10 +49,10 @@ container_lane_rank() {
 }
 
 sorted_container_rows_for_retention() {
-  project_container_rows | while IFS=$'\t' read -r name workspace lane upstream wrapper commitstamp status image_ref; do
+  project_container_rows | while IFS=$'\t' read -r name workspace project lane upstream wrapper commitstamp status image_ref; do
     [[ -n "$name" && -n "$workspace" ]] || continue
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$workspace" "$(container_lane_rank "$lane")" "$commitstamp" "$name" "$lane" "$upstream" "$wrapper" "$status" "$image_ref"
-  done | sort -t $'\t' -k1,1 -k2,2n -k3,3r
+  done | sort -t $'\t' -k1,1 -k2,2n -k3,3r -k4,4
 }
 
 kept_container_rows() {
@@ -60,20 +61,20 @@ kept_container_rows() {
     [[ -n "$name" ]] || continue
     if [[ "$workspace" != "$current_workspace" ]]; then
       current_workspace="$workspace"
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$(container_selected_project_name "$name")" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
     fi
   done
 }
 
 kept_container_names() {
-  kept_container_rows | while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+  kept_container_rows | while IFS=$'\t' read -r name _workspace _project _lane _upstream _wrapper _commitstamp _status _image_ref; do
     [[ -n "$name" ]] || continue
     printf '%s\n' "$name"
   done
 }
 
 kept_image_refs() {
-  kept_container_rows | while IFS=$'\t' read -r _name _workspace _lane _upstream _wrapper _commitstamp _status image_ref; do
+  kept_container_rows | while IFS=$'\t' read -r _name _workspace _project _lane _upstream _wrapper _commitstamp _status image_ref; do
     [[ -n "$image_ref" ]] || continue
     printf '%s\n' "$image_ref"
   done | sort -u
@@ -87,14 +88,15 @@ line_in_list() {
 
 format_remove_table() {
   local rows=("$@")
-  local row target workspace lane upstream wrapper commitstamp status
-  local workspace_w=9 lane_w=4 upstream_w=8 wrapper_w=7 commit_w=6 status_w=6
+  local row target workspace project lane upstream wrapper commitstamp status
+  local workspace_w=9 project_w=7 lane_w=4 upstream_w=8 wrapper_w=7 commit_w=6 status_w=6
   local formatted=()
 
   for row in "${rows[@]}"; do
     [[ -n "$row" ]] || continue
-    IFS=$'\t' read -r target workspace lane upstream wrapper commitstamp status <<< "$row"
+    IFS=$'\t' read -r target workspace project lane upstream wrapper commitstamp status <<< "$row"
     (( ${#workspace} > workspace_w )) && workspace_w=${#workspace}
+    (( ${#project} > project_w )) && project_w=${#project}
     (( ${#lane} > lane_w )) && lane_w=${#lane}
     (( ${#upstream} > upstream_w )) && upstream_w=${#upstream}
     (( ${#wrapper} > wrapper_w )) && wrapper_w=${#wrapper}
@@ -102,18 +104,18 @@ format_remove_table() {
     (( ${#status} > status_w )) && status_w=${#status}
   done
 
-  printf -v row "%-${workspace_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" \
-    "workspace" "lane" "upstream" "wrapper" "commit" "status"
+  printf -v row "%-${workspace_w}s  %-${project_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" \
+    "workspace" "project" "lane" "upstream" "wrapper" "commit" "status"
   formatted+=("$row")
-  printf -v row "%-${workspace_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" \
-    "$(printf '%*s' "$workspace_w" '' | tr ' ' '-')" "$(printf '%*s' "$lane_w" '' | tr ' ' '-')" "$(printf '%*s' "$upstream_w" '' | tr ' ' '-')" "$(printf '%*s' "$wrapper_w" '' | tr ' ' '-')" "$(printf '%*s' "$commit_w" '' | tr ' ' '-')" "$(printf '%*s' "$status_w" '' | tr ' ' '-')"
+  printf -v row "%-${workspace_w}s  %-${project_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" \
+    "$(printf '%*s' "$workspace_w" '' | tr ' ' '-')" "$(printf '%*s' "$project_w" '' | tr ' ' '-')" "$(printf '%*s' "$lane_w" '' | tr ' ' '-')" "$(printf '%*s' "$upstream_w" '' | tr ' ' '-')" "$(printf '%*s' "$wrapper_w" '' | tr ' ' '-')" "$(printf '%*s' "$commit_w" '' | tr ' ' '-')" "$(printf '%*s' "$status_w" '' | tr ' ' '-')"
   formatted+=("$row")
 
   for row in "${rows[@]}"; do
     [[ -n "$row" ]] || continue
-    IFS=$'\t' read -r target workspace lane upstream wrapper commitstamp status <<< "$row"
-    printf -v row "%-${workspace_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" \
-      "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+    IFS=$'\t' read -r target workspace project lane upstream wrapper commitstamp status <<< "$row"
+    printf -v row "%-${workspace_w}s  %-${project_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" \
+      "$workspace" "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
     formatted+=("$row")
   done
 
@@ -143,9 +145,9 @@ select_remove_option() {
 
 container_picker_options() {
   local rows="$1"
-  while IFS=$'\t' read -r name workspace lane upstream wrapper commitstamp status _image_ref; do
+  while IFS=$'\t' read -r name workspace project lane upstream wrapper commitstamp status _image_ref; do
     [[ -n "$name" ]] || continue
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
   done <<< "$rows"
 }
 
@@ -153,14 +155,14 @@ image_picker_options() {
   local rows="$1"
   while IFS=$'\t' read -r ref lane upstream wrapper commitstamp; do
     [[ -n "$ref" ]] || continue
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ref" "-" "$lane" "$upstream" "$wrapper" "$commitstamp" "image only"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ref" "-" "-" "$lane" "$upstream" "$wrapper" "$commitstamp" "image only"
   done <<< "$rows"
 }
 
 remove_all_containers() {
   local rows="$1"
   local name
-  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+  while IFS=$'\t' read -r name _workspace _project _lane _upstream _wrapper _commitstamp _status _image_ref; do
     [[ -n "$name" ]] || continue
     podman rm -f "$name" >/dev/null
     printf 'Removed container: %s\n' "$name"
@@ -181,7 +183,7 @@ remove_containers_keep_newest() {
   local rows="$1"
   local keep_names="$2"
   local name
-  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+  while IFS=$'\t' read -r name _workspace _project _lane _upstream _wrapper _commitstamp _status _image_ref; do
     [[ -n "$name" ]] || continue
     if line_in_list "$name" "$keep_names"; then
       printf 'Keeping container: %s\n' "$name"
@@ -234,7 +236,7 @@ remove_containers() {
   fi
 
   selected="${options[$((choice_index - 2))]}"
-  IFS=$'\t' read -r target _workspace _lane _upstream _wrapper _commitstamp _status <<< "$selected"
+  IFS=$'\t' read -r target _workspace _project _lane _upstream _wrapper _commitstamp _status <<< "$selected"
   podman rm -f "$target" >/dev/null
   printf 'Removed container: %s\n' "$target"
 }
@@ -266,7 +268,7 @@ remove_images() {
   fi
 
   selected="${options[$((choice_index - 2))]}"
-  IFS=$'\t' read -r target _workspace _lane _upstream _wrapper _commitstamp _status <<< "$selected"
+  IFS=$'\t' read -r target _workspace _project _lane _upstream _wrapper _commitstamp _status <<< "$selected"
   podman rmi "$target" >/dev/null
   printf 'Removed image: %s\n' "$target"
 }
@@ -309,8 +311,8 @@ remove_mixed() {
   fi
 
   selected="${options[$((choice_index - 2))]}"
-  IFS=$'\t' read -r target _workspace _lane _upstream _wrapper _commitstamp _status <<< "$selected"
-  while IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref; do
+  IFS=$'\t' read -r target _workspace _project _lane _upstream _wrapper _commitstamp _status <<< "$selected"
+  while IFS=$'\t' read -r name _workspace _project _lane _upstream _wrapper _commitstamp _status _image_ref; do
     [[ -n "$name" ]] || continue
     if [[ "$target" == "$name" ]]; then
       podman rm -f "$name" >/dev/null

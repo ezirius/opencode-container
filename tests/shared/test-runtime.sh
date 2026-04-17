@@ -187,7 +187,17 @@ case "$url" in
     exit 1
     ;;
   */releases/latest)
-    printf '{"tag_name":"v1.4.3"}'
+    if [[ -n "${MOCK_LATEST_RELEASE_SEQUENCE:-}" ]]; then
+      sequence_file="$STATE_DIR/mock-latest-release-sequence"
+      if [[ ! -f "$sequence_file" ]]; then
+        printf '%s\n' "$MOCK_LATEST_RELEASE_SEQUENCE" | tr ',' '\n' >"$sequence_file"
+      fi
+      tag_name="$(sed -n '1p' "$sequence_file")"
+      sed -i '1d' "$sequence_file"
+      printf '{"tag_name":"%s"}' "$tag_name"
+    else
+      printf '{"tag_name":"v1.4.3"}'
+    fi
     ;;
   */releases)
     printf '[{"tag_name":"v1.4.3","draft":false,"prerelease":false},{"tag_name":"v1.4.2","draft":false,"prerelease":false},{"tag_name":"v1.5.0-beta.1","draft":false,"prerelease":true}]'
@@ -291,11 +301,28 @@ exit 1
 EOF
 chmod +x "$MOCK_BIN/python3"
 
+cat >"$MOCK_BIN/id" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1-}" == '-u' ]]; then
+  printf '%s\n' "${ID_MOCK_UID:-$(/usr/bin/id -u)}"
+  exit 0
+fi
+if [[ "${1-}" == '-g' ]]; then
+  printf '%s\n' "${ID_MOCK_GID:-$(/usr/bin/id -g)}"
+  exit 0
+fi
+exec /usr/bin/id "$@"
+EOF
+chmod +x "$MOCK_BIN/id"
+
 cat >"$MOCK_BIN/podman" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
 STATE_DIR="${STATE_DIR:?}"
+RUNTIME_HOME="${OPENCODE_EXPECTED_RUNTIME_HOME:?}"
 LOG_FILE="$STATE_DIR/podman.log"
 IMAGES_FILE="$STATE_DIR/images.tsv"
 CONTAINERS_FILE="$STATE_DIR/containers.tsv"
@@ -307,6 +334,9 @@ LABEL_UPSTREAM="opencode.wrapper.upstream"
 LABEL_UPSTREAM_REF="opencode.wrapper.upstream_ref"
 LABEL_WRAPPER="opencode.wrapper.context"
 LABEL_COMMITSTAMP="opencode.wrapper.commitstamp"
+LABEL_HOST_UID="opencode.wrapper.host_uid"
+LABEL_HOST_GID="opencode.wrapper.host_gid"
+LABEL_UBUNTU_VERSION="opencode.wrapper.ubuntu_version"
 
 image_runtime_user() {
   local ref="$1"
@@ -317,19 +347,43 @@ image_runtime_user() {
     printf '%s\n' "$runtime_user"
     return 0
   fi
-  printf 'root\n'
+  printf 'opencode\n'
 }
 
 image_runtime_home() {
   local ref="$1"
   local record
   record="$(image_record "$ref")"
-  IFS=$'\t' read -r _ _ _ _ _ _ runtime_user runtime_home <<< "$record"
+  IFS=$'\t' read -r _ _ _ _ _ _ runtime_user runtime_home _ _ workdir <<< "$record"
   if [[ -n "$runtime_home" ]]; then
     printf '%s\n' "$runtime_home"
     return 0
   fi
-  printf '/root\n'
+  printf '%s\n' "$RUNTIME_HOME"
+}
+
+image_workdir() {
+  local ref="$1"
+  local record
+  record="$(image_record "$ref")"
+  IFS=$'\t' read -r _ _ _ _ _ _ runtime_user runtime_home host_uid host_gid workdir ubuntu_version <<< "$record"
+  if [[ -n "$workdir" ]]; then
+    printf '%s\n' "$workdir"
+    return 0
+  fi
+  printf '/workspace/opencode-workspace\n'
+}
+
+image_ubuntu_version() {
+  local ref="$1"
+  local record
+  record="$(image_record "$ref")"
+  IFS=$'\t' read -r _ _ _ _ _ _ runtime_user runtime_home host_uid host_gid workdir ubuntu_version <<< "$record"
+  if [[ -n "$ubuntu_version" ]]; then
+    printf '%s\n' "$ubuntu_version"
+    return 0
+  fi
+  printf '24.04\n'
 }
 
 log_call() {
@@ -399,8 +453,12 @@ case "$subcommand" in
     upstream_ref=""
     wrapper=""
     commitstamp=""
-    runtime_user="root"
-    runtime_home="/root"
+    host_uid=""
+    host_gid=""
+    workdir="/workspace/opencode-workspace"
+    ubuntu_version="24.04"
+    runtime_user="opencode"
+    runtime_home="$RUNTIME_HOME"
     while [[ $# -gt 0 ]]; do
       case "$1" in
         -t)
@@ -427,6 +485,9 @@ case "$subcommand" in
             $LABEL_UPSTREAM_REF=*) upstream_ref="${2#*=}" ;;
             $LABEL_WRAPPER=*) wrapper="${2#*=}" ;;
             $LABEL_COMMITSTAMP=*) commitstamp="${2#*=}" ;;
+            $LABEL_HOST_UID=*) host_uid="${2#*=}" ;;
+            $LABEL_HOST_GID=*) host_gid="${2#*=}" ;;
+            $LABEL_UBUNTU_VERSION=*) ubuntu_version="${2#*=}" ;;
           esac
           shift 2
           ;;
@@ -435,10 +496,10 @@ case "$subcommand" in
           ;;
       esac
     done
-    runtime_user="root"
-    runtime_home="/root"
+    runtime_user="opencode"
+    runtime_home="$RUNTIME_HOME"
     remove_image_record "$target"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$target" "$lane" "$upstream" "$upstream_ref" "$wrapper" "$commitstamp" "$runtime_user" "$runtime_home" >> "$IMAGES_FILE"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$target" "$lane" "$upstream" "$upstream_ref" "$wrapper" "$commitstamp" "$runtime_user" "$runtime_home" "$host_uid" "$host_gid" "$workdir" "$ubuntu_version" >> "$IMAGES_FILE"
     ;;
   image)
     action="$1"
@@ -452,15 +513,19 @@ case "$subcommand" in
           log_call "image inspect $*"
           format="$2"
           record="$(image_record "$3")"
-          IFS=$'\t' read -r ref lane upstream upstream_ref wrapper commitstamp runtime_user runtime_home <<< "$record"
+          IFS=$'\t' read -r ref lane upstream upstream_ref wrapper commitstamp runtime_user runtime_home host_uid host_gid workdir ubuntu_version <<< "$record"
           case "$format" in
             *"$LABEL_LANE"*) printf '%s\n' "$lane" ;;
             *"$LABEL_UPSTREAM_REF"*) printf '%s\n' "$upstream_ref" ;;
             *"$LABEL_UPSTREAM"*) printf '%s\n' "$upstream" ;;
             *"$LABEL_WRAPPER"*) printf '%s\n' "$wrapper" ;;
             *"$LABEL_COMMITSTAMP"*) printf '%s\n' "$commitstamp" ;;
-            '{{.Config.User}}') printf '%s\n' "${runtime_user:-root}" ;;
-            '{{range .Config.Env}}{{println .}}{{end}}') printf 'HOME=%s\n' "${runtime_home:-/root}" ;;
+            *"$LABEL_HOST_UID"*) printf '%s\n' "$host_uid" ;;
+            *"$LABEL_HOST_GID"*) printf '%s\n' "$host_gid" ;;
+            *"$LABEL_UBUNTU_VERSION"*) printf '%s\n' "$ubuntu_version" ;;
+            '{{.Config.User}}') printf '%s\n' "${runtime_user:-opencode}" ;;
+            '{{.Config.WorkingDir}}') printf '%s\n' "${workdir:-/workspace/opencode-workspace}" ;;
+            '{{range .Config.Env}}{{println .}}{{end}}') printf 'HOME=%s\n' "${runtime_home:-$RUNTIME_HOME}" ;;
             *) exit 1 ;;
           esac
           ;;
@@ -495,10 +560,12 @@ case "$subcommand" in
       '{{.State.Running}}') printf '%s\n' "$status" ;;
       '{{.ImageName}}') printf '%s\n' "$image_ref" ;;
       '{{range .Mounts}}{{printf "%s\t%s\n" .Destination .Source}}{{end}}')
-        [[ -f "$STATE_DIR/mount_home_$name" ]] && printf '/root\t%s\n' "$(cat "$STATE_DIR/mount_home_$name")"
+        [[ -f "$STATE_DIR/mount_home_$name" ]] && printf '%s\t%s\n' "$RUNTIME_HOME" "$(cat "$STATE_DIR/mount_home_$name")"
         [[ -f "$STATE_DIR/mount_workspace_$name" ]] && printf '/workspace/opencode-workspace\t%s\n' "$(cat "$STATE_DIR/mount_workspace_$name")"
         [[ -f "$STATE_DIR/mount_development_$name" ]] && printf '/workspace/opencode-development\t%s\n' "$(cat "$STATE_DIR/mount_development_$name")"
-        [[ -f "$STATE_DIR/mount_project_$name" ]] && printf '/workspace/opencode-project\t%s\n' "$(cat "$STATE_DIR/mount_project_$name")"
+        if [[ -f "$STATE_DIR/mount_project_$name" && ! -f "$STATE_DIR/hide_project_mount_$name" ]]; then
+          printf '/workspace/opencode-project\t%s\n' "$(cat "$STATE_DIR/mount_project_$name")"
+        fi
         ;;
       *"$LABEL_WORKSPACE"*) printf '%s\n' "$workspace" ;;
       *"$LABEL_LANE"*) printf '%s\n' "$lane" ;;
@@ -518,6 +585,8 @@ case "$subcommand" in
     commitstamp=""
     image_ref=""
     server_port=""
+    home_env=""
+    runtime_home_env=""
     home_mount=""
     workspace_mount=""
     development_mount=""
@@ -540,6 +609,8 @@ case "$subcommand" in
           ;;
         -e|-p)
           case "$2" in
+            HOME=*) home_env="${2#HOME=}" ;;
+            OPENCODE_CONTAINER_RUNTIME_HOME=*) runtime_home_env="${2#OPENCODE_CONTAINER_RUNTIME_HOME=}" ;;
             127.0.0.1::4096) server_port="64096" ;;
             127.0.0.1:*:4096) server_port="${2#127.0.0.1:}"; server_port="${server_port%:4096}" ;;
           esac
@@ -547,10 +618,12 @@ case "$subcommand" in
           ;;
         -v)
           case "$2" in
-            *:/root) home_mount="${2%:/root}" ;;
+            *:"$RUNTIME_HOME") home_mount="${2%:"$RUNTIME_HOME"}" ;;
             *:/workspace/opencode-workspace) workspace_mount="${2%:/workspace/opencode-workspace}" ;;
             *:/workspace/opencode-development) development_mount="${2%:/workspace/opencode-development}" ;;
+            *:/workspace/opencode-development:ro) development_mount="${2%:/workspace/opencode-development:ro}" ;;
             *:/workspace/opencode-project) project_mount="${2%:/workspace/opencode-project}" ;;
+            *:/workspace/opencode-project:U) project_mount="${2%:/workspace/opencode-project:U}" ;;
           esac
           shift 2
           ;;
@@ -568,6 +641,8 @@ case "$subcommand" in
     if [[ -n "$server_port" ]]; then
       printf '%s\n' "127.0.0.1:$server_port" > "$STATE_DIR/port_4096_$name"
     fi
+    [[ -n "$home_env" ]] && printf '%s\n' "$home_env" > "$STATE_DIR/env_home_$name"
+    [[ -n "$runtime_home_env" ]] && printf '%s\n' "$runtime_home_env" > "$STATE_DIR/env_runtime_home_$name"
     [[ -n "$home_mount" ]] && printf '%s\n' "$home_mount" > "$STATE_DIR/mount_home_$name"
     [[ -n "$workspace_mount" ]] && printf '%s\n' "$workspace_mount" > "$STATE_DIR/mount_workspace_$name"
     [[ -n "$development_mount" ]] && printf '%s\n' "$development_mount" > "$STATE_DIR/mount_development_$name"
@@ -618,6 +693,7 @@ case "$subcommand" in
 esac
 EOF
 chmod +x "$MOCK_BIN/podman"
+assert_not_contains "$MOCK_BIN/podman" '/home/opencode' 'podman test double derives the runtime home from shared config instead of hard-coding it'
 
 export PATH="$MOCK_BIN:$PATH"
 export STATE_DIR
@@ -629,8 +705,17 @@ export OPENCODE_SELECT_INDEX=1
 export OPENCODE_COMMITSTAMP_OVERRIDE="20260410-163440-ab12cd3"
 export OPENCODE_SOURCE_OVERRIDE_DIR="$SOURCE_DIR"
 export OPENCODE_SKIP_BUILD_CONTEXT_CHECK=1
+export ID_MOCK_UID=1001
+export ID_MOCK_GID=1001
+unset OPENCODE_CONTAINER_RUNTIME_HOME
 
 source "$ROOT/lib/shell/common.sh"
+export OPENCODE_EXPECTED_RUNTIME_HOME="$OPENCODE_CONTAINER_RUNTIME_HOME"
+export OPENCODE_EXPECTED_HOST_UID="$(host_user_uid)"
+export OPENCODE_EXPECTED_HOST_GID="$(host_user_gid)"
+assert_eq '/home/opencode' "$OPENCODE_EXPECTED_RUNTIME_HOME" 'runtime home is fixed to the concrete opencode home path'
+assert_eq '/home/opencode' "$(bash -lc "cd '$ROOT'; export PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_HOST_SERVER_PORT='$OPENCODE_HOST_SERVER_PORT' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' OPENCODE_CONTAINER_RUNTIME_HOME='/tmp/not-opencode'; source '$ROOT/lib/shell/common.sh'; runtime_home_dir")" 'shell runtime home ignores conflicting environment overrides'
+assert_eq '/workspace/opencode-project' "$(bash -lc "cd '$ROOT'; export PATH='$PATH' STATE_DIR='$STATE_DIR' OPENCODE_BASE_ROOT='$OPENCODE_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$OPENCODE_DEVELOPMENT_ROOT' OPENCODE_IMAGE_NAME='$OPENCODE_IMAGE_NAME' OPENCODE_HOST_SERVER_PORT='$OPENCODE_HOST_SERVER_PORT' OPENCODE_COMMITSTAMP_OVERRIDE='$OPENCODE_COMMITSTAMP_OVERRIDE' OPENCODE_SOURCE_OVERRIDE_DIR='$OPENCODE_SOURCE_OVERRIDE_DIR' OPENCODE_SKIP_BUILD_CONTEXT_CHECK='$OPENCODE_SKIP_BUILD_CONTEXT_CHECK' OPENCODE_CONTAINER_PROJECT_DIR='/tmp/not-project'; source '$ROOT/lib/shell/common.sh'; container_project_dir")" 'shell project dir ignores conflicting environment overrides'
 mkdir -p "$DEVELOPMENT_ROOT/beta" "$DEVELOPMENT_ROOT/alpha" "$DEVELOPMENT_ROOT/gamma+delta" "$DEVELOPMENT_ROOT/production" "$DEVELOPMENT_ROOT/z-last/deep"
 mkdir -p "$DEVELOPMENT_ROOT/repo:old"
 mkdir -p "$TMPDIR/external-project"
@@ -673,11 +758,14 @@ fi
 assert_contains "$STATE_DIR/project-missing-root-create.out" "project 'beta' was not found under $TMPDIR/missing-development-root" 'container creation fails clearly when the development root is missing'
 assert_eq "$DEVELOPMENT_ROOT/beta" "$(project_root_dir beta)" 'project root resolves within the configured development root'
 assert_eq '/workspace/opencode-project' "$(container_project_dir)" 'container project dir uses the fixed wrapper-owned mount point'
-assert_eq "$DEVELOPMENT_ROOT/beta:/workspace/opencode-project" "$(project_mount_spec beta)" 'project mount spec pairs the selected host project with the fixed container project path'
+assert_eq "$DEVELOPMENT_ROOT/beta:/workspace/opencode-project" "$(ID_MOCK_UID=1001 ID_MOCK_GID=1001 project_mount_spec beta)" 'project mount spec keeps the writable default mapping for non-root hosts'
+assert_eq "$DEVELOPMENT_ROOT/beta:/workspace/opencode-project:U" "$(ID_MOCK_UID=0 ID_MOCK_GID=0 project_mount_spec beta)" 'project mount spec switches to ownership-shifted mapping for root-host fallback'
 assert_eq 'opencode-projectmount-test-1.4.3-main-global' "$(container_name projectmount test 1.4.3 main)" 'container identity defaults to a global project scope when no project is selected'
 assert_eq 'opencode-projectmount-test-1.4.3-main-beta' "$(container_name projectmount test 1.4.3 main beta)" 'container identity includes the selected project'
 create_or_replace_container opencode-project-runtime-create-test opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 projectmount test 1.4.3 main 20260410-163440-ab12cd3 beta
 assert_contains "$STATE_DIR/podman.log" 'OPENCODE_CONTAINER_PROJECT_DIR=/workspace/opencode-project' 'container creation exports the fixed project mount path'
+assert_contains "$STATE_DIR/env_home_opencode-project-runtime-create-test" "$OPENCODE_EXPECTED_RUNTIME_HOME" 'container creation exports HOME using the canonical runtime home'
+assert_contains "$STATE_DIR/env_runtime_home_opencode-project-runtime-create-test" "$OPENCODE_EXPECTED_RUNTIME_HOME" 'container creation exports OPENCODE_CONTAINER_RUNTIME_HOME using the canonical runtime home'
 assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-project-runtime-create-test")" 'container creation mounts the selected direct-child project'
 if ! container_matches_workspace_runtime_config opencode-project-runtime-create-test projectmount 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' beta; then
 	printf 'assertion failed: created container satisfies the selected project runtime contract\n' >&2
@@ -699,6 +787,18 @@ assert_eq "$DEVELOPMENT_ROOT/alpha" "$(cat "$STATE_DIR/mount_project_opencode-pr
 assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-projectmount-test-1.4.3-main-beta")" 'beta project container keeps its own selected project mount'
 assert_eq "$TMPDIR/workspaces/projectmount/opencode-home" "$(cat "$STATE_DIR/mount_home_opencode-projectmount-test-1.4.3-main-alpha")" 'alpha project container still uses the shared workspace home'
 assert_eq "$TMPDIR/workspaces/projectmount/opencode-home" "$(cat "$STATE_DIR/mount_home_opencode-projectmount-test-1.4.3-main-beta")" 'beta project container still uses the shared workspace home'
+ROOT_LAYOUT_WORKSPACE='rootlayout'
+mkdir -p "$TMPDIR/workspaces/$ROOT_LAYOUT_WORKSPACE"
+ID_MOCK_UID=0 ID_MOCK_GID=0 ensure_workspace_layout "$ROOT_LAYOUT_WORKSPACE"
+assert_eq '1000:1000 775' "$(stat -c '%u:%g %a' "$TMPDIR/workspaces/$ROOT_LAYOUT_WORKSPACE/opencode-home")" 'root-host layout makes the workspace home writable for the non-root fallback user'
+assert_eq '1000:1000 775' "$(stat -c '%u:%g %a' "$TMPDIR/workspaces/$ROOT_LAYOUT_WORKSPACE/opencode-workspace")" 'root-host layout makes the workspace workspace dir writable for the non-root fallback user'
+assert_eq '1000:1000 775' "$(stat -c '%u:%g %a' "$TMPDIR/workspaces/$ROOT_LAYOUT_WORKSPACE/opencode-workspace/.config/opencode")" 'root-host layout makes the wrapper-owned config dir writable for the non-root fallback user'
+assert_eq '0:0' "$(stat -c '%u:%g' "$DEVELOPMENT_ROOT")" 'root-host layout does not chown the development root'
+: >"$STATE_DIR/podman.log"
+ID_MOCK_UID=0 ID_MOCK_GID=0 create_or_replace_container opencode-project-runtime-root-host-test opencode-local:test-1.4.3-main-20260410-163440-ab12cd3 projectmount test 1.4.3 main 20260410-163440-ab12cd3 beta
+assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT:/workspace/opencode-development:ro" 'root-host container creation keeps the development mount read-only for the non-root runtime user'
+assert_contains "$STATE_DIR/podman.log" "$DEVELOPMENT_ROOT/beta:/workspace/opencode-project:U" 'root-host container creation gives the selected project mount a writable ownership-shifted mapping'
+rm -rf "$TMPDIR/workspaces/$ROOT_LAYOUT_WORKSPACE"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-project-mount-test-1.4.3-main' projectmount test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\n' "$TMPDIR/workspaces/projectmount/opencode-home" >"$STATE_DIR/mount_home_opencode-project-mount-test-1.4.3-main"
 printf '%s\n' "$TMPDIR/workspaces/projectmount/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-project-mount-test-1.4.3-main"
@@ -739,6 +839,15 @@ assert_contains "$STATE_DIR/build-no-python.out" 'python3 is required' 'build fa
 
 KEEP_ROOT="$TMPDIR/build-keep-root"
 prepare_build_test_root "$KEEP_ROOT"
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'ARG OPENCODE_HOST_UID' 'wrapper image declares the host uid build argument'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'ARG OPENCODE_HOST_GID' 'wrapper image declares the host gid build argument'
+assert_not_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'ARG OPENCODE_CONTAINER_RUNTIME_HOME' 'wrapper image no longer treats the runtime home as a configurable build argument'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "/home/opencode" -s /bin/bash opencode' 'wrapper image creates the opencode user with the concrete runtime home'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'groupadd -o -g "$OPENCODE_HOST_GID" opencode' 'wrapper image creates the opencode group with the host gid'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "/home/opencode" -s /bin/bash opencode' 'wrapper image creates the opencode user with the host uid and gid'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'USER opencode' 'wrapper image sets the opencode runtime user in the container config'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.wrapper" 'ENV HOME=/home/opencode' 'wrapper image exports the concrete opencode home'
+: >"$STATE_DIR/podman.log"
 printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$KEEP_ROOT/scripts/shared/opencode-build" test 1.4.3 >"$STATE_DIR/build.out" 2>&1
 assert_contains "$STATE_DIR/build.out" '1. keep the current pin and continue' 'build offers a keep choice when the Ubuntu pin is behind'
 assert_contains "$STATE_DIR/build.out" '2. update the config pin and continue' 'build offers an update choice when the Ubuntu pin is behind'
@@ -746,7 +855,30 @@ assert_contains "$STATE_DIR/build.out" '3. cancel' 'build offers a cancel choice
 assert_contains "$STATE_DIR/build.out" 'Build source: official release v1.4.3' 'build uses the official stable release artefact for exact releases'
 assert_contains "$STATE_DIR/build.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'build creates immutable image ref'
 assert_contains "$STATE_DIR/podman.log" 'UBUNTU_VERSION=24.04' 'release build keeps using the pinned Ubuntu LTS version when keep is selected'
+assert_contains "$STATE_DIR/podman.log" "OPENCODE_HOST_UID=$OPENCODE_EXPECTED_HOST_UID" 'release build passes the host uid into the wrapper image build'
+assert_contains "$STATE_DIR/podman.log" "OPENCODE_HOST_GID=$OPENCODE_EXPECTED_HOST_GID" 'release build passes the host gid into the wrapper image build'
+assert_contains "$STATE_DIR/podman.log" 'opencode.wrapper.ubuntu_version=24.04' 'release build labels the image with the pinned Ubuntu base version'
+assert_not_contains "$STATE_DIR/podman.log" 'OPENCODE_CONTAINER_RUNTIME_HOME=' 'release build no longer passes a configurable runtime home into the image build'
 assert_contains "$KEEP_ROOT/config/shared/opencode.conf" 'OPENCODE_UBUNTU_LTS_VERSION="24.04"' 'keep leaves the copied Ubuntu pin unchanged'
+
+ROOT_HOST_IDS_ROOT="$TMPDIR/build-root-host-ids-root"
+prepare_build_test_root "$ROOT_HOST_IDS_ROOT"
+: >"$STATE_DIR/podman.log"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE='20260410-163442-roothost' OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" ID_MOCK_UID=0 ID_MOCK_GID=0 "$ROOT_HOST_IDS_ROOT/scripts/shared/opencode-build" test 1.4.3 >"$STATE_DIR/build-root-host-ids.out" 2>&1
+assert_contains "$STATE_DIR/build-root-host-ids.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163442-roothost' 'root-host build still completes with a non-root runtime identity'
+assert_contains "$STATE_DIR/podman.log" 'OPENCODE_HOST_UID=1000' 'root-host build remaps uid 0 to a non-root runtime uid'
+assert_contains "$STATE_DIR/podman.log" 'OPENCODE_HOST_GID=1000' 'root-host build remaps gid 0 to a non-root runtime gid'
+assert_not_contains "$STATE_DIR/podman.log" 'OPENCODE_HOST_UID=0' 'root-host build does not pass uid 0 into the image build'
+assert_not_contains "$STATE_DIR/podman.log" 'OPENCODE_HOST_GID=0' 'root-host build does not pass gid 0 into the image build'
+
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'ARG OPENCODE_HOST_UID' 'source-base image declares the host uid build argument'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'ARG OPENCODE_HOST_GID' 'source-base image declares the host gid build argument'
+assert_not_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'ARG OPENCODE_CONTAINER_RUNTIME_HOME' 'source-base image no longer treats the runtime home as a configurable build argument'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "/home/opencode" -s /bin/bash opencode' 'source-base image creates the opencode user with the concrete runtime home'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'groupadd -o -g "$OPENCODE_HOST_GID" opencode' 'source-base image creates the opencode group with the host gid'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "/home/opencode" -s /bin/bash opencode' 'source-base image creates the opencode user with the host uid, gid, and runtime home'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'USER opencode' 'source-base image sets the runtime user to opencode'
+assert_contains "$KEEP_ROOT/config/containers/Containerfile.source-base.template" 'ENV HOME=/home/opencode' 'source-base image exports the concrete opencode home'
 
 UPDATE_ROOT="$TMPDIR/build-update-root"
 prepare_build_test_root "$UPDATE_ROOT"
@@ -763,6 +895,64 @@ printf '2\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" 
 assert_not_contains "$STATE_DIR/build-update-existing.out" 'Image already exists:' 'updating the Ubuntu pin rebuilds even when the previous image tag already exists'
 assert_contains "$STATE_DIR/podman.log" 'UBUNTU_VERSION=26.04' 'pin updates rebuild the existing tag with the new Ubuntu LTS version'
 assert_contains "$UPDATE_EXISTING_ROOT/config/shared/opencode.conf" 'OPENCODE_UBUNTU_LTS_VERSION="26.04"' 'pin update with an existing image still rewrites the copied Ubuntu pin'
+
+STALE_UBUNTU_PIN_ROOT="$TMPDIR/build-stale-ubuntu-pin-root"
+prepare_build_test_root "$STALE_UBUNTU_PIN_ROOT"
+perl -0pi -e 's/OPENCODE_UBUNTU_LTS_VERSION="24\.04"/OPENCODE_UBUNTU_LTS_VERSION="26.04"/' "$STALE_UBUNTU_PIN_ROOT/config/shared/opencode.conf"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 opencode "$OPENCODE_EXPECTED_RUNTIME_HOME" "$OPENCODE_EXPECTED_HOST_UID" "$OPENCODE_EXPECTED_HOST_GID" /workspace/opencode-workspace 24.04 >"$STATE_DIR/images.tsv"
+: >"$STATE_DIR/podman.log"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$STALE_UBUNTU_PIN_ROOT/scripts/shared/opencode-build" test 1.4.3 >"$STATE_DIR/build-stale-ubuntu-pin.out" 2>&1
+assert_not_contains "$STATE_DIR/build-stale-ubuntu-pin.out" 'Image already exists:' 'cached images built on an older Ubuntu pin are rebuilt when the configured base version changed'
+assert_contains "$STATE_DIR/build-stale-ubuntu-pin.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'stale Ubuntu-pin image is replaced by a rebuilt image'
+assert_contains "$STATE_DIR/podman.log" 'UBUNTU_VERSION=26.04' 'rebuild after an external Ubuntu pin change uses the configured newer Ubuntu base'
+
+STALE_RUNTIME_IDS_ROOT="$TMPDIR/build-stale-runtime-ids-root"
+prepare_build_test_root "$STALE_RUNTIME_IDS_ROOT"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 opencode "$OPENCODE_EXPECTED_RUNTIME_HOME" 99998 99997 /workspace/opencode-workspace 24.04 >"$STATE_DIR/images.tsv"
+: >"$STATE_DIR/podman.log"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$STALE_RUNTIME_IDS_ROOT/scripts/shared/opencode-build" test 1.4.3 >"$STATE_DIR/build-stale-runtime-ids.out" 2>&1
+assert_not_contains "$STATE_DIR/build-stale-runtime-ids.out" 'Image already exists:' 'stale images with mismatched runtime uid and gid are rebuilt instead of being reused'
+assert_contains "$STATE_DIR/build-stale-runtime-ids.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'stale runtime-id image is replaced by a rebuilt image'
+assert_contains "$STATE_DIR/podman.log" "OPENCODE_HOST_UID=$OPENCODE_EXPECTED_HOST_UID" 'rebuild after stale runtime ids uses the current host uid'
+assert_contains "$STATE_DIR/podman.log" "OPENCODE_HOST_GID=$OPENCODE_EXPECTED_HOST_GID" 'rebuild after stale runtime ids uses the current host gid'
+
+STALE_WORKDIR_ROOT="$TMPDIR/build-stale-workdir-root"
+prepare_build_test_root "$STALE_WORKDIR_ROOT"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 opencode "$OPENCODE_EXPECTED_RUNTIME_HOME" "$OPENCODE_EXPECTED_HOST_UID" "$OPENCODE_EXPECTED_HOST_GID" /workspace/legacy-workspace >"$STATE_DIR/images.tsv"
+: >"$STATE_DIR/podman.log"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$STALE_WORKDIR_ROOT/scripts/shared/opencode-build" test 1.4.3 >"$STATE_DIR/build-stale-workdir.out" 2>&1
+assert_not_contains "$STATE_DIR/build-stale-workdir.out" 'Image already exists:' 'images with a stale workspace workdir are rebuilt instead of being reused'
+assert_contains "$STATE_DIR/build-stale-workdir.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'stale workdir image is replaced by a rebuilt image'
+
+STALE_SOURCE_RUNTIME_ROOT="$TMPDIR/build-stale-source-runtime-root"
+prepare_build_test_root "$STALE_SOURCE_RUNTIME_ROOT"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-main-main-20260410-163440-ab12cd3' test main main main 20260410-163440-ab12cd3 root /root "$OPENCODE_EXPECTED_HOST_UID" "$OPENCODE_EXPECTED_HOST_GID" /workspace/opencode-workspace >"$STATE_DIR/images.tsv"
+: >"$STATE_DIR/podman.log"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$STALE_SOURCE_RUNTIME_ROOT/scripts/shared/opencode-build" test main >"$STATE_DIR/build-stale-source-runtime.out" 2>&1
+assert_not_contains "$STATE_DIR/build-stale-source-runtime.out" 'Image already exists:' 'source images with stale runtime user or home are rebuilt instead of being reused'
+assert_contains "$STATE_DIR/build-stale-source-runtime.out" 'Build source: upstream source ref main' 'source-path rebuild still uses the source build flow'
+assert_contains "$STATE_DIR/build-stale-source-runtime.out" 'Built image: opencode-local:test-main-main-20260410-163440-ab12cd3' 'stale source runtime image is replaced by a rebuilt image'
+assert_contains "$STATE_DIR/podman.log" "OPENCODE_HOST_UID=$OPENCODE_EXPECTED_HOST_UID" 'source-path rebuild passes the current host uid into the image build'
+assert_contains "$STATE_DIR/podman.log" "OPENCODE_HOST_GID=$OPENCODE_EXPECTED_HOST_GID" 'source-path rebuild passes the current host gid into the image build'
+assert_not_contains "$STATE_DIR/podman.log" 'OPENCODE_CONTAINER_RUNTIME_HOME=' 'source-path rebuild no longer passes a configurable runtime home into the image build'
+
+STALE_SOURCE_UPSTREAM_REF_ROOT="$TMPDIR/build-stale-source-upstream-ref-root"
+prepare_build_test_root "$STALE_SOURCE_UPSTREAM_REF_ROOT"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-main-main-20260410-163440-ab12cd3' test main stale-source-ref main 20260410-163440-ab12cd3 opencode "$OPENCODE_EXPECTED_RUNTIME_HOME" "$OPENCODE_EXPECTED_HOST_UID" "$OPENCODE_EXPECTED_HOST_GID" /workspace/opencode-workspace >"$STATE_DIR/images.tsv"
+: >"$STATE_DIR/podman.log"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" "$STALE_SOURCE_UPSTREAM_REF_ROOT/scripts/shared/opencode-build" test main >"$STATE_DIR/build-stale-source-upstream-ref.out" 2>&1
+assert_not_contains "$STATE_DIR/build-stale-source-upstream-ref.out" 'Image already exists:' 'source images with a stale upstream ref are rebuilt instead of being reused'
+assert_contains "$STATE_DIR/build-stale-source-upstream-ref.out" 'Build source: upstream source ref main' 'stale source upstream-ref rebuild still uses the source build flow'
+assert_contains "$STATE_DIR/build-stale-source-upstream-ref.out" 'Built image: opencode-local:test-main-main-20260410-163440-ab12cd3' 'stale source upstream-ref image is replaced by a rebuilt image'
+
+LATEST_RACE_ROOT="$TMPDIR/build-latest-race-root"
+prepare_build_test_root "$LATEST_RACE_ROOT"
+: >"$STATE_DIR/podman.log"
+rm -f "$STATE_DIR/mock-latest-release-sequence"
+printf '1\n' | env -u OPENCODE_SELECT_INDEX PATH="$PATH" STATE_DIR="$STATE_DIR" OPENCODE_BASE_ROOT="$OPENCODE_BASE_ROOT" OPENCODE_DEVELOPMENT_ROOT="$OPENCODE_DEVELOPMENT_ROOT" OPENCODE_IMAGE_NAME="$OPENCODE_IMAGE_NAME" OPENCODE_COMMITSTAMP_OVERRIDE="$OPENCODE_COMMITSTAMP_OVERRIDE" OPENCODE_SOURCE_OVERRIDE_DIR="$OPENCODE_SOURCE_OVERRIDE_DIR" OPENCODE_SKIP_BUILD_CONTEXT_CHECK="$OPENCODE_SKIP_BUILD_CONTEXT_CHECK" MOCK_LATEST_RELEASE_SEQUENCE='v1.4.3,v1.4.4' "$LATEST_RACE_ROOT/scripts/shared/opencode-build" test latest >"$STATE_DIR/build-latest-race.out" 2>&1
+assert_contains "$STATE_DIR/build-latest-race.out" 'Build source: official release v1.4.3' 'latest-release builds derive the upstream ref from the already resolved release value'
+assert_contains "$STATE_DIR/build-latest-race.out" 'Built image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'latest-release builds keep the resolved image identity when the latest tag changes mid-build'
+assert_not_contains "$STATE_DIR/podman.log" 'opencode-linux-x64/1.4.4' 'latest-release builds do not re-resolve the selector after choosing the release version'
 
 CANCEL_ROOT="$TMPDIR/build-cancel-root"
 prepare_build_test_root "$CANCEL_ROOT"
@@ -789,21 +979,61 @@ printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-secon
 assert_contains "$STATE_DIR/shell-explicit-project-no-payload.out" 'mock exec' 'shell accepts an explicit project even when no command args remain'
 assert_contains "$STATE_DIR/podman.log" 'exec /bin/sh' 'shell opens an interactive shell when explicit project selection leaves no command args'
 "$ROOT/scripts/shared/opencode-bootstrap" second beta -- --version >"$STATE_DIR/bootstrap.out"
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-second-test-1.4.3-main-beta /bin/sh -lc' 'bootstrap reuses the resolved target and opens OpenCode in the selected project directory'
+assert_contains "$STATE_DIR/podman.log" '--workdir /workspace/opencode-project' 'bootstrap reuses the fixed project workdir for the selected project directory'
+assert_contains "$STATE_DIR/podman.log" 'opencode-second-test-1.4.3-main-beta /bin/sh -lc' 'bootstrap reuses the resolved target container'
 : >"$STATE_DIR/podman.log"
 "$ROOT/scripts/shared/opencode-bootstrap" second beta >"$STATE_DIR/bootstrap-no-payload.out"
 assert_contains "$STATE_DIR/bootstrap-no-payload.out" 'mock exec' 'bootstrap accepts an explicit project even when no OpenCode args remain'
 assert_contains "$STATE_DIR/podman.log" 'exec opencode "$@"' 'bootstrap still execs OpenCode when explicit project selection leaves no trailing payload args'
 
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >"$STATE_DIR/images.tsv"
+rm -f "$STATE_DIR/hide_project_mount_opencode-order-test-1.4.3-main-beta"
+touch "$STATE_DIR/hide_project_mount_opencode-order-test-1.4.3-main-beta"
+: >"$STATE_DIR/podman.log"
+assert_command_fails "$ROOT/scripts/shared/opencode-start order test 1.4.3 beta -- --version" "$STATE_DIR/start-hidden-project-mount.out"
+assert_contains "$STATE_DIR/start-hidden-project-mount.out" "selected project 'beta' does not match the existing container runtime" 'start refuses to launch into the fixed project path before the selected project mount is visible'
+assert_not_contains "$STATE_DIR/podman.log" 'opencode-order-test-1.4.3-main-beta /bin/sh -lc' 'start does not launch before the selected project mount exists'
+rm -f "$STATE_DIR/hide_project_mount_opencode-order-test-1.4.3-main-beta"
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-third-test-1.4.3-main' third test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
+printf '%s\n' "$TMPDIR/workspaces/third/opencode-home" >"$STATE_DIR/mount_home_opencode-third-test-1.4.3-main"
+printf '%s\n' "$TMPDIR/workspaces/third/opencode-workspace" >"$STATE_DIR/mount_workspace_opencode-third-test-1.4.3-main"
+printf '%s\n' "$DEVELOPMENT_ROOT" >"$STATE_DIR/mount_development_opencode-third-test-1.4.3-main"
+printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-third-test-1.4.3-main"
+touch "$STATE_DIR/hide_project_mount_opencode-third-test-1.4.3-main"
+: >"$STATE_DIR/podman.log"
+assert_command_fails "$ROOT/scripts/shared/opencode-open third beta -- --version" "$STATE_DIR/open-hidden-project-mount.out"
+assert_contains "$STATE_DIR/open-hidden-project-mount.out" "selected project 'beta' does not match the existing container runtime" 'open rejects the fixed project path until the selected project mount is visible'
+assert_not_contains "$STATE_DIR/podman.log" 'opencode-third-test-1.4.3-main /bin/sh -lc' 'open does not launch before the selected project mount exists'
+: >"$STATE_DIR/podman.log"
+assert_command_fails "$ROOT/scripts/shared/opencode-shell third beta -- env" "$STATE_DIR/shell-hidden-project-mount.out"
+assert_contains "$STATE_DIR/shell-hidden-project-mount.out" "selected project 'beta' does not match the existing container runtime" 'shell rejects the fixed project path until the selected project mount is visible'
+assert_not_contains "$STATE_DIR/podman.log" 'opencode-third-test-1.4.3-main /bin/sh -lc' 'shell does not launch before the selected project mount exists'
+rm -f "$STATE_DIR/hide_project_mount_opencode-third-test-1.4.3-main"
+
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' test 1.4.3 v1.4.3 main 20260409-120000-deadbee >"$STATE_DIR/images.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-picker-test-1.4.3-main' picker test 1.4.3 main 20260409-120000-deadbee true 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' >"$STATE_DIR/containers.tsv"
-printf '2\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-start" picker >"$STATE_DIR/start-picker.out" 2>&1
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-picker-test-1.4.3-main-alpha' picker test 1.4.3 main 20260409-120000-deadbee true 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' >"$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-picker-test-1.4.3-main-beta' picker test 1.4.3 main 20260409-120000-deadbee true 'opencode-local:test-1.4.3-main-20260409-120000-deadbee' >>"$STATE_DIR/containers.tsv"
+printf '%s\n' "$DEVELOPMENT_ROOT/alpha" >"$STATE_DIR/mount_project_opencode-picker-test-1.4.3-main-alpha"
+printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-picker-test-1.4.3-main-beta"
+assert_eq $'container\topencode-picker-test-1.4.3-main-beta\ttest\t1.4.3\tmain\t20260409-120000-deadbee\trunning\topencode-local:test-1.4.3-main-20260409-120000-deadbee\tbeta' "$(OPENCODE_SELECT_INDEX=2 resolve_target_details_for_workspace picker)" 'target resolution preserves the selected project in the returned tuple for existing containers'
+assert_eq 'beta' "$(OPENCODE_SELECT_INDEX=2 resolve_target_details_for_workspace picker >/dev/null; resolve_selected_project_name '')" 'target resolution carries the selected beta project into the next implicit project lookup'
+printf '3\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-start" picker >"$STATE_DIR/start-picker.out" 2>&1
 assert_contains "$STATE_DIR/start-picker.out" "Select a target for workspace 'picker'" 'start still shows the target picker for implicit target resolution'
+assert_contains "$STATE_DIR/start-picker.out" 'project' 'start target picker shows the project metadata column'
+assert_contains "$STATE_DIR/start-picker.out" 'lane' 'start target picker still shows the lane metadata column'
+assert_contains "$STATE_DIR/start-picker.out" 'alpha' 'start target picker distinguishes the alpha container row'
+assert_contains "$STATE_DIR/start-picker.out" 'beta' 'start target picker distinguishes the beta container row'
 assert_contains "$STATE_DIR/start-picker.out" 'Select a project from' 'start requires project selection after resolving the workspace target'
 assert_line_order "$STATE_DIR/start-picker.out" "Select a target for workspace 'picker'" 'Select a project from' 'start resolves the target before prompting for the project'
 assert_contains "$STATE_DIR/start-picker.out" '  Name: opencode-picker-test-1.4.3-main-beta' 'start can select an image row and create the matching project-specific container'
 assert_eq "$DEVELOPMENT_ROOT/beta" "$(cat "$STATE_DIR/mount_project_opencode-picker-test-1.4.3-main-beta")" 'target-selected start mounts the chosen project into the recreated container'
+: >"$STATE_DIR/podman.log"
+printf '2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-start" picker -- --version >"$STATE_DIR/start-picker-existing-project.out" 2>&1
+assert_contains "$STATE_DIR/start-picker-existing-project.out" "Select a target for workspace 'picker'" 'start still prompts for target selection when choosing an existing project-specific container'
+assert_not_contains "$STATE_DIR/start-picker-existing-project.out" 'Select a project from' 'start reuses the selected project from the chosen container row without prompting again'
+assert_contains "$STATE_DIR/start-picker-existing-project.out" 'mock exec' 'start launches after preserving the selected project from the chosen container row'
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
 
@@ -840,7 +1070,52 @@ printf '2\n2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-sh
 assert_contains "$STATE_DIR/shell-second-picker.out" "Select a container for workspace 'second'" 'shell can still select among multiple matching containers'
 assert_contains "$STATE_DIR/shell-second-picker.out" 'Select a project from' 'shell requires project selection after choosing a matching container'
 assert_line_order "$STATE_DIR/shell-second-picker.out" "Select a container for workspace 'second'" 'Select a project from' 'shell resolves the matching container before project selection'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project' 'shell can select among multiple matching containers and exec in the selected project directory'
+assert_contains "$STATE_DIR/podman.log" '--workdir /workspace/opencode-project' 'shell can select among multiple matching containers and exec in the selected project directory'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main-alpha' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-second-test-1.4.3-main-beta' second test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
+printf '%s\n' "$DEVELOPMENT_ROOT/alpha" >"$STATE_DIR/mount_project_opencode-second-test-1.4.3-main-alpha"
+printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-second-test-1.4.3-main-beta"
+rm -f "$(selected_target_project_state_file)"
+OPENCODE_SELECT_INDEX=2 resolve_row_from_picker "Select a container for workspace 'second'" $'opencode-second-test-1.4.3-main-alpha\tsecond\talpha\ttest\t1.4.3\tmain\t20260410-163440-ab12cd3\trunning\topencode-local:test-1.4.3-main-20260410-163440-ab12cd3\nopencode-second-test-1.4.3-main-beta\tsecond\tbeta\ttest\t1.4.3\tmain\t20260410-163440-ab12cd3\trunning\topencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >/dev/null
+assert_eq 'beta' "$(sed -n '1p' "$(selected_target_project_state_file)")" 'row picker records the selected beta project for explicit container reuse'
+rm -f "$(selected_target_project_state_file)"
+assert_eq 'opencode-second-test-1.4.3-main-beta' "$(OPENCODE_SELECT_INDEX=2 resolve_existing_explicit_container second test 1.4.3)" 'explicit container resolution keeps the selected beta row'
+OPENCODE_SELECT_INDEX=2 resolve_existing_explicit_container second test 1.4.3 >/dev/null
+assert_eq 'beta' "$(sed -n '1p' "$(selected_target_project_state_file)")" 'explicit container resolution records the selected beta project for reuse'
+rm -f "$(selected_target_project_state_file)"
+assert_eq 'beta' "$(OPENCODE_SELECT_INDEX=2 resolve_existing_explicit_container second test 1.4.3 >/dev/null; resolve_selected_project_name '')" 'explicit container resolution carries the selected beta project into the next implicit project lookup'
+: >"$STATE_DIR/podman.log"
+printf '2\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-shell" second test 1.4.3 -- env >"$STATE_DIR/shell-second-explicit-picker.out" 2>&1
+assert_contains "$STATE_DIR/shell-second-explicit-picker.out" "Select a container for workspace 'second'" 'shell explicit selection prompts when multiple matching containers exist'
+assert_contains "$STATE_DIR/shell-second-explicit-picker.out" 'project' 'shell explicit picker shows the project metadata column'
+assert_contains "$STATE_DIR/shell-second-explicit-picker.out" 'lane' 'shell explicit picker keeps the metadata headers visible'
+assert_contains "$STATE_DIR/shell-second-explicit-picker.out" 'alpha' 'shell explicit picker distinguishes the alpha container row'
+assert_contains "$STATE_DIR/shell-second-explicit-picker.out" 'beta' 'shell explicit picker distinguishes the beta container row'
+assert_not_contains "$STATE_DIR/shell-second-explicit-picker.out" 'Select a project from' 'shell explicit picker reuses the chosen row project instead of prompting again'
+assert_contains "$STATE_DIR/podman.log" 'exec --workdir /workspace/opencode-project opencode-second-test-1.4.3-main-beta /bin/sh -lc' 'shell explicit picker execs in the selected beta container'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-single-test-1.4.3-main-beta' single test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
+printf '%s\n' "$DEVELOPMENT_ROOT/beta" >"$STATE_DIR/mount_project_opencode-single-test-1.4.3-main-beta"
+rm -f "$(selected_target_project_state_file)"
+assert_eq 'opencode-single-test-1.4.3-main-beta' "$(resolve_existing_explicit_container single test 1.4.3)" 'single-match explicit container resolution still resolves the beta container'
+rm -f "$(selected_target_project_state_file)"
+resolve_existing_explicit_container single test 1.4.3 >/dev/null
+assert_eq 'beta' "$(sed -n '1p' "$(selected_target_project_state_file)")" 'single-match explicit container resolution records the selected beta project for reuse'
+rm -f "$(selected_target_project_state_file)"
+resolve_existing_explicit_container single test 1.4.3 >/dev/null
+assert_eq 'beta' "$(resolve_selected_project_name '')" 'single-match explicit container resolution carries the selected beta project into the next implicit lookup'
+
+remember_selected_target_project global
+if [[ -f "$(selected_target_project_state_file)" ]]; then
+	printf 'assertion failed: global scope should not be remembered as a selected project\n' >&2
+	exit 1
+fi
+remember_selected_target_project -
+if [[ -f "$(selected_target_project_state_file)" ]]; then
+	printf 'assertion failed: placeholder scope should not be remembered as a selected project\n' >&2
+	exit 1
+fi
 
 printf '%s	%s	%s	%s	%s	%s	%s	%s
 printf '%s
@@ -872,15 +1147,16 @@ assert_contains "$STATE_DIR/stop.out" 'Stopped container: opencode-general-test-
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-feature-xyz-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 feature-xyz 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
 OPENCODE_WRAPPER_CONTEXT_OVERRIDE=feature-xyz "$ROOT/scripts/shared/opencode-start" branchy test 1.4.3 beta -- --version >"$STATE_DIR/start-with-args.out"
 assert_contains "$STATE_DIR/podman.log" '--name opencode-branchy-test-1.4.3-feature-xyz-beta' 'start with args creates the selected wrapper-context container'
-assert_contains "$STATE_DIR/podman.log" 'exec -i --workdir /workspace/opencode-project opencode-branchy-test-1.4.3-feature-xyz-beta /bin/sh -lc' 'start with args forwards directly into the selected container'
+assert_contains "$STATE_DIR/podman.log" '--workdir /workspace/opencode-project' 'start with args uses the fixed project workdir'
+assert_contains "$STATE_DIR/podman.log" 'opencode-branchy-test-1.4.3-feature-xyz-beta /bin/sh -lc' 'start with args forwards directly into the selected container'
 podman rm -f opencode-branchy-test-1.4.3-feature-xyz-beta >/dev/null
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >>"$STATE_DIR/containers.tsv"
 printf '4\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" containers >"$STATE_DIR/remove-container-ui.out" 2>&1
-assert_contains "$STATE_DIR/remove-container-ui.out" 'workspace  lane        upstream  wrapper  commit                    status' 'remove containers shows aligned headers'
-assert_contains "$STATE_DIR/remove-container-ui.out" '4. general    test        1.4.3     main     20260410-163440-ab12cd3   running' 'remove containers uses aligned container rows'
+assert_contains "$STATE_DIR/remove-container-ui.out" 'workspace  project  lane        upstream  wrapper  commit                   status' 'remove containers shows aligned headers with workspace and project identity'
+assert_contains "$STATE_DIR/remove-container-ui.out" '4. general    global   test        1.4.3     main     20260410-163440-ab12cd3   running' 'remove containers keeps workspace and project identity in each row'
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' >"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.3-main' general test 1.4.3 main 20260410-163440-ab12cd3 true 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' >>"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false 'opencode-local:test-1.4.3-main-20260408-090000-cafebabe' >>"$STATE_DIR/containers.tsv"
@@ -892,7 +1168,8 @@ test ! -e "$STATE_DIR/mount_workspace_opencode-general-test-1.4.3-main"
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >"$STATE_DIR/images.tsv"
 printf '3\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" images >"$STATE_DIR/remove-image-ui.out" 2>&1
-assert_contains "$STATE_DIR/remove-image-ui.out" '3. -          test  1.4.3     main     20260410-163440-ab12cd3  image only' 'remove images keeps image rows aligned under the metadata columns'
+assert_contains "$STATE_DIR/remove-image-ui.out" 'workspace  project  lane  upstream  wrapper  commit                   status' 'remove images shows workspace and project headers'
+assert_contains "$STATE_DIR/remove-image-ui.out" '3. -          -        test  1.4.3     main     20260410-163440-ab12cd3  image only' 'remove images keeps placeholder workspace and project rows aligned under the metadata columns'
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >"$STATE_DIR/images.tsv"
 OPENCODE_SELECT_INDEX=3 "$ROOT/scripts/shared/opencode-remove" images >"$STATE_DIR/remove-image.out"
 assert_contains "$STATE_DIR/remove-image.out" 'Removed image: opencode-local:test-1.4.3-main-20260410-163440-ab12cd3' 'remove image removes selected image'
@@ -914,6 +1191,33 @@ OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" images >"$STATE_D
 assert_contains "$STATE_DIR/remove-image-all-but-newest.out" 'Keeping image: opencode-local:production-1.4.3-main-20260410-163440-ab12cd3' 'remove image all-but-newest keeps newest associated ezirius image'
 assert_contains "$STATE_DIR/remove-image-all-but-newest.out" 'Keeping image: opencode-local:test-1.4.3-main-20260408-090000-cafebabe' 'remove image all-but-newest keeps newest associated nala image'
 assert_contains "$STATE_DIR/remove-image-all-but-newest.out" 'Removed image: opencode-local:production-1.4.2-main-20260409-120000-deadbee' 'remove image all-but-newest removes older associated image'
+
+IMG_TIE_ALPHA='opencode-local:test-1.4.3-main-20260410-163440-ab12cd3-alpha'
+IMG_TIE_BETA='opencode-local:test-1.4.3-main-20260410-163440-ab12cd3-beta'
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_TIE_ALPHA" test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >"$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_TIE_BETA" test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-tied-test-1.4.3-main-beta' tied test 1.4.3 main 20260410-163440-ab12cd3 false "$IMG_TIE_BETA" >"$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-tied-test-1.4.3-main-alpha' tied test 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_TIE_ALPHA" >>"$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" containers >"$STATE_DIR/remove-container-all-but-newest-tie.out"
+assert_contains "$STATE_DIR/remove-container-all-but-newest-tie.out" 'Keeping container: opencode-tied-test-1.4.3-main-alpha' 'remove container all-but-newest keeps the lexical-first container when lane and commitstamp tie'
+assert_contains "$STATE_DIR/remove-container-all-but-newest-tie.out" 'Removed container: opencode-tied-test-1.4.3-main-beta' 'remove container all-but-newest removes the lexical-later tie'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_TIE_ALPHA" test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >"$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_TIE_BETA" test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-tied-test-1.4.3-main-beta' tied test 1.4.3 main 20260410-163440-ab12cd3 false "$IMG_TIE_BETA" >"$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-tied-test-1.4.3-main-alpha' tied test 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_TIE_ALPHA" >>"$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" images >"$STATE_DIR/remove-image-all-but-newest-tie.out"
+assert_contains "$STATE_DIR/remove-image-all-but-newest-tie.out" "Keeping image: $IMG_TIE_ALPHA" 'remove image all-but-newest keeps the image for the lexical-first kept container when lane and commitstamp tie'
+assert_contains "$STATE_DIR/remove-image-all-but-newest-tie.out" "Removed image: $IMG_TIE_BETA" 'remove image all-but-newest removes the image for the lexical-later tie'
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_TIE_ALPHA" test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >"$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_TIE_BETA" test 1.4.3 v1.4.3 main 20260410-163440-ab12cd3 >>"$STATE_DIR/images.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-tied-test-1.4.3-main-beta' tied test 1.4.3 main 20260410-163440-ab12cd3 false "$IMG_TIE_BETA" >"$STATE_DIR/containers.tsv"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-tied-test-1.4.3-main-alpha' tied test 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_TIE_ALPHA" >>"$STATE_DIR/containers.tsv"
+OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" >"$STATE_DIR/remove-mixed-all-but-newest-tie.out"
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest-tie.out" 'Keeping container: opencode-tied-test-1.4.3-main-alpha' 'mixed remove keeps the lexical-first container when lane and commitstamp tie'
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest-tie.out" "Keeping image: $IMG_TIE_ALPHA" 'mixed remove keeps the image serving the lexical-first kept container when lane and commitstamp tie'
+assert_contains "$STATE_DIR/remove-mixed-all-but-newest-tie.out" "Removed image: $IMG_TIE_BETA" 'mixed remove removes the image for the lexical-later tie'
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-test-1.4.2-main' general test 1.4.2 main 20260409-120000-deadbee false "$IMG_EZ_OLD" >>"$STATE_DIR/containers.tsv"
 OPENCODE_SELECT_INDEX=1 "$ROOT/scripts/shared/opencode-remove" containers >"$STATE_DIR/remove-container-all-but-newest.out"
@@ -938,6 +1242,11 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_EZ_NEW" production 1.4.3 v1.4.3 main 202
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$IMG_NA" test 1.4.3 v1.4.3 main 20260408-090000-cafebabe >>"$STATE_DIR/images.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-general-production-1.4.3-main' general production 1.4.3 main 20260410-163440-ab12cd3 true "$IMG_EZ_NEW" >"$STATE_DIR/containers.tsv"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'opencode-nala-test-1.4.3-main' nala test 1.4.3 main 20260408-090000-cafebabe false "$IMG_NA" >>"$STATE_DIR/containers.tsv"
+printf '4\n' | env -u OPENCODE_SELECT_INDEX "$ROOT/scripts/shared/opencode-remove" >"$STATE_DIR/remove-mixed-ui.out" 2>&1
+assert_contains "$STATE_DIR/remove-mixed-ui.out" 'workspace  project  lane        upstream  wrapper  commit                    status' 'mixed remove shows aligned headers with workspace and project identity'
+assert_contains "$STATE_DIR/remove-mixed-ui.out" '3. general    global   production  1.4.3     main     20260410-163440-ab12cd3' 'mixed remove shows workspace and project identity for container rows'
+assert_contains "$STATE_DIR/remove-mixed-ui.out" '4. nala       global   test        1.4.3     main     20260408-090000-cafebabe' 'mixed remove keeps container rows unambiguous across workspaces'
+assert_contains "$STATE_DIR/remove-mixed-ui.out" '6. -          -        test        1.4.3     main     20260408-090000-cafebabe  image only' 'mixed remove shows placeholder workspace and project identity for image rows'
 OPENCODE_SELECT_INDEX=2 "$ROOT/scripts/shared/opencode-remove" >"$STATE_DIR/remove-mixed-all.out"
 assert_contains "$STATE_DIR/remove-mixed-all.out" 'Removed container: opencode-general-production-1.4.3-main' 'mixed remove all removes containers first'
 assert_contains "$STATE_DIR/remove-mixed-all.out" 'Removed container: opencode-nala-test-1.4.3-main' 'mixed remove all removes all containers'

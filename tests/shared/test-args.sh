@@ -5,6 +5,11 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
+EMPTY_BASE_ROOT="$TMPDIR/empty-base-root"
+EMPTY_DEVELOPMENT_ROOT="$TMPDIR/empty-development-root"
+mkdir -p "$EMPTY_BASE_ROOT" "$EMPTY_DEVELOPMENT_ROOT"
+ISOLATED_EMPTY_ENV="OPENCODE_BASE_ROOT='$EMPTY_BASE_ROOT' OPENCODE_DEVELOPMENT_ROOT='$EMPTY_DEVELOPMENT_ROOT'"
+
 README_DOC="$ROOT/README.md"
 USAGE_DOC="$ROOT/docs/shared/usage.md"
 
@@ -14,6 +19,22 @@ assert_contains() {
 		printf 'assertion failed: %s\nmissing: %s\n' "$message" "$needle" >&2
 		exit 1
 	}
+}
+
+assert_output_contains() {
+	local output="$1" needle="$2" message="$3"
+	[[ "$output" == *"$needle"* ]] || {
+		printf 'assertion failed: %s\nmissing: %s\n' "$message" "$needle" >&2
+		exit 1
+	}
+}
+
+assert_not_contains() {
+	local file="$1" needle="$2" message="$3"
+	if grep -Fq -- "$needle" "$file"; then
+		printf 'assertion failed: %s\nunexpected: %s\n' "$message" "$needle" >&2
+		exit 1
+	fi
 }
 
 assert_exit_zero() {
@@ -45,61 +66,62 @@ assert_command_rejects() {
 	assert_contains "$err" "$expected" "command reports invalid usage clearly"
 }
 
-assert_rejects "$ROOT/scripts/shared/opencode-start" 'no workspaces found under'
-assert_rejects "$ROOT/scripts/shared/opencode-open" 'no workspaces found under'
-assert_rejects "$ROOT/scripts/shared/opencode-shell" 'no workspaces found under'
-assert_rejects "$ROOT/scripts/shared/opencode-stop" 'no workspaces found under'
-assert_rejects "$ROOT/scripts/shared/opencode-status" 'no workspaces found under'
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-start'" 'no workspaces found under' "$TMPDIR/start-no-workspaces.err"
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-open'" 'no workspaces found under' "$TMPDIR/open-no-workspaces.err"
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-shell'" 'no workspaces found under' "$TMPDIR/shell-no-workspaces.err"
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-stop'" 'no workspaces found under' "$TMPDIR/stop-no-workspaces.err"
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-status'" 'no workspaces found under' "$TMPDIR/status-no-workspaces.err"
 assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'mixed', 'containers', or 'images'" container
 assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'mixed', 'containers', or 'images'" image
 assert_rejects "$ROOT/scripts/shared/opencode-remove" "mode must be 'mixed', 'containers', or 'images'" wrong
-assert_rejects "$ROOT/scripts/shared/opencode-logs" 'no workspaces found under'
-assert_rejects "$ROOT/scripts/shared/opencode-bootstrap" 'no workspaces found under'
-assert_rejects "$ROOT/scripts/shared/opencode-start" '<workspace> <production|test> <upstream>' demo production
-assert_rejects "$ROOT/scripts/shared/opencode-open" '<workspace> <production|test> <upstream>' demo production
-assert_rejects "$ROOT/scripts/shared/opencode-shell" '<workspace> <production|test> <upstream>' demo production
-assert_rejects "$ROOT/scripts/shared/opencode-build" 'lane must be one of <production|test>' staging
-assert_command_rejects "OPENCODE_SKIP_BUILD_CONTEXT_CHECK=1 '$ROOT/scripts/shared/opencode-build' test nonsense" "upstream selector must be 'main', 'latest', or an exact release tag" "$TMPDIR/build-invalid-upstream.err"
-assert_rejects "$ROOT/scripts/shared/opencode-status" 'Usage: opencode-status <workspace>' demo extra
-assert_rejects "$ROOT/scripts/shared/opencode-stop" 'Usage: opencode-stop <workspace>' demo extra
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-logs'" 'no workspaces found under' "$TMPDIR/logs-no-workspaces.err"
+assert_command_rejects "$ISOLATED_EMPTY_ENV '$ROOT/scripts/shared/opencode-bootstrap'" 'no workspaces found under' "$TMPDIR/bootstrap-no-workspaces.err"
+assert_command_rejects "OPENCODE_DEVELOPMENT_ROOT='$EMPTY_DEVELOPMENT_ROOT' OPENCODE_LANE_PRODUCTION=shipit OPENCODE_LANE_TEST=try '$ROOT/scripts/shared/opencode-start' demo shipit" '<workspace> <shipit|try> <upstream>' "$TMPDIR/start-invalid-lane.err"
+assert_command_rejects "OPENCODE_DEVELOPMENT_ROOT='$EMPTY_DEVELOPMENT_ROOT' OPENCODE_LANE_PRODUCTION=shipit OPENCODE_LANE_TEST=try '$ROOT/scripts/shared/opencode-open' demo shipit" '<workspace> <shipit|try> <upstream>' "$TMPDIR/open-invalid-lane.err"
+assert_command_rejects "OPENCODE_DEVELOPMENT_ROOT='$EMPTY_DEVELOPMENT_ROOT' OPENCODE_LANE_PRODUCTION=shipit OPENCODE_LANE_TEST=try '$ROOT/scripts/shared/opencode-shell' demo shipit" '<workspace> <shipit|try> <upstream>' "$TMPDIR/shell-invalid-lane.err"
+assert_command_rejects "OPENCODE_LANE_PRODUCTION=shipit OPENCODE_LANE_TEST=try '$ROOT/scripts/shared/opencode-build' staging" 'lane must be one of <shipit|try>' "$TMPDIR/build-invalid-lane.err"
+assert_command_rejects "OPENCODE_SKIP_BUILD_CONTEXT_CHECK=1 OPENCODE_UPSTREAM_MAIN_SELECTOR=trunk OPENCODE_DEFAULT_UPSTREAM_SELECTOR=stable '$ROOT/scripts/shared/opencode-build' test nonsense" "upstream selector must be 'trunk', 'stable', or an exact release tag" "$TMPDIR/build-invalid-upstream.err"
+assert_rejects "$ROOT/scripts/shared/opencode-status" 'Usage: opencode-status [<workspace>]' demo extra
+assert_rejects "$ROOT/scripts/shared/opencode-stop" 'Usage: opencode-stop [<workspace>]' demo extra
 
 BUILD_HELP="$($ROOT/scripts/shared/opencode-build --help 2>&1)"
-[[ "$BUILD_HELP" == *'Usage: opencode-build <production|test> [upstream]'* ]]
+[[ "$BUILD_HELP" == *"Usage: opencode-build <${OPENCODE_LANE_PRODUCTION:-production}|${OPENCODE_LANE_TEST:-test}> [upstream]"* ]]
 [[ "$BUILD_HELP" == *'Accepted [upstream] values:'* ]]
 
 BOOTSTRAP_HELP="$($ROOT/scripts/shared/opencode-bootstrap --help 2>&1)"
-[[ "$BOOTSTRAP_HELP" == *'Behaviour:'* ]]
-[[ "$BOOTSTRAP_HELP" == *'Examples:'* ]]
+[[ "$BOOTSTRAP_HELP" == *'Usage: opencode-bootstrap [<workspace>] [project] [opencode args...]'* ]]
+[[ "$BOOTSTRAP_HELP" == *'opencode-bootstrap [<workspace>] [project] -- [opencode args...]'* ]]
 
 START_HELP="$($ROOT/scripts/shared/opencode-start --help 2>&1)"
-[[ "$START_HELP" == *'Notes:'* ]]
-[[ "$START_HELP" == *'use `--`'* ]]
 [[ "$START_HELP" == *'[project]'* ]]
 
 OPEN_HELP="$($ROOT/scripts/shared/opencode-open --help 2>&1)"
-[[ "$OPEN_HELP" == *'Description:'* ]]
-[[ "$OPEN_HELP" == *'use `--`'* ]]
 [[ "$OPEN_HELP" == *'[project]'* ]]
 
 SHELL_HELP="$($ROOT/scripts/shared/opencode-shell --help 2>&1)"
-[[ "$SHELL_HELP" == *'Description:'* ]]
-[[ "$SHELL_HELP" == *'interactive shell'* ]]
-[[ "$SHELL_HELP" == *'selected project directory'* ]]
+[[ "$SHELL_HELP" == *'Usage: opencode-shell [<workspace>] [project] [command args...]'* ]]
 
 LOGS_HELP="$($ROOT/scripts/shared/opencode-logs --help 2>&1)"
-[[ "$LOGS_HELP" == *'podman logs'* ]]
-[[ "$LOGS_HELP" == *'--tail 50'* ]]
+[[ "$LOGS_HELP" == *'Usage: opencode-logs [<workspace>] [podman logs args...]'* ]]
 
 STATUS_HELP="$($ROOT/scripts/shared/opencode-status --help 2>&1)"
-[[ "$STATUS_HELP" == *'grouped diagnostic summary'* ]]
-[[ "$STATUS_HELP" == *'status never prints secret values'* ]]
+[[ "$STATUS_HELP" == *'Usage: opencode-status [<workspace>]'* ]]
 
 STOP_HELP="$($ROOT/scripts/shared/opencode-stop --help 2>&1)"
-[[ "$STOP_HELP" == *'already stopped'* ]]
+assert_output_contains "$STOP_HELP" 'Usage: opencode-stop [<workspace>]' 'stop help includes usage'
+assert_output_contains "$STOP_HELP" 'OPENCODE_BASE_ROOT' 'stop help mentions workspace root cleanly'
+assert_output_contains "$STOP_HELP" 'which container to stop' 'stop help documents container prompting'
+assert_output_contains "$STOP_HELP" 'only one matching container exists' 'stop help documents prompting even for one match'
+[[ "$STOP_HELP" != *'syntax error'* ]]
+[[ "$STOP_HELP" != *'command not found'* ]]
+[[ "$STOP_HELP" != *'No such file or directory'* ]]
 
 REMOVE_HELP="$($ROOT/scripts/shared/opencode-remove --help 2>&1)"
-[[ "$REMOVE_HELP" == *'All, but newest'* ]]
-[[ "$REMOVE_HELP" == *'containers first and then all images'* ]]
+[[ "$REMOVE_HELP" == *'Usage: opencode-remove [mixed|containers|images]'* ]]
+[[ "$REMOVE_HELP" == *'opencode-remove mixed'* ]]
+assert_output_contains "$REMOVE_HELP" 'All, but newest keeps one retained container per workspace' 'remove help documents retained container behaviour'
+assert_output_contains "$REMOVE_HELP" 'lane rank, newest commitstamp, then lexical container name' 'remove help documents the deterministic tie-break rule'
+[[ "$REMOVE_HELP" != *'lane and commit ordering produce a single first match'* ]]
 
 assert_exit_zero "'$ROOT/scripts/shared/opencode-start' --help ignored trailing args" "$TMPDIR/start-help.out"
 assert_contains "$TMPDIR/start-help.out" 'Usage: opencode-start [<workspace>] [project] [opencode args...]' 'help output wins even when extra trailing args are present'
@@ -109,22 +131,31 @@ assert_exit_zero "OPENCODE_UPSTREAM_MAIN_SELECTOR=trunk OPENCODE_DEFAULT_UPSTREA
 assert_contains "$TMPDIR/build-help-upstream.out" '- trunk' 'build help reflects configured main upstream selector'
 assert_contains "$TMPDIR/build-help-upstream.out" '- stable' 'build help reflects configured default upstream selector'
 
-assert_contains "$README_DOC" 'OpenCode global config in `~/.config/opencode/opencode.json`' 'README documents OpenCode global config path'
-assert_contains "$README_DOC" 'OpenCode project-scoped session and message data remains app-owned under `~/.local/share/opencode/project/<project-slug>/storage/`' 'README documents upstream project-scoped session storage under the runtime home'
-assert_contains "$README_DOC" 'Container identity includes the selected project so multiple projects in one workspace can run concurrently without sharing the same container name.' 'README documents project-aware container identity'
-assert_contains "$README_DOC" 'selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/opencode-project`' 'README documents the project mount and in-container workdir'
-assert_contains "$README_DOC" 'picker order for project-facing commands is workspace, then target or container, then project' 'README documents picker order'
-assert_contains "$README_DOC" 'Keep the current pin and continue' 'README documents the Ubuntu LTS keep option'
-assert_contains "$README_DOC" 'Update `config/shared/opencode.conf` to the newer Ubuntu LTS pin and continue' 'README documents the Ubuntu LTS update option'
-assert_contains "$README_DOC" 'Cancel the build without changing the pin' 'README documents the Ubuntu LTS cancel option'
+assert_contains "$README_DOC" 'fixed home `/home/opencode`' 'README makes the fixed runtime home explicit'
+assert_not_contains "$README_DOC" 'configured `OPENCODE_CONTAINER_RUNTIME_HOME`' 'README no longer describes the runtime home as configurable'
+assert_contains "$README_DOC" '`opencode-<workspace>-<lane>-<upstream>-<wrapper>-<project>`' 'README documents project-aware container naming format'
+assert_contains "$README_DOC" '`/workspace/opencode-project`' 'README documents the fixed project path inside the container'
+assert_contains "$README_DOC" './scripts/shared/opencode-bootstrap [<workspace>] [project]' 'README bootstrap command documents optional project argument'
+assert_contains "$README_DOC" './scripts/shared/opencode-start [<workspace>] [project]' 'README start command documents optional project argument'
+assert_contains "$README_DOC" './scripts/shared/opencode-build <lane> [upstream]' 'README build command documents configurable lane selector'
+assert_contains "$README_DOC" './scripts/shared/opencode-remove mixed' 'README documents explicit mixed remove mode'
+assert_contains "$README_DOC" 'one retained container per workspace' 'README documents retained container behaviour'
+assert_contains "$README_DOC" 'lane rank, newest commitstamp, then lexical container name' 'README documents the deterministic tie-break rule'
+assert_not_contains "$README_DOC" 'lane and commit ordering produce a single first match' 'README no longer describes retention as an implicit first match'
+assert_contains "$README_DOC" '`./tests/shared/test-all.sh`' 'README verification command uses repo-relative script format'
 
-assert_contains "$USAGE_DOC" 'selected direct-child project root under `OPENCODE_DEVELOPMENT_ROOT`, mounted at `/workspace/opencode-project`' 'usage documents the project mount'
-assert_contains "$USAGE_DOC" 'project-facing command picker order is workspace, then target or container, then project' 'usage documents picker order'
-assert_contains "$USAGE_DOC" '`opencode-open` starts in `/workspace/opencode-project`' 'usage documents open workdir'
-assert_contains "$USAGE_DOC" '`opencode-shell` runs commands in `/workspace/opencode-project`' 'usage documents shell workdir'
-assert_contains "$USAGE_DOC" 'OpenCode global config in `~/.config/opencode/opencode.json`' 'usage documents OpenCode global config path'
-assert_contains "$USAGE_DOC" 'OpenCode project config in the selected project root as `opencode.json` and `.opencode/`' 'usage documents OpenCode project config paths'
-assert_contains "$USAGE_DOC" 'OpenCode project-scoped session and message data stays under `~/.local/share/opencode/project/<project-slug>/storage/` inside the mounted runtime home.' 'usage documents upstream project-scoped session storage'
-assert_contains "$USAGE_DOC" 'The selected project is part of container identity, so different projects in the same workspace resolve to different container names even when they share the same runtime home.' 'usage documents project-aware container identity'
+assert_contains "$USAGE_DOC" 'fixed home `/home/opencode`' 'usage makes the fixed runtime home explicit'
+assert_contains "$USAGE_DOC" '`/workspace/opencode-project`' 'usage documents the fixed project path inside the container'
+assert_contains "$USAGE_DOC" './scripts/shared/opencode-bootstrap [<workspace>] [project]' 'usage bootstrap command documents optional project argument'
+assert_contains "$USAGE_DOC" './scripts/shared/opencode-start [<workspace>] [project]' 'usage start command documents optional project argument'
+assert_contains "$USAGE_DOC" './scripts/shared/opencode-build <lane> <upstream>' 'usage build command documents configurable lane selector'
+assert_not_contains "$USAGE_DOC" 'source builds for upstream `main`' 'usage no longer hard-codes source builds to upstream main'
+assert_contains "$USAGE_DOC" 'configured main selector builds from upstream source' 'usage documents configurable main upstream selector'
+assert_contains "$USAGE_DOC" 'configured default selector resolves to an exact stable release before naming' 'usage documents configurable default upstream selector'
+assert_contains "$USAGE_DOC" './scripts/shared/opencode-remove mixed' 'usage documents explicit mixed remove mode'
+assert_contains "$USAGE_DOC" 'one retained container per workspace' 'usage documents retained container behaviour'
+assert_contains "$USAGE_DOC" 'lane rank, newest commitstamp, then lexical container name' 'usage documents the deterministic tie-break rule'
+assert_not_contains "$USAGE_DOC" 'lane and commit ordering produce a single first match' 'usage no longer describes retention as an implicit first match'
+assert_contains "$USAGE_DOC" '`./tests/shared/test-all.sh`' 'usage verification command uses repo-relative script format'
 
 echo "Argument contract checks passed"

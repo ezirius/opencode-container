@@ -12,8 +12,9 @@ RUN set -eu; \
 
 FROM ubuntu:__OPENCODE_UBUNTU_LTS_VERSION__
 
+ARG OPENCODE_HOST_UID
+ARG OPENCODE_HOST_GID
 ARG OPENCODE_CONTAINER_WORKSPACE_DIR=__OPENCODE_CONTAINER_WORKSPACE_DIR__
-ARG OPENCODE_CONTAINER_RUNTIME_HOME=__OPENCODE_CONTAINER_RUNTIME_HOME__
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
@@ -29,18 +30,19 @@ RUN apt-get update \
     tar \
     tini \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd -m -s /bin/bash opencode \
-  && mkdir -p "$OPENCODE_CONTAINER_WORKSPACE_DIR" "$OPENCODE_CONTAINER_RUNTIME_HOME" \
-  && chown -R root:root /workspace "$OPENCODE_CONTAINER_RUNTIME_HOME"
+  && groupadd -o -g "$OPENCODE_HOST_GID" opencode \
+  && useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "/home/opencode" -s /bin/bash opencode \
+  && mkdir -p "$OPENCODE_CONTAINER_WORKSPACE_DIR" "/home/opencode" \
+  && chown -R opencode:opencode /workspace "/home/opencode"
 
 COPY --from=build /tmp/opencode /usr/local/bin/opencode
 COPY config/containers/entrypoint.sh /usr/local/bin/opencode-wrapper-entrypoint
 RUN chmod 755 /usr/local/bin/opencode-wrapper-entrypoint
 
-USER root
+USER opencode
 WORKDIR $OPENCODE_CONTAINER_WORKSPACE_DIR
 
-ENV HOME=$OPENCODE_CONTAINER_RUNTIME_HOME
+ENV HOME=/home/opencode
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opencode-wrapper-entrypoint"]
 CMD ["sleep", "infinity"]
