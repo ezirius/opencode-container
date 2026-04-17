@@ -104,10 +104,8 @@ fi
 [[ -z "$__env_OPENCODE_WORKSPACE_HOME_DIRNAME" ]] || OPENCODE_WORKSPACE_HOME_DIRNAME="$__env_OPENCODE_WORKSPACE_HOME_DIRNAME"
 [[ -z "$__env_OPENCODE_WORKSPACE_DIRNAME" ]] || OPENCODE_WORKSPACE_DIRNAME="$__env_OPENCODE_WORKSPACE_DIRNAME"
 [[ -z "$__env_OPENCODE_WORKSPACE_CONFIG_SUBDIR" ]] || OPENCODE_WORKSPACE_CONFIG_SUBDIR="$__env_OPENCODE_WORKSPACE_CONFIG_SUBDIR"
-[[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_HOME" ]] || OPENCODE_CONTAINER_RUNTIME_HOME="$__env_OPENCODE_CONTAINER_RUNTIME_HOME"
 [[ -z "$__env_OPENCODE_CONTAINER_WORKSPACE_DIR" ]] || OPENCODE_CONTAINER_WORKSPACE_DIR="$__env_OPENCODE_CONTAINER_WORKSPACE_DIR"
 [[ -z "$__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR" ]] || OPENCODE_CONTAINER_DEVELOPMENT_DIR="$__env_OPENCODE_CONTAINER_DEVELOPMENT_DIR"
-[[ -z "$__env_OPENCODE_CONTAINER_PROJECT_DIR" ]] || OPENCODE_CONTAINER_PROJECT_DIR="$__env_OPENCODE_CONTAINER_PROJECT_DIR"
 [[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE" ]] || OPENCODE_CONTAINER_RUNTIME_ENV_FILE="$__env_OPENCODE_CONTAINER_RUNTIME_ENV_FILE"
 [[ -z "$__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR" ]] || OPENCODE_CONTAINER_RUNTIME_STATE_DIR="$__env_OPENCODE_CONTAINER_RUNTIME_STATE_DIR"
 [[ -z "$__env_OPENCODE_CONTAINER_RESTART_POLICY" ]] || OPENCODE_CONTAINER_RESTART_POLICY="$__env_OPENCODE_CONTAINER_RESTART_POLICY"
@@ -149,10 +147,8 @@ unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_LAB
 [[ -n "${OPENCODE_WORKSPACE_HOME_DIRNAME:-}" ]] || fail "missing OPENCODE_WORKSPACE_HOME_DIRNAME in config/shared/opencode.conf"
 [[ -n "${OPENCODE_WORKSPACE_DIRNAME:-}" ]] || fail "missing OPENCODE_WORKSPACE_DIRNAME in config/shared/opencode.conf"
 [[ -n "${OPENCODE_WORKSPACE_CONFIG_SUBDIR:-}" ]] || fail "missing OPENCODE_WORKSPACE_CONFIG_SUBDIR in config/shared/opencode.conf"
-[[ -n "${OPENCODE_CONTAINER_RUNTIME_HOME:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_HOME in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_WORKSPACE_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_WORKSPACE_DIR in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_DEVELOPMENT_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_DEVELOPMENT_DIR in config/shared/opencode.conf"
-[[ -n "${OPENCODE_CONTAINER_PROJECT_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_PROJECT_DIR in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_RUNTIME_ENV_FILE:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_ENV_FILE in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_RUNTIME_STATE_DIR:-}" ]] || fail "missing OPENCODE_CONTAINER_RUNTIME_STATE_DIR in config/shared/opencode.conf"
 [[ -n "${OPENCODE_CONTAINER_RESTART_POLICY:-}" ]] || fail "missing OPENCODE_CONTAINER_RESTART_POLICY in config/shared/opencode.conf"
@@ -161,6 +157,8 @@ unset __env_OPENCODE_IMAGE_NAME __env_OPENCODE_PROJECT_PREFIX __env_OPENCODE_LAB
 [[ -n "${OPENCODE_SERVER_HEALTHCHECK_PATH:-}" ]] || fail "missing OPENCODE_SERVER_HEALTHCHECK_PATH in config/shared/opencode.conf"
 [[ -n "${OPENCODE_RUNTIME_SERVER_PID_FILENAME:-}" ]] || fail "missing OPENCODE_RUNTIME_SERVER_PID_FILENAME in config/shared/opencode.conf"
 [[ -n "${OPENCODE_RUNTIME_SERVER_LOG_FILENAME:-}" ]] || fail "missing OPENCODE_RUNTIME_SERVER_LOG_FILENAME in config/shared/opencode.conf"
+OPENCODE_CONTAINER_RUNTIME_HOME='/home/opencode'
+OPENCODE_CONTAINER_PROJECT_DIR='/workspace/opencode-project'
 OPENCODE_SELECT_INDEX="${OPENCODE_SELECT_INDEX:-}"
 
 contains_line() {
@@ -361,9 +359,41 @@ select_project_name() {
 	printf '%s' "${options[$((selected_index - 1))]}"
 }
 
+selected_target_project_state_file() {
+	printf '%s/opencode-selected-target-project-%s' "${TMPDIR:-/tmp}" "$$"
+}
+
+remember_selected_target_project() {
+	local project_name="${1-}"
+	local state_file
+	state_file="$(selected_target_project_state_file)"
+	if [[ -n "$project_name" && "$project_name" != "-" && "$project_name" != "global" ]]; then
+		printf '%s\n' "$project_name" >"$state_file"
+	else
+		rm -f "$state_file"
+	fi
+}
+
+consume_selected_target_project() {
+	local state_file project_name
+	state_file="$(selected_target_project_state_file)"
+	[[ -f "$state_file" ]] || return 1
+	project_name="$(sed -n '1p' "$state_file")"
+	rm -f "$state_file"
+	[[ -n "$project_name" && "$project_name" != "-" && "$project_name" != "global" ]] || return 1
+	printf '%s' "$project_name"
+}
+
 resolve_selected_project_name() {
 	local project_name="${1-}"
 	if [[ -n "$project_name" && "$project_name" != "--" ]]; then
+		require_project_name "$project_name"
+		[[ -d "$(project_root_dir "$project_name")" && ! -L "$(project_root_dir "$project_name")" ]] || fail "project '$project_name' was not found under $(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
+		printf '%s' "$project_name"
+		return 0
+	fi
+
+	if project_name="$(consume_selected_target_project 2>/dev/null)"; then
 		require_project_name "$project_name"
 		[[ -d "$(project_root_dir "$project_name")" && ! -L "$(project_root_dir "$project_name")" ]] || fail "project '$project_name' was not found under $(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")"
 		printf '%s' "$project_name"
@@ -432,8 +462,19 @@ env_file_has_assignments() {
 
 ensure_workspace_layout() {
 	local workspace="$1"
+	local home_dir workspace_dir config_dir
+	local runtime_uid runtime_gid
 	require_workspace_name "$workspace"
-	mkdir -p "$(workspace_home_dir "$workspace")" "$(workspace_dir "$workspace")" "$(workspace_config_dir "$workspace")"
+	home_dir="$(workspace_home_dir "$workspace")"
+	workspace_dir="$(workspace_dir "$workspace")"
+	config_dir="$(workspace_config_dir "$workspace")"
+	mkdir -p "$home_dir" "$workspace_dir" "$config_dir"
+	if [[ "$(id -u)" == '0' ]]; then
+		runtime_uid="$(host_user_uid)"
+		runtime_gid="$(host_user_gid)"
+		chown -R "$runtime_uid:$runtime_gid" "$home_dir" "$workspace_dir"
+		chmod 775 "$home_dir" "$workspace_dir" "$config_dir"
+	fi
 }
 
 seed_workspace_config_env_file() {
@@ -452,6 +493,10 @@ seed_workspace_config_env_file() {
 # OPENCODE_MODEL=anthropic/claude-sonnet-4-5
 # OPENCODE_HOST_SERVER_PORT=$OPENCODE_MANAGED_SERVER_CONTAINER_PORT
 EOF
+	if [[ "$(id -u)" == '0' ]]; then
+		chown "$(host_user_uid):$(host_user_gid)" "$config_file"
+		chmod 664 "$config_file"
+	fi
 }
 
 parse_env_assignment_line() {
@@ -582,7 +627,7 @@ container_runtime_env_file() {
 }
 
 runtime_home_dir() {
-	printf '%s' "$OPENCODE_CONTAINER_RUNTIME_HOME"
+	printf '%s' '/home/opencode'
 }
 
 container_development_dir() {
@@ -639,13 +684,23 @@ workspace_home_mount_spec() {
 }
 
 development_mount_spec() {
-	printf '%s:%s' "$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")")" "$(container_development_dir)"
+	local spec
+	spec="$(normalize_absolute_path "$(expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")"):$(container_development_dir)"
+	if [[ "$(id -u)" == '0' ]]; then
+		spec+=':ro'
+	fi
+	printf '%s' "$spec"
 }
 
 project_mount_spec() {
 	local project_name
+	local spec
 	project_name="$(resolve_selected_project_name "$1")"
-	printf '%s:%s' "$(project_root_dir "$project_name")" "$(container_project_dir)"
+	spec="$(project_root_dir "$project_name"):$(container_project_dir)"
+	if [[ "$(id -u)" == '0' ]]; then
+		spec+=':U'
+	fi
+	printf '%s' "$spec"
 }
 
 development_root_exists() {
@@ -996,7 +1051,27 @@ normalize_image_ref() {
 
 image_exists() {
 	local image="$1"
-	podman image exists "$image"
+	podman image exists "$image" || return 1
+	image_matches_required_runtime_contract "$image" && image_matches_host_runtime_ids "$image"
+}
+
+image_reusable_for_build() {
+	local image="$1" expected_upstream_ref="$2" expected_ubuntu_version="$3"
+	image_exists "$image" || return 1
+	[[ "$(image_label "$image" "$OPENCODE_LABEL_UPSTREAM_REF")" == "$expected_upstream_ref" ]] || return 1
+	[[ "$(image_label "$image" "$(ubuntu_version_label_key)")" == "$expected_ubuntu_version" ]]
+}
+
+host_uid_label_key() {
+	printf '%s.host_uid' "$OPENCODE_LABEL_NAMESPACE"
+}
+
+host_gid_label_key() {
+	printf '%s.host_gid' "$OPENCODE_LABEL_NAMESPACE"
+}
+
+ubuntu_version_label_key() {
+	printf '%s.ubuntu_version' "$OPENCODE_LABEL_NAMESPACE"
 }
 
 image_label() {
@@ -1013,6 +1088,42 @@ image_label() {
 	fi
 	[[ "$value" == "<no value>" ]] && value=""
 	printf '%s' "$value"
+}
+
+image_matches_host_runtime_ids() {
+	local image="$1"
+	local image_host_uid image_host_gid
+	image_host_uid="$(image_label "$image" "$(host_uid_label_key)")"
+	image_host_gid="$(image_label "$image" "$(host_gid_label_key)")"
+	[[ -n "$image_host_uid" && -n "$image_host_gid" ]] || return 1
+	[[ "$image_host_uid" == "$(host_user_uid)" && "$image_host_gid" == "$(host_user_gid)" ]]
+}
+
+image_runtime_user() {
+	local image="$1"
+	podman image inspect -f '{{.Config.User}}' "$image" 2>/dev/null || true
+}
+
+image_runtime_home() {
+	local image="$1"
+	podman image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$image" 2>/dev/null | while IFS= read -r env_line; do
+		case "$env_line" in
+		HOME=*)
+			printf '%s' "${env_line#HOME=}"
+			return 0
+			;;
+		esac
+	done
+}
+
+image_workdir() {
+	local image="$1"
+	podman image inspect -f '{{.Config.WorkingDir}}' "$image" 2>/dev/null || true
+}
+
+image_matches_required_runtime_contract() {
+	local image="$1"
+	[[ "$(image_runtime_user "$image")" == "opencode" && "$(image_runtime_home "$image")" == "$(runtime_home_dir)" && "$(image_workdir "$image")" == "$(container_workspace_dir)" ]]
 }
 
 container_exists() {
@@ -1126,31 +1237,32 @@ project_container_names() {
 }
 
 project_container_rows() {
-	local name workspace lane upstream wrapper commitstamp status image_ref
+	local name workspace project lane upstream wrapper commitstamp status image_ref
 	while IFS= read -r name; do
 		[[ -n "$name" ]] || continue
 		workspace="$(container_label "$name" "$OPENCODE_LABEL_WORKSPACE")"
+		project="$(container_selected_project_name "$name")"
 		lane="$(container_label "$name" "$OPENCODE_LABEL_LANE")"
 		upstream="$(container_label "$name" "$OPENCODE_LABEL_UPSTREAM")"
 		wrapper="$(container_label "$name" "$OPENCODE_LABEL_WRAPPER")"
 		commitstamp="$(container_label "$name" "$OPENCODE_LABEL_COMMITSTAMP")"
 		image_ref="$(container_image_ref "$name")"
-		[[ -n "$workspace" && -n "$lane" && -n "$upstream" && -n "$wrapper" && -n "$commitstamp" ]] || continue
+		[[ -n "$workspace" && -n "$project" && -n "$lane" && -n "$upstream" && -n "$wrapper" && -n "$commitstamp" ]] || continue
 		status="stopped"
 		container_running "$name" && status="running"
-		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
+		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$workspace" "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
 	done < <(project_container_names)
 }
 
 sorted_project_container_rows() {
-	project_container_rows | sort -t $'\t' -k3,3 -k6,6r
+	project_container_rows | sort -t $'\t' -k4,4 -k7,7r -k3,3
 }
 
 workspace_container_rows() {
 	local workspace="$1"
-	sorted_project_container_rows | while IFS=$'\t' read -r name row_workspace lane upstream wrapper commitstamp status image_ref; do
+	sorted_project_container_rows | while IFS=$'\t' read -r name row_workspace project lane upstream wrapper commitstamp status image_ref; do
 		[[ "$row_workspace" == "$workspace" ]] || continue
-		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$row_workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
+		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$row_workspace" "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
 	done
 }
 
@@ -1169,19 +1281,20 @@ newest_matching_image_ref() {
 }
 
 picker_display_row_from_target() {
-	local lane="$1" upstream="$2" wrapper="$3" commitstamp="$4" status="$5"
-	printf '%s\t%s\t%s\t%s\t%s' "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+	local project="$1" lane="$2" upstream="$3" wrapper="$4" commitstamp="$5" status="$6"
+	printf '%s\t%s\t%s\t%s\t%s\t%s' "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
 }
 
 format_picker_table() {
 	local rows=("$@")
-	local row lane upstream wrapper commitstamp status
-	local lane_w=4 upstream_w=8 wrapper_w=7 commit_w=6 status_w=6
+	local row project lane upstream wrapper commitstamp status
+	local project_w=7 lane_w=4 upstream_w=8 wrapper_w=7 commit_w=6 status_w=6
 	local formatted=()
 
 	for row in "${rows[@]}"; do
 		[[ -n "$row" ]] || continue
-		IFS=$'\t' read -r lane upstream wrapper commitstamp status <<<"$row"
+		IFS=$'\t' read -r project lane upstream wrapper commitstamp status <<<"$row"
+		((${#project} > project_w)) && project_w=${#project}
 		((${#lane} > lane_w)) && lane_w=${#lane}
 		((${#upstream} > upstream_w)) && upstream_w=${#upstream}
 		((${#wrapper} > wrapper_w)) && wrapper_w=${#wrapper}
@@ -1189,15 +1302,15 @@ format_picker_table() {
 		((${#status} > status_w)) && status_w=${#status}
 	done
 
-	printf -v row "%-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" "lane" "upstream" "wrapper" "commit" "status"
+	printf -v row "%-${project_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" "project" "lane" "upstream" "wrapper" "commit" "status"
 	formatted+=("$row")
-	printf -v row "%-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" "$(printf '%*s' "$lane_w" '' | tr ' ' '-')" "$(printf '%*s' "$upstream_w" '' | tr ' ' '-')" "$(printf '%*s' "$wrapper_w" '' | tr ' ' '-')" "$(printf '%*s' "$commit_w" '' | tr ' ' '-')" "$(printf '%*s' "$status_w" '' | tr ' ' '-')"
+	printf -v row "%-${project_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" "$(printf '%*s' "$project_w" '' | tr ' ' '-')" "$(printf '%*s' "$lane_w" '' | tr ' ' '-')" "$(printf '%*s' "$upstream_w" '' | tr ' ' '-')" "$(printf '%*s' "$wrapper_w" '' | tr ' ' '-')" "$(printf '%*s' "$commit_w" '' | tr ' ' '-')" "$(printf '%*s' "$status_w" '' | tr ' ' '-')"
 	formatted+=("$row")
 
 	for row in "${rows[@]}"; do
 		[[ -n "$row" ]] || continue
-		IFS=$'\t' read -r lane upstream wrapper commitstamp status <<<"$row"
-		printf -v row "%-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
+		IFS=$'\t' read -r project lane upstream wrapper commitstamp status <<<"$row"
+		printf -v row "%-${project_w}s  %-${lane_w}s  %-${upstream_w}s  %-${wrapper_w}s  %-${commit_w}s  %-${status_w}s" "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status"
 		formatted+=("$row")
 	done
 
@@ -1241,13 +1354,13 @@ select_menu_option() {
 
 workspace_target_rows() {
 	local workspace="$1"
-	local row name row_workspace lane upstream wrapper commitstamp status image_ref
+	local row name row_workspace project lane upstream wrapper commitstamp status image_ref
 	local container_image_refs=""
 	local ref
 
-	while IFS=$'\t' read -r name row_workspace lane upstream wrapper commitstamp status image_ref; do
+	while IFS=$'\t' read -r name row_workspace project lane upstream wrapper commitstamp status image_ref; do
 		[[ -n "$name" ]] || continue
-		printf 'container\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
+		printf 'container\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref"
 		if [[ -n "$container_image_refs" ]]; then
 			container_image_refs+=$'\n'
 		fi
@@ -1257,16 +1370,16 @@ workspace_target_rows() {
 	while IFS=$'\t' read -r ref lane upstream wrapper commitstamp; do
 		[[ -n "$ref" ]] || continue
 		contains_line "$container_image_refs" "$ref" && continue
-		printf 'image\t%s\t%s\t%s\t%s\t%s\timage only\t%s\n' "$ref" "$lane" "$upstream" "$wrapper" "$commitstamp" "$ref"
+		printf 'image\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ref" '-' "$lane" "$upstream" "$wrapper" "$commitstamp" 'image only' "$ref"
 	done < <(sorted_project_image_rows)
 }
 
 container_picker_display_rows() {
 	local rows="$1"
 	local row
-	while IFS=$'\t' read -r name _workspace lane upstream wrapper commitstamp status _image_ref; do
+	while IFS=$'\t' read -r name _workspace project lane upstream wrapper commitstamp status _image_ref; do
 		[[ -n "$name" ]] || continue
-		row="$(picker_display_row_from_target "$lane" "$upstream" "$wrapper" "$commitstamp" "$status")"
+		row="$(picker_display_row_from_target "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status")"
 		printf '%s\n' "$row"
 	done <<<"$rows"
 }
@@ -1275,6 +1388,7 @@ resolve_row_from_picker() {
 	local prompt="$1"
 	local rows="$2"
 	local selection selection_line display_count=0 formatted_count=0
+	local _name _workspace project _lane _upstream _wrapper _commitstamp _status _image_ref
 	local display_rows=() formatted_options=() header_line="" divider_line=""
 
 	[[ -n "$rows" ]] || fail "no options available"
@@ -1309,24 +1423,28 @@ resolve_row_from_picker() {
 	set -u
 	selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
 	[[ -n "$selection_line" ]] || fail "failed to resolve selected container target"
+	IFS=$'\t' read -r _name _workspace project _lane _upstream _wrapper _commitstamp _status _image_ref <<<"$selection_line"
+	remember_selected_target_project "$project"
 	printf '%s' "$selection_line"
 }
 
 resolve_target_details_for_workspace() {
 	local workspace="$1"
 	local rows selection selection_line display_count=0 formatted_count=0
-	local display_rows=() formatted_options=() header_line="" divider_line="" prompt kind ref lane upstream wrapper commitstamp status image_ref
+	local display_rows=() formatted_options=() header_line="" divider_line="" prompt kind ref project lane upstream wrapper commitstamp status image_ref
 
 	rows="$(workspace_target_rows "$workspace")"
 	[[ -n "$rows" ]] || fail "no OpenCode targets found for workspace '$workspace'"
 
-	while IFS=$'\t' read -r kind ref lane upstream wrapper commitstamp status image_ref; do
+	while IFS=$'\t' read -r kind ref project lane upstream wrapper commitstamp status image_ref; do
 		[[ -n "$kind" ]] || continue
-		display_rows+=("$(picker_display_row_from_target "$lane" "$upstream" "$wrapper" "$commitstamp" "$status")")
+		display_rows+=("$(picker_display_row_from_target "$project" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status")")
 	done <<<"$rows"
 
 	if [[ $(printf '%s\n' "$rows" | sed '/^$/d' | wc -l | tr -d ' ') == "1" ]]; then
-		printf '%s' "$rows"
+		IFS=$'\t' read -r kind ref project lane upstream wrapper commitstamp status image_ref <<<"$rows"
+		remember_selected_target_project "$project"
+		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' "$kind" "$ref" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref" "$project"
 		return 0
 	fi
 
@@ -1351,7 +1469,9 @@ resolve_target_details_for_workspace() {
 	set -u
 	selection_line="$(printf '%s\n' "$rows" | sed -n "${selection}p")"
 	[[ -n "$selection_line" ]] || fail "failed to resolve selected workspace target"
-	printf '%s' "$selection_line"
+	IFS=$'\t' read -r kind ref project lane upstream wrapper commitstamp status image_ref <<<"$selection_line"
+	remember_selected_target_project "$project"
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' "$kind" "$ref" "$lane" "$upstream" "$wrapper" "$commitstamp" "$status" "$image_ref" "$project"
 }
 
 resolve_existing_explicit_container() {
@@ -1360,10 +1480,10 @@ resolve_existing_explicit_container() {
 	validate_lane "$lane"
 	resolved_upstream="$(resolve_upstream_selector "$upstream_selector")"
 
-	rows="$(project_container_rows | while IFS=$'\t' read -r name row_workspace row_lane row_upstream row_wrapper commitstamp status image_ref; do
+	rows="$(project_container_rows | while IFS=$'\t' read -r name row_workspace project row_lane row_upstream row_wrapper commitstamp status image_ref; do
 		[[ -n "$name" ]] || continue
 		[[ "$row_workspace" == "$workspace" && "$row_lane" == "$lane" && "$row_upstream" == "$resolved_upstream" ]] || continue
-		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$row_workspace" "$row_lane" "$row_upstream" "$row_wrapper" "$commitstamp" "$status" "$image_ref"
+		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$row_workspace" "$project" "$row_lane" "$row_upstream" "$row_wrapper" "$commitstamp" "$status" "$image_ref"
 	done)"
 	[[ -n "$rows" ]] || fail "no matching container exists for workspace=$workspace lane=$lane upstream=$resolved_upstream"
 
@@ -1371,9 +1491,11 @@ resolve_existing_explicit_container() {
 		row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
 	else
 		row="$rows"
+		IFS=$'\t' read -r _name _row_workspace project _row_lane _row_upstream _row_wrapper _commitstamp _status _image_ref <<<"$row"
+		remember_selected_target_project "$project"
 	fi
 
-	IFS=$'\t' read -r name _row_workspace _row_lane _row_upstream _row_wrapper _commitstamp _status _image_ref <<<"$row"
+	IFS=$'\t' read -r name _row_workspace _project _row_lane _row_upstream _row_wrapper _commitstamp _status _image_ref <<<"$row"
 	printf '%s' "$name"
 }
 
@@ -1382,7 +1504,7 @@ resolve_container_for_workspace() {
 	rows="$(workspace_container_rows "$workspace")"
 	[[ -n "$rows" ]] || fail "no existing container found for workspace '$workspace'"
 	row="$(resolve_row_from_picker "Select a container for workspace '$workspace'" "$rows")"
-	IFS=$'\t' read -r name _workspace _lane _upstream _wrapper _commitstamp _status _image_ref <<<"$row"
+	IFS=$'\t' read -r name _workspace _project _lane _upstream _wrapper _commitstamp _status _image_ref <<<"$row"
 	printf '%s' "$name"
 }
 
@@ -1531,9 +1653,10 @@ status_file_presence_value() {
 
 create_or_replace_container() {
 	local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7" project_name="${8-}"
-	local server_port server_publish_spec selected_project_name=""
+	local runtime_home server_port server_publish_spec selected_project_name=""
 	local -a run_args
 
+	runtime_home="$(runtime_home_dir)"
 	server_port="$(workspace_server_port "$workspace" 2>/dev/null || true)"
 	server_publish_spec="$(opencode_server_port_publish_spec "$server_port" 2>/dev/null || true)"
 	if [[ -n "$project_name" ]]; then
@@ -1548,8 +1671,8 @@ create_or_replace_container() {
 		run -d
 		--name "$container_name"
 		--restart "$OPENCODE_CONTAINER_RESTART_POLICY"
-		-e "HOME=$(runtime_home_dir)"
-		-e "OPENCODE_CONTAINER_RUNTIME_HOME=$(runtime_home_dir)"
+		-e "HOME=$runtime_home"
+		-e "OPENCODE_CONTAINER_RUNTIME_HOME=$runtime_home"
 		-e "OPENCODE_CONTAINER_WORKSPACE_DIR=$(container_workspace_dir)"
 		-e "OPENCODE_CONTAINER_DEVELOPMENT_DIR=$(container_development_dir)"
 		-e "OPENCODE_CONTAINER_PROJECT_DIR=$(container_project_dir)"
@@ -1619,7 +1742,7 @@ container_matches_workspace_runtime_config() {
 
 ensure_running_container_matches_image_and_runtime() {
 	local container_name="$1" image_ref="$2" workspace="$3" lane="$4" upstream="$5" wrapper="$6" commitstamp="$7" project_name="${8-}"
-	local current_image_ref
+	local current_image_ref selected_project_name
 
 	if container_exists "$container_name"; then
 		current_image_ref="$(container_image_ref "$container_name" 2>/dev/null || true)"
@@ -1632,6 +1755,10 @@ ensure_running_container_matches_image_and_runtime() {
 		fi
 	else
 		create_or_replace_container "$container_name" "$image_ref" "$workspace" "$lane" "$upstream" "$wrapper" "$commitstamp" "$project_name"
+	fi
+	if [[ -n "$project_name" ]]; then
+		selected_project_name="$(resolve_selected_project_name "$project_name")"
+		container_matches_workspace_runtime_config "$container_name" "$workspace" "$image_ref" "$selected_project_name" || fail "selected project '$selected_project_name' does not match the existing container runtime"
 	fi
 
 	ensure_managed_server_for_container "$container_name"
@@ -1808,8 +1935,12 @@ build_release_image() {
 		-t "$target_image" \
 		--arch "$(container_runtime_arch)" \
 		--build-arg "UBUNTU_VERSION=$OPENCODE_UBUNTU_LTS_VERSION" \
+		--build-arg "OPENCODE_HOST_UID=$(host_user_uid)" \
+		--build-arg "OPENCODE_HOST_GID=$(host_user_gid)" \
+		--label "$(host_uid_label_key)=$(host_user_uid)" \
+		--label "$(host_gid_label_key)=$(host_user_gid)" \
+		--label "$(ubuntu_version_label_key)=$OPENCODE_UBUNTU_LTS_VERSION" \
 		--build-arg "OPENCODE_CONTAINER_WORKSPACE_DIR=$OPENCODE_CONTAINER_WORKSPACE_DIR" \
-		--build-arg "OPENCODE_CONTAINER_RUNTIME_HOME=$OPENCODE_CONTAINER_RUNTIME_HOME" \
 		--build-arg "OPENCODE_RELEASE_ARCHIVE_URL=$release_url" \
 		--build-arg "OPENCODE_RELEASE_ARCHIVE_SHA512=$release_sha512" \
 		--build-arg "OPENCODE_WRAPPER_LANE=$lane" \
@@ -1844,6 +1975,34 @@ container_runtime_arch() {
 	fi
 
 	uname -m
+}
+
+host_user_uid() {
+	local uid
+	uid="$(id -u)"
+	if [[ "$uid" == '0' ]]; then
+		if [[ -n "${SUDO_UID:-}" ]]; then
+			printf '%s' "$SUDO_UID"
+			return 0
+		fi
+		printf '%s' '1000'
+		return 0
+	fi
+	printf '%s' "$uid"
+}
+
+host_user_gid() {
+	local gid
+	gid="$(id -g)"
+	if [[ "$gid" == '0' ]]; then
+		if [[ -n "${SUDO_GID:-}" ]]; then
+			printf '%s' "$SUDO_GID"
+			return 0
+		fi
+		printf '%s' '1000'
+		return 0
+	fi
+	printf '%s' "$gid"
 }
 
 package_registry_metadata() {
@@ -1927,14 +2086,17 @@ build_source_image() {
 	sed -i "s/__OPENCODE_UBUNTU_LTS_VERSION__/$OPENCODE_UBUNTU_LTS_VERSION/g" "$source_dockerfile"
 	sed -i "s/__OPENCODE_TOOL_BUN_VERSION__/$OPENCODE_TOOL_BUN_VERSION/g" "$source_dockerfile"
 	sed -i "s|__OPENCODE_CONTAINER_WORKSPACE_DIR__|$OPENCODE_CONTAINER_WORKSPACE_DIR|g" "$source_dockerfile"
-	sed -i "s|__OPENCODE_CONTAINER_RUNTIME_HOME__|$OPENCODE_CONTAINER_RUNTIME_HOME|g" "$source_dockerfile"
 
 	podman build \
 		-f "$source_dockerfile" \
 		-t "$target_image" \
 		--arch "$(container_runtime_arch)" \
+		--build-arg "OPENCODE_HOST_UID=$(host_user_uid)" \
+		--build-arg "OPENCODE_HOST_GID=$(host_user_gid)" \
+		--label "$(host_uid_label_key)=$(host_user_uid)" \
+		--label "$(host_gid_label_key)=$(host_user_gid)" \
+		--label "$(ubuntu_version_label_key)=$OPENCODE_UBUNTU_LTS_VERSION" \
 		--build-arg "OPENCODE_CONTAINER_WORKSPACE_DIR=$OPENCODE_CONTAINER_WORKSPACE_DIR" \
-		--build-arg "OPENCODE_CONTAINER_RUNTIME_HOME=$OPENCODE_CONTAINER_RUNTIME_HOME" \
 		--label "$OPENCODE_LABEL_LANE=$lane" \
 		--label "$OPENCODE_LABEL_UPSTREAM=$upstream_resolved" \
 		--label "$OPENCODE_LABEL_UPSTREAM_REF=$source_ref" \

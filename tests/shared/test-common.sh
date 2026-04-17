@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+unset OPENCODE_CONTAINER_RUNTIME_HOME
 source "$ROOT/lib/shell/common.sh"
 
 assert_eq() {
@@ -89,6 +90,22 @@ case "$1" in
 esac
 EOF
 chmod +x "$MOCK_BIN/git"
+
+cat >"$MOCK_BIN/id" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1-}" == '-u' ]]; then
+  printf '%s\n' "${ID_MOCK_UID:-$(/usr/bin/id -u)}"
+  exit 0
+fi
+if [[ "${1-}" == '-g' ]]; then
+  printf '%s\n' "${ID_MOCK_GID:-$(/usr/bin/id -g)}"
+  exit 0
+fi
+exec /usr/bin/id "$@"
+EOF
+chmod +x "$MOCK_BIN/id"
 PATH="$MOCK_BIN:$PATH"
 
 OPENCODE_BASE_ROOT="$TMPROOT/workspaces"
@@ -102,7 +119,21 @@ assert_eq "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode" "$(w
 assert_eq "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env" "$(workspace_config_env_file general)" "workspace config env path is correct"
 assert_eq "/workspace/opencode-workspace" "$(container_workspace_dir)" "container workspace dir is correct"
 assert_eq "/workspace/opencode-workspace/.config/opencode" "$(container_config_dir)" "container config dir is correct"
-assert_eq "$TMPROOT/opencode-development:/workspace/opencode-development" "$(development_mount_spec)" "development mount uses configured root"
+assert_eq "/home/opencode" "$(runtime_home_dir)" "container runtime home is correct"
+MISSING_RUNTIME_HOME_ROOT="$TMPROOT/missing-runtime-home-root"
+mkdir -p "$MISSING_RUNTIME_HOME_ROOT/config/shared" "$MISSING_RUNTIME_HOME_ROOT/lib/shell"
+cp "$ROOT/config/shared/opencode.conf" "$MISSING_RUNTIME_HOME_ROOT/config/shared/opencode.conf"
+cp "$ROOT/config/shared/tool-versions.conf" "$MISSING_RUNTIME_HOME_ROOT/config/shared/tool-versions.conf"
+cp "$ROOT/lib/shell/common.sh" "$MISSING_RUNTIME_HOME_ROOT/lib/shell/common.sh"
+grep -Fv 'OPENCODE_CONTAINER_RUNTIME_HOME=' "$MISSING_RUNTIME_HOME_ROOT/config/shared/opencode.conf" >"$MISSING_RUNTIME_HOME_ROOT/config/shared/opencode.conf.tmp"
+mv "$MISSING_RUNTIME_HOME_ROOT/config/shared/opencode.conf.tmp" "$MISSING_RUNTIME_HOME_ROOT/config/shared/opencode.conf"
+assert_eq "/home/opencode" "$(bash -lc 'ROOT="$1"; source "$1/lib/shell/common.sh"; runtime_home_dir' bash "$MISSING_RUNTIME_HOME_ROOT")" "runtime home does not depend on OPENCODE_CONTAINER_RUNTIME_HOME being present in config"
+assert_eq "$TMPROOT/opencode-development:/workspace/opencode-development" "$(ID_MOCK_UID=1001 ID_MOCK_GID=1001 development_mount_spec)" "development mount uses the writable default mapping for non-root hosts"
+assert_eq "$TMPROOT/opencode-development:/workspace/opencode-development:ro" "$(ID_MOCK_UID=0 ID_MOCK_GID=0 development_mount_spec)" "development mount becomes read-only for root-host fallback"
+assert_eq '1234' "$(ID_MOCK_UID=0 SUDO_UID=1234 host_user_uid)" "root-host fallback prefers SUDO_UID when available"
+assert_eq '2345' "$(ID_MOCK_GID=0 SUDO_GID=2345 host_user_gid)" "root-host fallback prefers SUDO_GID when available"
+assert_eq '1000' "$(ID_MOCK_UID=0 host_user_uid)" "root-host fallback still uses the fixed uid when no invoking user is available"
+assert_eq '1000' "$(ID_MOCK_GID=0 host_user_gid)" "root-host fallback still uses the fixed gid when no invoking user is available"
 assert_eq "opencode-general-production-1.4.3-main-global" "$(container_name general production 1.4.3 main)" "container name defaults to a global project scope when no project is selected"
 assert_eq "opencode-general-production-1.4.3-main-alpha" "$(container_name general production 1.4.3 main alpha)" "container name includes the selected project in runtime identity"
 assert_eq "opencode-local:test-1.4.3-main-20260410-163440-ab12cd3" "$(image_ref test 1.4.3 main 20260410-163440-ab12cd3)" "image ref uses immutable identity"
@@ -139,6 +170,22 @@ seed_workspace_config_env_file general
 test -d "$TMPROOT/workspaces/general/opencode-home"
 test -d "$TMPROOT/workspaces/general/opencode-workspace"
 test -f "$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env"
+ROOT_SEEDED_WORKSPACE='root-seeded'
+ID_MOCK_UID=0 ID_MOCK_GID=0 ensure_workspace_layout "$ROOT_SEEDED_WORKSPACE"
+ID_MOCK_UID=0 ID_MOCK_GID=0 seed_workspace_config_env_file "$ROOT_SEEDED_WORKSPACE"
+assert_eq '1000:1000 664' "$(stat -c '%u:%g %a' "$TMPROOT/workspaces/$ROOT_SEEDED_WORKSPACE/opencode-workspace/.config/opencode/config.env")" "root-host seeding keeps new wrapper config writable for the non-root fallback user"
+ROOT_MIGRATED_WORKSPACE='root-migrated'
+mkdir -p "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-home/nested" "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/.config/opencode" "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/cache"
+printf 'home\n' >"$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-home/nested/history.txt"
+printf 'workspace\n' >"$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/cache/index.txt"
+printf 'config\n' >"$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/.config/opencode/existing.env"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/cache/tool.sh"
+chmod 755 "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/cache/tool.sh"
+ID_MOCK_UID=0 ID_MOCK_GID=0 ensure_workspace_layout "$ROOT_MIGRATED_WORKSPACE"
+assert_eq '1000:1000 644' "$(stat -c '%u:%g %a' "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-home/nested/history.txt")" "root-host layout repairs existing files under the wrapper-owned home tree without changing their non-executable mode"
+assert_eq '1000:1000 644' "$(stat -c '%u:%g %a' "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/cache/index.txt")" "root-host layout repairs existing files under the wrapper-owned workspace tree without changing their non-executable mode"
+assert_eq '1000:1000 644' "$(stat -c '%u:%g %a' "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/.config/opencode/existing.env")" "root-host layout repairs existing files under the wrapper-owned config tree without changing their non-executable mode"
+assert_eq '1000:1000 755' "$(stat -c '%u:%g %a' "$TMPROOT/workspaces/$ROOT_MIGRATED_WORKSPACE/opencode-workspace/cache/tool.sh")" "root-host layout preserves execute bits on migrated wrapper-owned scripts"
 printf '# keep me\nOPENCODE_MODEL=test\n' >"$TMPROOT/workspaces/general/opencode-workspace/.config/opencode/config.env"
 ensure_workspace_layout general
 seed_workspace_config_env_file general
@@ -227,13 +274,19 @@ assert_contains "$ENTRYPOINT_RUNTIME" "export MESSAGE='value # kept'" 'entrypoin
 assert_contains "$ENTRYPOINT_RUNTIME" "export SPACED=''" 'entrypoint allows empty secret overrides'
 assert_contains "$ENTRYPOINT_RUNTIME" "export NAME_WITH_QUOTE='O'\\''Brien'" 'entrypoint escapes embedded single quotes safely'
 
-printf 'OPENCODE_CONFIG=/tmp/override.json\nOPENCODE_CONFIG_DIR=/tmp/override-dir\nOPENCODE_MODEL=test-model\n' >"$ENTRYPOINT_CONFIG"
-printf '' >"$ENTRYPOINT_SECRETS"
+printf 'HOME=/tmp/override-home\nXDG_CONFIG_HOME=/tmp/override-config-home\nXDG_DATA_HOME=/tmp/override-data-home\nXDG_STATE_HOME=/tmp/override-state-home\nXDG_CACHE_HOME=/tmp/override-cache-home\nOPENCODE_CONFIG=/tmp/override.json\nOPENCODE_TUI_CONFIG=/tmp/override-tui.yml\nOPENCODE_CONFIG_DIR=/tmp/override-dir\nOPENCODE_MODEL=test-model\n' >"$ENTRYPOINT_CONFIG"
+printf 'HOME=/tmp/secrets-home\nXDG_CONFIG_HOME=/tmp/secrets-config-home\nXDG_DATA_HOME=/tmp/secrets-data-home\nXDG_STATE_HOME=/tmp/secrets-state-home\nXDG_CACHE_HOME=/tmp/secrets-cache-home\nOPENCODE_CONFIG=/tmp/secrets-override.json\nOPENCODE_TUI_CONFIG=/tmp/secrets-override-tui.yml\nOPENCODE_CONFIG_DIR=/tmp/secrets-override-dir\n' >"$ENTRYPOINT_SECRETS"
 OPENCODE_WRAPPER_RUNTIME_ENV_FILE="$ENTRYPOINT_RUNTIME" \
 	OPENCODE_WRAPPER_CONFIG_ENV_FILE="$ENTRYPOINT_CONFIG" \
 	OPENCODE_WRAPPER_SECRETS_ENV_FILE="$ENTRYPOINT_SECRETS" \
 	sh "$ROOT/config/containers/entrypoint.sh" true
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export HOME=' 'entrypoint strips wrapper attempts to override the native home path root'
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export XDG_CONFIG_HOME=' 'entrypoint strips wrapper attempts to override the native config path root'
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export XDG_DATA_HOME=' 'entrypoint strips wrapper attempts to override the native data path root'
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export XDG_STATE_HOME=' 'entrypoint strips wrapper attempts to override the native state path root'
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export XDG_CACHE_HOME=' 'entrypoint strips wrapper attempts to override the native cache path root'
 assert_not_contains "$ENTRYPOINT_RUNTIME" 'export OPENCODE_CONFIG=' 'entrypoint strips wrapper attempts to override the OpenCode config file path'
+assert_not_contains "$ENTRYPOINT_RUNTIME" 'export OPENCODE_TUI_CONFIG=' 'entrypoint strips wrapper attempts to override the OpenCode TUI config file path'
 assert_not_contains "$ENTRYPOINT_RUNTIME" 'export OPENCODE_CONFIG_DIR=' 'entrypoint strips wrapper attempts to override the OpenCode config directory'
 assert_contains "$ENTRYPOINT_RUNTIME" "export OPENCODE_MODEL='test-model'" 'entrypoint still keeps allowed OpenCode runtime variables'
 

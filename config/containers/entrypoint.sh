@@ -111,7 +111,7 @@ append_env_assignments() {
       [A-Za-z_][A-Za-z0-9_]*=*)
         key=${line%%=*}
         case "$key" in
-          OPENCODE_CONFIG|OPENCODE_CONFIG_DIR)
+          HOME|XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_STATE_HOME|XDG_CACHE_HOME|OPENCODE_CONFIG|OPENCODE_TUI_CONFIG|OPENCODE_CONFIG_DIR)
             continue
             ;;
         esac

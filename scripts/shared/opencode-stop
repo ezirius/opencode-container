@@ -13,7 +13,7 @@ Stop the resolved workspace container if it is running.
 
 Behaviour:
 - resolves the existing container target for the workspace
-- with no <workspace>, prompt with workspace names from \\`OPENCODE_BASE_ROOT\\` in alphabetical order
+- with no <workspace>, prompt with workspace names from OPENCODE_BASE_ROOT in alphabetical order
 - stops it when running
 - reports when the resolved container is already stopped
 
@@ -24,11 +24,11 @@ Examples:
 - $(basename "$0") demo
 
 Notes:
-- omitting \\`<workspace>\\` opens an alphabetical workspace picker from \\`OPENCODE_BASE_ROOT\\`
-- if more than one container target exists for the workspace, the command will prompt for which container to stop."
+- omitting <workspace> opens an alphabetical workspace picker from OPENCODE_BASE_ROOT
+- the command will prompt for which container to stop, even when only one matching container exists."
 fi
 
-[[ $# -le 1 ]] || usage_error "$(basename "$0") <workspace>"
+[[ $# -le 1 ]] || usage_error "$(basename "$0") [<workspace>]"
 if [[ $# -eq 1 ]]; then
   WORKSPACE="$(resolve_workspace_argument "$1")"
 else

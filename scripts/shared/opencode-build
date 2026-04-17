@@ -44,10 +44,10 @@ handle_newer_ubuntu_lts_pin_choice
 WRAPPER_CONTEXT="$(current_wrapper_context "$ROOT")"
 COMMITSTAMP="$(git_commitstamp "$ROOT")"
 UPSTREAM_RESOLVED="$(resolve_upstream_selector "$UPSTREAM_SELECTOR")"
-UPSTREAM_REF="$(upstream_ref_for_selector "$UPSTREAM_SELECTOR")"
+UPSTREAM_REF="$(upstream_ref_for_selector "$UPSTREAM_RESOLVED")"
 TARGET_IMAGE="$(image_ref "$LANE" "$UPSTREAM_RESOLVED" "$WRAPPER_CONTEXT" "$COMMITSTAMP")"
 
-if image_exists "$TARGET_IMAGE" && [[ "${OPENCODE_UBUNTU_LTS_PIN_UPDATED:-0}" != "1" ]]; then
+if image_reusable_for_build "$TARGET_IMAGE" "$UPSTREAM_REF" "$OPENCODE_UBUNTU_LTS_VERSION" && [[ "${OPENCODE_UBUNTU_LTS_PIN_UPDATED:-0}" != "1" ]]; then
   printf 'Image already exists: %s\n' "$TARGET_IMAGE"
   exit 0
 fi
