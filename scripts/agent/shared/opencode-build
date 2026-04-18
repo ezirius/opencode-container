@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# This script builds a fresh OpenCode image from the saved repo settings.
+
+# This finds the repo root so the script can reach shared helpers and config.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$ROOT/lib/shell/shared/common.sh"
+
+if [[ $# -ne 0 ]]; then
+  printf 'This script takes no arguments.\n' >&2
+  exit 1
+fi
+
+# This stops the build unless the checkout satisfies the branch policy for image changes.
+opencode_require_build_ready_checkout "$ROOT"
+
+# This resolves the release archive metadata once before the image build starts.
+release_metadata="$(opencode_resolve_release_metadata)"
+release_archive_url="$(printf '%s\n' "$release_metadata" | sed -n '1p')"
+release_archive_sha512="$(printf '%s\n' "$release_metadata" | sed -n '2p')"
+
+# This makes a unique image name so each successful build can be found later.
+printf -v build_suffix '%03d' "$(( $$ % 1000 ))"
+timestamp="$(/bin/date +"%Y%m%d-%H%M%S")-$build_suffix"
+image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp"
+
+host_uid="$(opencode_host_uid)"
+host_gid="$(opencode_host_gid)"
+
+podman build \
+  --build-arg OPENCODE_HOST_UID="$host_uid" \
+  --build-arg OPENCODE_HOST_GID="$host_gid" \
+  --build-arg OPENCODE_CONTAINER_HOME="$OPENCODE_CONTAINER_HOME" \
+  --build-arg OPENCODE_CONTAINER_WORKSPACE="$OPENCODE_CONTAINER_WORKSPACE" \
+  --build-arg OPENCODE_CONTAINER_DEVELOPMENT="$OPENCODE_CONTAINER_DEVELOPMENT" \
+  --build-arg OPENCODE_CONTAINER_PROJECT="$OPENCODE_CONTAINER_PROJECT" \
+  --build-arg OPENCODE_RELEASE_ARCHIVE_URL="$release_archive_url" \
+  --build-arg OPENCODE_RELEASE_ARCHIVE_SHA512="$release_archive_sha512" \
+  -f "$ROOT/config/containers/shared/Containerfile" \
+  -t "$image_name" \
+  "$ROOT"
+
+printf 'Built image: %s\n' "$image_name"
