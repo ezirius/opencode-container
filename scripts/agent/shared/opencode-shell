@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# This script opens bash by default, or runs a command inside a running workspace container.
+
+# This finds the repo root so the script can reach shared helpers.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$ROOT/lib/shell/shared/common.sh"
+
+# This loads the saved workspace list before the script picks or validates a workspace.
+opencode_load_workspaces
+
+if [[ $# -eq 0 ]]; then
+  workspace="$(opencode_pick_workspace)"
+  command=("$OPENCODE_SHELL_COMMAND")
+else
+  workspace="$1"
+  opencode_validate_workspace_name "$workspace"
+  opencode_workspace_offset "$workspace" >/dev/null
+  shift
+  if [[ $# -eq 0 ]]; then
+    command=("$OPENCODE_SHELL_COMMAND")
+  else
+    command=("$@")
+  fi
+fi
+
+container_name="$(opencode_running_container "$workspace")"
+[[ -n "$container_name" ]] || fail "No running OpenCode container found for $workspace. Run scripts/agent/shared/opencode-run first."
+
+opencode_exec_podman_interactive_command exec "$container_name" "${command[@]}"

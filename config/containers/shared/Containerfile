@@ -1,0 +1,49 @@
+# This image consumes shared config via build args and keeps the runtime contract in env vars.
+FROM ubuntu:24.04
+
+# Build args mirror the shared config so the image shape stays config-driven.
+ARG OPENCODE_HOST_UID
+ARG OPENCODE_HOST_GID
+ARG OPENCODE_CONTAINER_HOME
+ARG OPENCODE_CONTAINER_WORKSPACE
+ARG OPENCODE_CONTAINER_DEVELOPMENT
+ARG OPENCODE_CONTAINER_PROJECT
+ARG OPENCODE_RELEASE_ARCHIVE_URL
+ARG OPENCODE_RELEASE_ARCHIVE_SHA512
+
+# These env vars define the runtime locations OpenCode expects after the host mounts are attached.
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=${OPENCODE_CONTAINER_HOME}
+
+# Install only the base packages needed to run OpenCode and keep PID 1 well-behaved.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    tar \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# The container user and writable directories must match the host-mounted paths from config.
+RUN groupadd -o -g "$OPENCODE_HOST_GID" opencode \
+    && useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "$OPENCODE_CONTAINER_HOME" -s /bin/bash opencode \
+    && mkdir -p "$OPENCODE_CONTAINER_HOME" "$OPENCODE_CONTAINER_WORKSPACE" "$OPENCODE_CONTAINER_DEVELOPMENT" "$OPENCODE_CONTAINER_PROJECT" \
+    && chown -R opencode:opencode /workspace "$OPENCODE_CONTAINER_HOME"
+
+# OpenCode is installed from the official release tarball so the runtime command path stays predictable.
+RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIVE_SHA512" \
+    && tmpdir="$(mktemp -d)" \
+    && curl -fsSL "$OPENCODE_RELEASE_ARCHIVE_URL" -o "$tmpdir/opencode.tgz" \
+    && printf '%s  %s\n' "$OPENCODE_RELEASE_ARCHIVE_SHA512" "$tmpdir/opencode.tgz" | sha512sum -c - \
+    && tar -xzf "$tmpdir/opencode.tgz" -C "$tmpdir" \
+    && install -m 755 "$tmpdir/package/bin/opencode" /usr/local/bin/opencode \
+    && rm -rf "$tmpdir"
+
+# WORKDIR follows the fixed project mount so project-facing exec commands start there.
+USER opencode
+WORKDIR ${OPENCODE_CONTAINER_PROJECT}
+
+# Tini remains PID 1 so interactive exec sessions shut down cleanly.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["sleep", "infinity"]
