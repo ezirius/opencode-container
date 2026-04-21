@@ -11,8 +11,14 @@ source "$ROOT/tests/agent/shared/test-asserts.sh"
 CONFIG_PATH="$ROOT/config/agent/shared/opencode-settings-shared.conf"
 CONFIG_BACKUP="$(mktemp)"
 TMP_DIR="$(mktemp -d)"
+cleanup_done=0
 
+# This restores the shared config and temp files exactly once.
 cleanup() {
+  if [[ "$cleanup_done" == '1' ]]; then
+    return 0
+  fi
+  cleanup_done=1
   cp "$CONFIG_BACKUP" "$CONFIG_PATH"
   rm -rf "$TMP_DIR"
 }
@@ -138,6 +144,32 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_OPEN_LOG"
 exit "${OPENCODE_TEST_OPEN_EXIT_CODE:-0}"
 EOF
 
+# This fake xdg-open records browser-open requests from Linux hosts.
+cat >"$FAKE_BIN/xdg-open" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
+  printf 'xdg-open %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
+fi
+
+printf '%s\n' "$*" >>"$OPENCODE_TEST_XDG_OPEN_LOG"
+exit "${OPENCODE_TEST_XDG_OPEN_EXIT_CODE:-0}"
+EOF
+
+# This fake gio records Linux fallback browser-open requests.
+cat >"$FAKE_BIN/gio" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
+  printf 'gio %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
+fi
+
+printf '%s\n' "$*" >>"$OPENCODE_TEST_GIO_LOG"
+exit "${OPENCODE_TEST_GIO_EXIT_CODE:-0}"
+EOF
+
 # This fake curl records readiness probes and can fail before succeeding.
 cat >"$FAKE_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -164,7 +196,7 @@ fi
 printf '%s\n' 'ok'
 EOF
 
-chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/id" "$FAKE_BIN/chown" "$FAKE_BIN/uname" "$FAKE_BIN/open" "$FAKE_BIN/curl"
+chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/id" "$FAKE_BIN/chown" "$FAKE_BIN/uname" "$FAKE_BIN/open" "$FAKE_BIN/xdg-open" "$FAKE_BIN/gio" "$FAKE_BIN/curl"
 
 cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime and build configuration.
@@ -192,6 +224,8 @@ mkdir -p "$TMP_DIR/development/alpha" "$TMP_DIR/development/beta"
 PODMAN_LOG="$TMP_DIR/podman.log"
 CHOWN_LOG="$TMP_DIR/chown.log"
 OPEN_LOG="$TMP_DIR/open.log"
+XDG_OPEN_LOG="$TMP_DIR/xdg-open.log"
+GIO_LOG="$TMP_DIR/gio.log"
 CURL_LOG="$TMP_DIR/curl.log"
 EVENT_LOG="$TMP_DIR/event.log"
 
@@ -281,11 +315,55 @@ test ! -s "$OPEN_LOG" || fail 'run does not open the browser before the publishe
 assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when the published browser URL never becomes ready on Darwin hosts'
 
 : >"$PODMAN_LOG"
-: >"$OPEN_LOG"
-# This checks that non-macOS hosts skip the browser-open path entirely.
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_UNAME='Linux' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/linux-no-open.out" 2>"$TMP_DIR/linux-no-open.err"
-test ! -s "$OPEN_LOG" || fail 'run does not call the open command on Linux hosts'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches without opening the browser on Linux hosts'
+: >"$XDG_OPEN_LOG"
+: >"$GIO_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+: >"$EVENT_LOG"
+# This checks that Linux waits for readiness before opening the browser with xdg-open.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_EVENT_LOG="$EVENT_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Linux' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/linux-xdg-open.out" 2>"$TMP_DIR/linux-xdg-open.err"
+assert_file_contains '--connect-timeout 1 --max-time 1 http://127.0.0.1:14096' "$CURL_LOG" 'run bounds each published browser URL probe on Linux hosts before xdg-open'
+assert_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run opens the published browser URL with xdg-open on Linux hosts'
+test ! -s "$GIO_LOG" || fail 'run does not fall back to gio when xdg-open succeeds on Linux hosts'
+assert_equals $'curl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\ncurl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\nxdg-open http://127.0.0.1:14096' "$(tr -d '\r' < "$EVENT_LOG" | sed '${/^$/d;}')" 'run waits for the published browser URL before xdg-open on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after xdg-open on Linux hosts'
+
+: >"$PODMAN_LOG"
+: >"$XDG_OPEN_LOG"
+: >"$GIO_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+: >"$EVENT_LOG"
+# This checks that Linux falls back to gio open when xdg-open is unavailable.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_EVENT_LOG="$EVENT_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Linux' OPENCODE_TEST_XDG_OPEN_EXIT_CODE='127' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/linux-gio-fallback.out" 2>"$TMP_DIR/linux-gio-fallback.err"
+assert_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run first tries xdg-open before Linux fallback'
+assert_file_contains 'open http://127.0.0.1:14096' "$GIO_LOG" 'run falls back to gio open for the published browser URL on Linux hosts'
+assert_equals $'curl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\ncurl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\nxdg-open http://127.0.0.1:14096\ngio open http://127.0.0.1:14096' "$(tr -d '\r' < "$EVENT_LOG" | sed '${/^$/d;}')" 'run falls back from xdg-open to gio after readiness on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after gio fallback on Linux hosts'
+
+: >"$PODMAN_LOG"
+: >"$XDG_OPEN_LOG"
+: >"$GIO_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+: >"$EVENT_LOG"
+# This checks that Linux also falls back when xdg-open exists but fails.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_EVENT_LOG="$EVENT_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Linux' OPENCODE_TEST_XDG_OPEN_EXIT_CODE='1' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/linux-gio-after-fail.out" 2>"$TMP_DIR/linux-gio-after-fail.err"
+assert_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run still tries xdg-open before Linux fallback when xdg-open fails'
+assert_file_contains 'open http://127.0.0.1:14096' "$GIO_LOG" 'run falls back to gio open when xdg-open fails on Linux hosts'
+assert_equals $'curl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\ncurl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\nxdg-open http://127.0.0.1:14096\ngio open http://127.0.0.1:14096' "$(tr -d '\r' < "$EVENT_LOG" | sed '${/^$/d;}')" 'run falls back from failed xdg-open to gio after readiness on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after failed xdg-open fallback on Linux hosts'
+
+: >"$PODMAN_LOG"
+: >"$XDG_OPEN_LOG"
+: >"$GIO_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+# This checks that Linux attach still works when every browser opener fails.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Linux' OPENCODE_TEST_XDG_OPEN_EXIT_CODE='127' OPENCODE_TEST_GIO_EXIT_CODE='1' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/linux-open-fail.out" 2>"$TMP_DIR/linux-open-fail.err"
+assert_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run still attempts xdg-open on Linux hosts when all browser launchers fail'
+assert_file_contains 'open http://127.0.0.1:14096' "$GIO_LOG" 'run still attempts gio open on Linux hosts when xdg-open is unavailable'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when Linux browser launchers fail'
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" gamma beta >"$TMP_DIR/unconfigured.out" 2>"$TMP_DIR/unconfigured.err"; then
   fail 'run should reject a workspace that is not configured'
@@ -306,5 +384,9 @@ assert_file_contains '-R 4242:4343' "$CHOWN_LOG" 'run restores caller ownership 
 : >"$CHOWN_LOG"
 env -u SUDO_UID -u SUDO_GID PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_HOST_UID='0' OPENCODE_TEST_HOST_GID='0' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/root-nosudo.out" 2>"$TMP_DIR/root-nosudo.err"
 assert_file_contains '-R 0:0' "$CHOWN_LOG" 'run preserves true root ownership when invoked directly as root without sudo metadata'
+
+# This restores the shared config before the test reports success.
+cleanup
+trap - EXIT
 
 printf 'opencode-run behavior checks passed\n'

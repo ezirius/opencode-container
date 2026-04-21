@@ -145,11 +145,9 @@ while true; do
   break
 done
 
-# This waits for the published host URL before best-effort browser launch on macOS.
-if opencode_host_is_macos; then
-  if opencode_wait_for_published_url "$published_url"; then
-    open "$published_url" >/dev/null 2>&1 || true
-  fi
+# This waits for the published host URL before best-effort host browser launch.
+if opencode_wait_for_published_url "$published_url"; then
+  opencode_open_published_url "$published_url"
 fi
 
 opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach http://127.0.0.1:4096

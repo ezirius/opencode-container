@@ -282,6 +282,11 @@ opencode_host_is_macos() {
   [[ "$(uname -s)" == 'Darwin' ]]
 }
 
+# This checks whether the current host shell is running on Linux.
+opencode_host_is_linux() {
+  [[ "$(uname -s)" == 'Linux' ]]
+}
+
 # This builds the browser URL for the published workspace server port.
 opencode_workspace_published_url() {
   local workspace="$1"
@@ -459,6 +464,26 @@ opencode_wait_for_published_url() {
     sleep 1
   done
   return 1
+}
+
+# This opens the published host URL with the best available host browser launcher.
+opencode_open_published_url() {
+  local url="$1"
+  local opener_status
+
+  if opencode_host_is_macos; then
+    open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  if opencode_host_is_linux; then
+    if xdg-open "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    opener_status="$?"
+    gio open "$url" >/dev/null 2>&1 || true
+  fi
 }
 
 # This gathers a short state summary without failing the wrapper when diagnostics break.
