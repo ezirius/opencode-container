@@ -34,6 +34,8 @@ else
   project_name="$(opencode_resolve_project_name '')"
 fi
 
+published_url="$(opencode_workspace_published_url "$workspace")"
+
 host_home="$(opencode_host_home_dir "$workspace")"
 host_workspace="$(opencode_host_workspace_dir "$workspace")"
 project_root="$(project_root_dir "$project_name")"
@@ -142,5 +144,12 @@ while true; do
 
   break
 done
+
+# This waits for the published host URL before best-effort browser launch on macOS.
+if opencode_host_is_macos; then
+  if opencode_wait_for_published_url "$published_url"; then
+    open "$published_url" >/dev/null 2>&1 || true
+  fi
+fi
 
 opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach http://127.0.0.1:4096

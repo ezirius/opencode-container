@@ -118,7 +118,53 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$OPENCODE_TEST_CHOWN_LOG"
 EOF
 
-chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/id" "$FAKE_BIN/chown"
+# This fake uname lets each test case choose the host OS.
+cat >"$FAKE_BIN/uname" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${OPENCODE_TEST_UNAME:-Linux}"
+EOF
+
+# This fake open records browser-open requests from macOS hosts.
+cat >"$FAKE_BIN/open" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
+  printf 'open %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
+fi
+
+printf '%s\n' "$*" >>"$OPENCODE_TEST_OPEN_LOG"
+exit "${OPENCODE_TEST_OPEN_EXIT_CODE:-0}"
+EOF
+
+# This fake curl records readiness probes and can fail before succeeding.
+cat >"$FAKE_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
+  printf 'curl %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
+fi
+
+printf '%s\n' "$*" >>"$OPENCODE_TEST_CURL_LOG"
+
+attempt_file="${OPENCODE_TEST_CURL_LOG}.attempts"
+attempt_count=0
+if [[ -f "$attempt_file" ]]; then
+  attempt_count="$(tr -d '\n' < "$attempt_file")"
+fi
+attempt_count="$((attempt_count + 1))"
+printf '%s\n' "$attempt_count" >"$attempt_file"
+
+if (( attempt_count <= ${OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS:-0} )); then
+  exit 7
+fi
+
+printf '%s\n' 'ok'
+EOF
+
+chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/id" "$FAKE_BIN/chown" "$FAKE_BIN/uname" "$FAKE_BIN/open" "$FAKE_BIN/curl"
 
 cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime and build configuration.
@@ -145,6 +191,9 @@ mkdir -p "$TMP_DIR/development/alpha" "$TMP_DIR/development/beta"
 
 PODMAN_LOG="$TMP_DIR/podman.log"
 CHOWN_LOG="$TMP_DIR/chown.log"
+OPEN_LOG="$TMP_DIR/open.log"
+CURL_LOG="$TMP_DIR/curl.log"
+EVENT_LOG="$TMP_DIR/event.log"
 
 printf '1\n2\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" >"$TMP_DIR/run.out" 2>"$TMP_DIR/run.err"
 
@@ -197,6 +246,46 @@ assert_file_not_contains 'rm -f opencode-alpha-1.4.3-20260418-120000-123' "$PODM
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse.out" 2>"$TMP_DIR/reuse.err"
 assert_file_not_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run reuses an exact matching container when the project mount already matches'
 assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches to the long-lived server after reusing an exact matching container'
+
+: >"$PODMAN_LOG"
+: >"$OPEN_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+: >"$EVENT_LOG"
+# This checks that macOS waits for the published URL before opening the browser.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_EVENT_LOG="$EVENT_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Darwin' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/macos-open.out" 2>"$TMP_DIR/macos-open.err"
+assert_file_contains '--connect-timeout 1 --max-time 1 http://127.0.0.1:14096' "$CURL_LOG" 'run bounds each published browser URL probe on Darwin hosts'
+assert_file_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run probes the published browser URL before opening it on Darwin hosts'
+assert_file_contains 'http://127.0.0.1:14096' "$OPEN_LOG" 'run opens the published browser URL on Darwin hosts'
+assert_equals 'http://127.0.0.1:14096' "$(tr -d '\n' < "$OPEN_LOG")" 'run passes the published browser URL as the open command argument on Darwin hosts'
+assert_equals $'curl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\ncurl -fsS --connect-timeout 1 --max-time 1 http://127.0.0.1:14096\nopen http://127.0.0.1:14096' "$(tr -d '\r' < "$EVENT_LOG" | sed '${/^$/d;}')" 'run waits for the published browser URL before opening it on Darwin hosts'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after opening the browser on Darwin hosts'
+
+: >"$PODMAN_LOG"
+: >"$OPEN_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+# This checks that a failed browser launch does not break macOS attach.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_UNAME='Darwin' OPENCODE_TEST_OPEN_EXIT_CODE='1' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/macos-open-fail.out" 2>"$TMP_DIR/macos-open-fail.err"
+assert_file_contains 'http://127.0.0.1:14096' "$OPEN_LOG" 'run still attempts to open the published browser URL on Darwin hosts when open fails'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after open fails on Darwin hosts'
+
+: >"$PODMAN_LOG"
+: >"$OPEN_LOG"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+# This checks that attach still works when the published URL never becomes ready.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='99' OPENCODE_TEST_UNAME='Darwin' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/macos-not-ready.out" 2>"$TMP_DIR/macos-not-ready.err"
+assert_file_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run keeps probing the published browser URL when it is not ready on Darwin hosts'
+test ! -s "$OPEN_LOG" || fail 'run does not open the browser before the published URL becomes ready on Darwin hosts'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when the published browser URL never becomes ready on Darwin hosts'
+
+: >"$PODMAN_LOG"
+: >"$OPEN_LOG"
+# This checks that non-macOS hosts skip the browser-open path entirely.
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_UNAME='Linux' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/linux-no-open.out" 2>"$TMP_DIR/linux-no-open.err"
+test ! -s "$OPEN_LOG" || fail 'run does not call the open command on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches without opening the browser on Linux hosts'
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" gamma beta >"$TMP_DIR/unconfigured.out" 2>"$TMP_DIR/unconfigured.err"; then
   fail 'run should reject a workspace that is not configured'
