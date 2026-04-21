@@ -6,6 +6,8 @@ The shared scripts are intended to work on both macOS and Linux hosts.
 
 The official upstream image is a minimal CLI container. The paths and lifecycle documented here are this wrapper repo's convention.
 
+For local builds, this wrapper consumes pinned public upstream musl CLI assets and stages them into local build-context paths for the Alpine `Containerfile`.
+
 ## Commands
 
 - Build the image: `scripts/agent/shared/opencode-build`
@@ -34,6 +36,18 @@ The default in-container working directory is `/workspace/project`.
 - `opencode-run` starts `serve --hostname 0.0.0.0 --port 4096` inside the long-lived workspace container.
 - `opencode-run` then opens `opencode attach http://127.0.0.1:4096` inside that same container so the interactive session uses the long-lived server.
 - The wrapper publishes host port `4096 + workspace offset`, so workspace `ezirius:10000` maps to host port `14096`.
+
+## Build Inputs
+
+Pinned public upstream musl CLI assets come from shared config, for example:
+
+- `opencode-linux-x64-baseline-musl.tar.gz`
+- `opencode-linux-arm64-musl.tar.gz`
+
+Those public asset names are staged into local build-context paths:
+
+- `dist/opencode-linux-x64-baseline-musl/bin/opencode`
+- `dist/opencode-linux-arm64-musl/bin/opencode`
 
 ## Workspace Safety
 

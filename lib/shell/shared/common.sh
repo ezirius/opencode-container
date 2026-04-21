@@ -494,16 +494,16 @@ opencode_warn() {
 opencode_release_asset_dist_dir() {
   local asset_name="$1"
   case "$asset_name" in
-    opencode-linux-x64-baseline-musl.tar.gz) printf 'opencode-linux-x64-baseline-musl\n' ;;
-    opencode-linux-arm64-musl.tar.gz) printf 'opencode-linux-arm64-musl\n' ;;
+    "$OPENCODE_RELEASE_LINUX_X64_ASSET") printf 'opencode-linux-x64-baseline-musl\n' ;;
+    "$OPENCODE_RELEASE_LINUX_ARM64_ASSET") printf 'opencode-linux-arm64-musl\n' ;;
     *) fail "unsupported release asset: $asset_name" ;;
   esac
 }
 
-# This returns the two official Linux musl release assets needed by the wrapper image build.
+# This returns the two pinned public Linux musl release assets needed by the wrapper image build.
 opencode_release_asset_names() {
-  printf 'opencode-linux-x64-baseline-musl.tar.gz\n'
-  printf 'opencode-linux-arm64-musl.tar.gz\n'
+  printf '%s\n' "$OPENCODE_RELEASE_LINUX_X64_ASSET"
+  printf '%s\n' "$OPENCODE_RELEASE_LINUX_ARM64_ASSET"
 }
 
 # This fetches the pinned upstream release metadata from GitHub.
@@ -516,11 +516,19 @@ opencode_release_asset_field() {
   local metadata_json="$1"
   local asset_name="$2"
   local field_name="$3"
-  local compact_json asset_block
-  compact_json="$(printf '%s' "$metadata_json" | tr -d '\n')"
-  asset_block="$(printf '%s' "$compact_json" | sed -n "s/.*{\([^{}]*\"name\":\"${asset_name}\"[^{}]*\)}.*/\1/p")"
-  [[ -n "$asset_block" ]] || fail "failed to find release metadata for ${asset_name}"
-  printf '%s' "$asset_block" | sed -n "s/.*\"${field_name}\":\"\([^\"]*\)\".*/\1/p"
+  perl -MJSON::PP -e '
+    my ($asset_name, $field_name) = @ARGV;
+    local $/;
+    my $json = <STDIN>;
+    my $decoded = JSON::PP->new->decode($json);
+    for my $asset (@{ $decoded->{assets} // [] }) {
+      next if ($asset->{name} // q{}) ne $asset_name;
+      my $value = $asset->{$field_name};
+      print defined $value ? "$value\n" : q{};
+      exit 0;
+    }
+    exit 1;
+  ' -- "$asset_name" "$field_name" <<<"$metadata_json" || fail "failed to find release metadata for ${asset_name}"
 }
 
 # This downloads and stages one official OpenCode binary into the upstream dist layout.
