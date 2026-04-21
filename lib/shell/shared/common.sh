@@ -277,6 +277,22 @@ opencode_workspace_server_port() {
   printf '%s\n' "$((4096 + offset))"
 }
 
+# This checks whether the current host shell is running on macOS.
+opencode_host_is_macos() {
+  [[ "$(uname -s)" == 'Darwin' ]]
+}
+
+# This checks whether the current host shell is running on Linux.
+opencode_host_is_linux() {
+  [[ "$(uname -s)" == 'Linux' ]]
+}
+
+# This builds the browser URL for the published workspace server port.
+opencode_workspace_published_url() {
+  local workspace="$1"
+  printf 'http://127.0.0.1:%s\n' "$(opencode_workspace_server_port "$workspace")"
+}
+
 # This lists direct-child project names from the configured development root.
 project_names_from_development_root() {
   local candidate project_name
@@ -437,6 +453,55 @@ opencode_wait_for_stable_running_container() {
   opencode_container_is_running "$container_name"
 }
 
+# This waits briefly for the published host URL to answer before opening a browser.
+opencode_wait_for_published_url() {
+  local url="$1"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if curl -fsS --connect-timeout 1 --max-time 1 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+# This opens the published host URL with the best available host browser launcher.
+opencode_open_published_url() {
+  local url="$1"
+
+  if opencode_host_is_macos; then
+    open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  if opencode_host_is_linux; then
+    if xdg-open "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    gio open "$url" >/dev/null 2>&1 || true
+  fi
+}
+
+# This detaches the browser launcher so it survives the wrapper handing control to exec.
+opencode_open_published_url_detached() {
+  local url="$1"
+
+  if opencode_host_is_macos; then
+    nohup open "$url" >/dev/null 2>&1 < /dev/null &
+    return 0
+  fi
+
+  if opencode_host_is_linux; then
+    nohup bash -c '
+      if xdg-open "$1" >/dev/null 2>&1; then
+        exit 0
+      fi
+      gio open "$1" >/dev/null 2>&1 || true
+    ' _ "$url" >/dev/null 2>&1 < /dev/null &
+  fi
+}
+
 # This gathers a short state summary without failing the wrapper when diagnostics break.
 opencode_container_state_summary() {
   local container_name="$1"
@@ -494,16 +559,16 @@ opencode_warn() {
 opencode_release_asset_dist_dir() {
   local asset_name="$1"
   case "$asset_name" in
-    opencode-linux-x64-baseline-musl.tar.gz) printf 'opencode-linux-x64-baseline-musl\n' ;;
-    opencode-linux-arm64-musl.tar.gz) printf 'opencode-linux-arm64-musl\n' ;;
+    "$OPENCODE_RELEASE_LINUX_X64_ASSET") printf 'opencode-linux-x64-baseline-musl\n' ;;
+    "$OPENCODE_RELEASE_LINUX_ARM64_ASSET") printf 'opencode-linux-arm64-musl\n' ;;
     *) fail "unsupported release asset: $asset_name" ;;
   esac
 }
 
-# This returns the two official Linux musl release assets needed by the wrapper image build.
+# This returns the two pinned public Linux musl release assets needed by the wrapper image build.
 opencode_release_asset_names() {
-  printf 'opencode-linux-x64-baseline-musl.tar.gz\n'
-  printf 'opencode-linux-arm64-musl.tar.gz\n'
+  printf '%s\n' "$OPENCODE_RELEASE_LINUX_X64_ASSET"
+  printf '%s\n' "$OPENCODE_RELEASE_LINUX_ARM64_ASSET"
 }
 
 # This fetches the pinned upstream release metadata from GitHub.
@@ -516,11 +581,78 @@ opencode_release_asset_field() {
   local metadata_json="$1"
   local asset_name="$2"
   local field_name="$3"
-  local compact_json asset_block
+  local compact_json
   compact_json="$(printf '%s' "$metadata_json" | tr -d '\n')"
-  asset_block="$(printf '%s' "$compact_json" | sed -n "s/.*{\([^{}]*\"name\":\"${asset_name}\"[^{}]*\)}.*/\1/p")"
-  [[ -n "$asset_block" ]] || fail "failed to find release metadata for ${asset_name}"
-  printf '%s' "$asset_block" | sed -n "s/.*\"${field_name}\":\"\([^\"]*\)\".*/\1/p"
+  printf '%s' "$compact_json" | awk -v asset_name="$asset_name" -v field_name="$field_name" '
+    BEGIN {
+      in_string = 0
+      escaped = 0
+      depth = 0
+      capture = 0
+      object = ""
+      found = 0
+    }
+
+    {
+      for (position = 1; position <= length($0); position++) {
+        char = substr($0, position, 1)
+
+        if (capture) {
+          object = object char
+        }
+
+        if (in_string) {
+          if (escaped) {
+            escaped = 0
+          } else if (char == "\\") {
+            escaped = 1
+          } else if (char == "\"") {
+            in_string = 0
+          }
+          continue
+        }
+
+        if (char == "\"") {
+          in_string = 1
+          continue
+        }
+
+        if (char == "{") {
+          depth++
+          if (depth == 2) {
+            capture = 1
+            object = "{"
+          }
+          continue
+        }
+
+        if (char == "}") {
+          if (depth == 2 && capture) {
+            if (object ~ ("\"name\"[[:space:]]*:[[:space:]]*\"" asset_name "\"")) {
+              value = object
+              sub(".*\"" field_name "\"[[:space:]]*:[[:space:]]*\"", "", value)
+              sub("\".*", "", value)
+              if (value != object) {
+                found = 1
+                print value
+                exit 0
+              }
+              exit 1
+            }
+            capture = 0
+            object = ""
+          }
+          depth--
+        }
+      }
+    }
+
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  ' || fail "failed to find release metadata for ${asset_name}"
 }
 
 # This downloads and stages one official OpenCode binary into the upstream dist layout.

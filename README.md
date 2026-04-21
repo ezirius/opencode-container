@@ -4,6 +4,8 @@ This repository builds and runs a local OpenCode container with repository-owned
 
 The official upstream image is a minimal CLI container. This repo adds a documented wrapper convention for stable mounts, project selection, and one long-lived container per workspace.
 
+For local builds, this wrapper consumes pinned public upstream musl CLI assets instead of inferring public download names from upstream Dockerfile internals.
+
 ## Layout
 
 The repository uses a normalized path shape:
@@ -48,6 +50,11 @@ Container build configuration lives in:
 ```text
 config/containers/shared/Containerfile
 ```
+
+Pinned public musl CLI assets live in config too, for example:
+
+- `opencode-linux-x64-baseline-musl.tar.gz`
+- `opencode-linux-arm64-musl.tar.gz`
 
 ## Runtime Contract
 

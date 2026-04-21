@@ -9,7 +9,10 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 source "$ROOT/tests/agent/shared/test-asserts.sh"
 
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+CONFIG_PATH="$(cd "$(dirname "$0")/../../.." && pwd)/config/agent/shared/opencode-settings-shared.conf"
+CONFIG_BACKUP="$TMP_DIR/opencode-settings-shared.conf.bak"
+cp "$CONFIG_PATH" "$CONFIG_BACKUP"
+trap 'cp "$CONFIG_BACKUP" "$CONFIG_PATH"; rm -rf "$TMP_DIR"' EXIT
 
 # These fake archives stand in for the official upstream Linux release assets.
 X64_STAGE_DIR="$TMP_DIR/opencode-linux-x64-baseline-musl"
@@ -17,10 +20,10 @@ ARM64_STAGE_DIR="$TMP_DIR/opencode-linux-arm64-musl"
 mkdir -p "$X64_STAGE_DIR" "$ARM64_STAGE_DIR"
 printf 'linux-x64-binary\n' >"$X64_STAGE_DIR/opencode"
 printf 'linux-arm64-binary\n' >"$ARM64_STAGE_DIR/opencode"
-tar -czf "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" -C "$X64_STAGE_DIR" opencode
-tar -czf "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" -C "$ARM64_STAGE_DIR" opencode
-X64_ARCHIVE_SHA="$(sha256sum "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" | awk '{print $1}')"
-ARM64_ARCHIVE_SHA="$(sha256sum "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" | awk '{print $1}')"
+tar -czf "$TMP_DIR/custom-linux-x64-musl.tar.gz" -C "$X64_STAGE_DIR" opencode
+tar -czf "$TMP_DIR/custom-linux-arm64-musl.tar.gz" -C "$ARM64_STAGE_DIR" opencode
+X64_ARCHIVE_SHA="$(sha256sum "$TMP_DIR/custom-linux-x64-musl.tar.gz" | awk '{print $1}')"
+ARM64_ARCHIVE_SHA="$(sha256sum "$TMP_DIR/custom-linux-arm64-musl.tar.gz" | awk '{print $1}')"
 
 FAKE_BIN="$TMP_DIR/fake-bin"
 mkdir -p "$FAKE_BIN"
@@ -135,7 +138,7 @@ url="\${args[\${#args[@]}-1]}"
 
 case "\$url" in
   https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.4.3)
-    printf '{"assets":[{"name":"opencode-linux-arm64-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-arm64-musl.tar.gz"},{"name":"opencode-linux-x64-baseline-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
+    printf '{"assets":[{"name": "opencode-linux-arm64-musl.tar.gz", "uploader": {"login": "bot"}, "metadata": {"kind": "release"}, "digest": "sha256:%s", "browser_download_url": "https://example.invalid/custom-linux-arm64-musl.tar.gz"},{"name": "opencode-linux-x64-baseline-musl.tar.gz", "uploader": {"login": "bot"}, "metadata": {"kind": "release"}, "digest": "sha256:%s", "browser_download_url": "https://example.invalid/custom-linux-x64-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
     ;;
   https://api.github.com/repos/anomalyco/opencode/releases/latest)
     printf '{"tag_name":"v1.4.4"}'
@@ -146,11 +149,11 @@ case "\$url" in
   https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100)
     printf '{"results":[{"name":"latest"},{"name":"3.24"},{"name":"3.23"},{"name":"3.22"}]}'
     ;;
-  https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz)
-    cp "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" "\$output_path"
+  https://example.invalid/custom-linux-x64-musl.tar.gz)
+    cp "$TMP_DIR/custom-linux-x64-musl.tar.gz" "\$output_path"
     ;;
-  https://example.invalid/opencode-linux-arm64-musl.tar.gz)
-    cp "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" "\$output_path"
+  https://example.invalid/custom-linux-arm64-musl.tar.gz)
+    cp "$TMP_DIR/custom-linux-arm64-musl.tar.gz" "\$output_path"
     ;;
   *)
     printf 'unexpected curl url: %s\n' "\$url" >&2
@@ -178,6 +181,8 @@ assert_file_contains 'build --build-arg OPENCODE_ALPINE_VERSION=' "$PODMAN_LOG" 
 assert_file_contains '--build-arg OPENCODE_ALPINE_DIGEST=' "$PODMAN_LOG" 'build passes the pinned Alpine digest into the container image build'
 assert_file_contains '--build-arg OPENCODE_CONTAINER_HOME=/root' "$PODMAN_LOG" 'build passes the concrete container home path'
 assert_file_contains 'config/containers/shared/Containerfile' "$PODMAN_LOG" 'build uses the Hermes-style containerfile path'
+assert_file_contains 'OPENCODE_RELEASE_LINUX_X64_ASSET="opencode-linux-x64-baseline-musl.tar.gz"' "$ROOT/config/agent/shared/opencode-settings-shared.conf" 'build reads the pinned x64 musl asset name from shared config'
+assert_file_contains 'OPENCODE_RELEASE_LINUX_ARM64_ASSET="opencode-linux-arm64-musl.tar.gz"' "$ROOT/config/agent/shared/opencode-settings-shared.conf" 'build reads the pinned arm64 musl asset name from shared config'
 assert_file_not_contains '--build-arg OPENCODE_RELEASE_ARCHIVE_URL=' "$PODMAN_LOG" 'build no longer passes npm release tarball metadata into the container build'
 assert_file_not_contains '--build-arg OPENCODE_RELEASE_ARCHIVE_SHA512=' "$PODMAN_LOG" 'build no longer passes npm release checksums into the container build'
 assert_file_not_contains '--build-arg OPENCODE_HOST_UID=' "$PODMAN_LOG" 'build no longer passes host uid into the upstream-root image build'
@@ -241,13 +246,13 @@ url="\${args[\${#args[@]}-1]}"
 
 case "\$url" in
   https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.4.3)
-    printf '{"assets":[{"name":"opencode-linux-arm64-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-arm64-musl.tar.gz"},{"name":"opencode-linux-x64-baseline-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
+    printf '{"assets":[{"name": "opencode-linux-arm64-musl.tar.gz", "uploader": {"login": "bot"}, "metadata": {"kind": "release"}, "digest": "sha256:%s", "browser_download_url": "https://example.invalid/custom-linux-arm64-musl.tar.gz"},{"name": "opencode-linux-x64-baseline-musl.tar.gz", "uploader": {"login": "bot"}, "metadata": {"kind": "release"}, "digest": "sha256:%s", "browser_download_url": "https://example.invalid/custom-linux-x64-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
     ;;
-  https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz)
-    cp "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" "\$output_path"
+  https://example.invalid/custom-linux-x64-musl.tar.gz)
+    cp "$TMP_DIR/custom-linux-x64-musl.tar.gz" "\$output_path"
     ;;
-  https://example.invalid/opencode-linux-arm64-musl.tar.gz)
-    cp "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" "\$output_path"
+  https://example.invalid/custom-linux-arm64-musl.tar.gz)
+    cp "$TMP_DIR/custom-linux-arm64-musl.tar.gz" "\$output_path"
     ;;
   *)
     printf 'transient lookup failure\n' >&2
