@@ -12,8 +12,31 @@ source "$ROOT/lib/shell/shared/common.sh"
 # This loads the saved workspace list before the script picks or validates a workspace.
 opencode_load_workspaces
 
+publish_external=0
+
+# This parses the small wrapper flag surface before positional workspace arguments.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --publish)
+      publish_external=1
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      printf 'Unsupported option: %s\n' "$1" >&2
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 if [[ $# -gt 2 ]]; then
-  printf 'This script takes zero, one, or two arguments: [workspace] [project].\n' >&2
+  printf 'This script takes an optional --publish flag plus zero, one, or two arguments: [workspace] [project].\n' >&2
   exit 1
 fi
 
@@ -34,7 +57,13 @@ else
   project_name="$(opencode_resolve_project_name '')"
 fi
 
-published_url="$(opencode_workspace_published_url "$workspace")"
+published_port=''
+published_url=''
+
+if [[ "$publish_external" == '1' ]]; then
+  published_port="$(opencode_workspace_published_port "$workspace")"
+  published_url="$(opencode_workspace_published_url "$workspace")"
+fi
 
 host_home="$(opencode_host_home_dir "$workspace")"
 host_workspace="$(opencode_host_workspace_dir "$workspace")"
@@ -51,13 +80,18 @@ rename_after_start=0
 # This creates the workspace container with the current image and fixed mount contract.
 create_workspace_container() {
   local target_container_name="$1"
-  local server_port
-  server_port="$(opencode_workspace_server_port "$workspace")"
+  local -a publish_args=()
+
+  # This publishes the stable host port only when the current run asked for external access.
+  if [[ "$publish_external" == '1' ]]; then
+    publish_args=(-p "$published_port:4096")
+  fi
+
   podman run -d \
     --name "$target_container_name" \
     --userns keep-id \
     -w "$OPENCODE_CONTAINER_PROJECT" \
-    -p "$server_port:4096" \
+    "${publish_args[@]}" \
     -v "$host_home:$OPENCODE_CONTAINER_HOME" \
     -v "$host_workspace:$OPENCODE_CONTAINER_WORKSPACE" \
     -v "$OPENCODE_DEVELOPMENT_ROOT:$OPENCODE_CONTAINER_DEVELOPMENT" \
@@ -84,11 +118,13 @@ done <<< "$old_containers"
 
 matching_running_container="$(podman ps --format '{{.Names}}' --filter "name=$(opencode_container_name_regex "$container_name")" | head -n 1)"
 
-if [[ "$reuse_existing" == '1' ]] && ! opencode_container_project_matches "$container_name" "$project_name"; then
-  reuse_existing=0
-  matching_running_container=""
-  rename_after_start=1
-  launch_container_name="$container_name-next-$$"
+if [[ "$reuse_existing" == '1' ]]; then
+  if ! opencode_container_project_matches "$container_name" "$project_name" || ! opencode_container_publish_matches "$container_name" "$workspace" "$publish_external"; then
+    reuse_existing=0
+    matching_running_container=""
+    rename_after_start=1
+    launch_container_name="$container_name-next-$$"
+  fi
 fi
 
 if [[ "$reuse_existing" != '1' ]]; then
@@ -146,8 +182,10 @@ while true; do
 done
 
 # This waits for the published host URL before best-effort host browser launch.
-if opencode_wait_for_published_url "$published_url"; then
-  opencode_open_published_url_detached "$published_url"
+if [[ "$publish_external" == '1' ]]; then
+  if opencode_wait_for_published_url "$published_url"; then
+    opencode_open_published_url_detached "$published_url"
+  fi
 fi
 
 opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach http://127.0.0.1:4096

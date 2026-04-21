@@ -269,8 +269,8 @@ opencode_workspace_offset() {
   fail "Workspace $workspace is not configured."
 }
 
-# This derives the stable host port used for the wrapper's long-lived OpenCode server.
-opencode_workspace_server_port() {
+# This derives the stable host port used when the wrapper publishes one workspace server.
+opencode_workspace_published_port() {
   local workspace="$1"
   local offset
   offset="$(opencode_workspace_offset "$workspace")"
@@ -290,7 +290,7 @@ opencode_host_is_linux() {
 # This builds the browser URL for the published workspace server port.
 opencode_workspace_published_url() {
   local workspace="$1"
-  printf 'http://127.0.0.1:%s\n' "$(opencode_workspace_server_port "$workspace")"
+  printf 'http://127.0.0.1:%s\n' "$(opencode_workspace_published_port "$workspace")"
 }
 
 # This lists direct-child project names from the configured development root.
@@ -543,6 +543,23 @@ opencode_container_project_matches() {
   expected="$(project_root_dir "$project_name"):$OPENCODE_CONTAINER_PROJECT"
   mounts="$(podman inspect --format '{{range .Mounts}}{{println .Source ":" .Destination}}{{end}}' "$container_name" 2>/dev/null || true)"
   printf '%s\n' "$mounts" | sed 's/[[:space:]]*:[[:space:]]*/:/g' | grep -Fqx -- "$expected"
+}
+
+# This checks whether one container's published host port matches the requested publish mode.
+opencode_container_publish_matches() {
+  local container_name="$1"
+  local workspace="$2"
+  local publish_external="$3"
+  local bindings expected
+  expected="4096/tcp $(opencode_workspace_published_port "$workspace")"
+  bindings="$(podman inspect --format '{{range $container_port, $host_bindings := .NetworkSettings.Ports}}{{if $host_bindings}}{{range $host_bindings}}{{println $container_port .HostPort}}{{end}}{{end}}{{end}}' "$container_name" 2>/dev/null || true)"
+
+  if [[ "$publish_external" == '1' ]]; then
+    printf '%s\n' "$bindings" | grep -Fqx -- "$expected"
+    return
+  fi
+
+  ! printf '%s\n' "$bindings" | grep -Fq -- '4096/tcp '
 }
 
 # This prints a yellow warning when the terminal supports color.
