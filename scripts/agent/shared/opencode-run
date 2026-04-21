@@ -147,7 +147,7 @@ done
 
 # This waits for the published host URL before best-effort host browser launch.
 if opencode_wait_for_published_url "$published_url"; then
-  opencode_open_published_url "$published_url"
+  opencode_open_published_url_detached "$published_url"
 fi
 
 opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach http://127.0.0.1:4096

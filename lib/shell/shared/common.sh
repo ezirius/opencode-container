@@ -483,6 +483,25 @@ opencode_open_published_url() {
   fi
 }
 
+# This detaches the browser launcher so it survives the wrapper handing control to exec.
+opencode_open_published_url_detached() {
+  local url="$1"
+
+  if opencode_host_is_macos; then
+    nohup open "$url" >/dev/null 2>&1 < /dev/null &
+    return 0
+  fi
+
+  if opencode_host_is_linux; then
+    nohup bash -c '
+      if xdg-open "$1" >/dev/null 2>&1; then
+        exit 0
+      fi
+      gio open "$1" >/dev/null 2>&1 || true
+    ' _ "$url" >/dev/null 2>&1 < /dev/null &
+  fi
+}
+
 # This gathers a short state summary without failing the wrapper when diagnostics break.
 opencode_container_state_summary() {
   local container_name="$1"
