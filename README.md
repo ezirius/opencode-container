@@ -65,7 +65,9 @@ Pinned public musl CLI assets live in config too, for example:
 - Selected project mount: `/workspace/project`
 - Default in-container working directory: `/workspace/project`
 - Default interactive shell: `nu`
-- Wrapper server port mapping: `4096 + workspace offset`
+- Internal upstream server port: `4096`
+- External publish flag: `scripts/agent/shared/opencode-run --publish`
+- Published host port mapping: `4096 + workspace offset` when `--publish` is used
 - Interactive attach flow: `opencode attach http://127.0.0.1:4096`
 
 ## Tests
