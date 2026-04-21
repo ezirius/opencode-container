@@ -143,7 +143,7 @@ url="\${args[\${#args[@]}-1]}"
 
 case "\$url" in
   https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.4.3)
-    printf '{"assets":[{"name":"custom-linux-arm64-musl.tar.gz","uploader":{"login":"bot"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-arm64-musl.tar.gz"},{"name":"custom-linux-x64-musl.tar.gz","uploader":{"login":"bot"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-x64-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
+    printf '{"assets":[{"name":"custom-linux-arm64-musl.tar.gz","uploader":{"login":"bot"},"metadata":{"kind":"release"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-arm64-musl.tar.gz"},{"name":"custom-linux-x64-musl.tar.gz","uploader":{"login":"bot"},"metadata":{"kind":"release"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-x64-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
     ;;
   https://api.github.com/repos/anomalyco/opencode/releases/latest)
     printf '{"tag_name":"v1.4.4"}'
@@ -251,7 +251,7 @@ url="\${args[\${#args[@]}-1]}"
 
 case "\$url" in
   https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.4.3)
-    printf '{"assets":[{"name":"custom-linux-arm64-musl.tar.gz","uploader":{"login":"bot"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-arm64-musl.tar.gz"},{"name":"custom-linux-x64-musl.tar.gz","uploader":{"login":"bot"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-x64-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
+    printf '{"assets":[{"name":"custom-linux-arm64-musl.tar.gz","uploader":{"login":"bot"},"metadata":{"kind":"release"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-arm64-musl.tar.gz"},{"name":"custom-linux-x64-musl.tar.gz","uploader":{"login":"bot"},"metadata":{"kind":"release"},"digest":"sha256:%s","browser_download_url":"https://example.invalid/custom-linux-x64-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
     ;;
   https://example.invalid/custom-linux-x64-musl.tar.gz)
     cp "$TMP_DIR/custom-linux-x64-musl.tar.gz" "\$output_path"

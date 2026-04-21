@@ -562,12 +562,78 @@ opencode_release_asset_field() {
   local metadata_json="$1"
   local asset_name="$2"
   local field_name="$3"
-  local compact_json asset_block
+  local compact_json
   compact_json="$(printf '%s' "$metadata_json" | tr -d '\n')"
-  compact_json="$(printf '%s' "$compact_json" | sed 's/"uploader":{[^{}]*},//g')"
-  asset_block="$(printf '%s' "$compact_json" | sed -n "s/.*{\([^{}]*\"name\":\"${asset_name}\"[^{}]*\)}.*/\1/p")"
-  [[ -n "$asset_block" ]] || fail "failed to find release metadata for ${asset_name}"
-  printf '%s' "$asset_block" | sed -n "s/.*\"${field_name}\":\"\([^\"]*\)\".*/\1/p"
+  printf '%s' "$compact_json" | awk -v asset_name="$asset_name" -v field_name="$field_name" '
+    BEGIN {
+      in_string = 0
+      escaped = 0
+      depth = 0
+      capture = 0
+      object = ""
+      found = 0
+    }
+
+    {
+      for (position = 1; position <= length($0); position++) {
+        char = substr($0, position, 1)
+
+        if (capture) {
+          object = object char
+        }
+
+        if (in_string) {
+          if (escaped) {
+            escaped = 0
+          } else if (char == "\\") {
+            escaped = 1
+          } else if (char == "\"") {
+            in_string = 0
+          }
+          continue
+        }
+
+        if (char == "\"") {
+          in_string = 1
+          continue
+        }
+
+        if (char == "{") {
+          depth++
+          if (depth == 2) {
+            capture = 1
+            object = "{"
+          }
+          continue
+        }
+
+        if (char == "}") {
+          if (depth == 2 && capture) {
+            if (object ~ ("\"name\":\"" asset_name "\"")) {
+              value = object
+              sub(".*\"" field_name "\":\"", "", value)
+              sub("\".*", "", value)
+              if (value != object) {
+                found = 1
+                print value
+                exit 0
+              }
+              exit 1
+            }
+            capture = 0
+            object = ""
+          }
+          depth--
+        }
+      }
+    }
+
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  ' || fail "failed to find release metadata for ${asset_name}"
 }
 
 # This downloads and stages one official OpenCode binary into the upstream dist layout.
