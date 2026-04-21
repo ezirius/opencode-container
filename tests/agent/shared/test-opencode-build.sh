@@ -14,7 +14,10 @@ CONFIG_BACKUP="$TMP_DIR/opencode-settings-shared.conf.bak"
 cp "$CONFIG_PATH" "$CONFIG_BACKUP"
 trap 'cp "$CONFIG_BACKUP" "$CONFIG_PATH"; rm -rf "$TMP_DIR"' EXIT
 
-perl -0pi -e 's/OPENCODE_RELEASE_LINUX_X64_ASSET="[^"]+"/OPENCODE_RELEASE_LINUX_X64_ASSET="custom-linux-x64-musl.tar.gz"/; s/OPENCODE_RELEASE_LINUX_ARM64_ASSET="[^"]+"/OPENCODE_RELEASE_LINUX_ARM64_ASSET="custom-linux-arm64-musl.tar.gz"/' "$CONFIG_PATH"
+# This rewrites the pinned asset names so the test can control the fake downloads.
+tmp_config="$TMP_DIR/opencode-settings-shared.conf"
+sed 's/^OPENCODE_RELEASE_LINUX_X64_ASSET="[^"]*"$/OPENCODE_RELEASE_LINUX_X64_ASSET="custom-linux-x64-musl.tar.gz"/; s/^OPENCODE_RELEASE_LINUX_ARM64_ASSET="[^"]*"$/OPENCODE_RELEASE_LINUX_ARM64_ASSET="custom-linux-arm64-musl.tar.gz"/' "$CONFIG_PATH" >"$tmp_config"
+mv "$tmp_config" "$CONFIG_PATH"
 
 # These fake archives stand in for the official upstream Linux release assets.
 X64_STAGE_DIR="$TMP_DIR/opencode-linux-x64-baseline-musl"

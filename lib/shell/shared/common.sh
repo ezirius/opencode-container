@@ -562,19 +562,12 @@ opencode_release_asset_field() {
   local metadata_json="$1"
   local asset_name="$2"
   local field_name="$3"
-  perl -MJSON::PP -e '
-    my ($asset_name, $field_name) = @ARGV;
-    local $/;
-    my $json = <STDIN>;
-    my $decoded = JSON::PP->new->decode($json);
-    for my $asset (@{ $decoded->{assets} // [] }) {
-      next if ($asset->{name} // q{}) ne $asset_name;
-      my $value = $asset->{$field_name};
-      print defined $value ? "$value\n" : q{};
-      exit 0;
-    }
-    exit 1;
-  ' -- "$asset_name" "$field_name" <<<"$metadata_json" || fail "failed to find release metadata for ${asset_name}"
+  local compact_json asset_block
+  compact_json="$(printf '%s' "$metadata_json" | tr -d '\n')"
+  compact_json="$(printf '%s' "$compact_json" | sed 's/"uploader":{[^{}]*},//g')"
+  asset_block="$(printf '%s' "$compact_json" | sed -n "s/.*{\([^{}]*\"name\":\"${asset_name}\"[^{}]*\)}.*/\1/p")"
+  [[ -n "$asset_block" ]] || fail "failed to find release metadata for ${asset_name}"
+  printf '%s' "$asset_block" | sed -n "s/.*\"${field_name}\":\"\([^\"]*\)\".*/\1/p"
 }
 
 # This downloads and stages one official OpenCode binary into the upstream dist layout.
