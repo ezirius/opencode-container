@@ -61,24 +61,26 @@ cat >"$CONFIG_PATH" <<EOF
 OPENCODE_IMAGE_BASENAME="opencode"
 OPENCODE_VERSION="1.4.3"
 OPENCODE_RELEASE_TAG="v1.4.3"
+OPENCODE_ALPINE_VERSION="3.23"
+OPENCODE_ALPINE_DIGEST="sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
-OPENCODE_WORKSPACES="alpha:100 alpha-prod:150 beta:200"
-OPENCODE_CONTAINER_HOME="/home/opencode"
+OPENCODE_WORKSPACES="alpha:10000 alpha-prod:15000 beta:20000"
+OPENCODE_CONTAINER_HOME="/root"
 OPENCODE_CONTAINER_WORKSPACE="/workspace/general"
 OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"
 OPENCODE_CONTAINER_PROJECT="/workspace/project"
 OPENCODE_HOST_HOME_DIRNAME="opencode-home"
 OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
 OPENCODE_DEFAULT_COMMAND="opencode"
-OPENCODE_SHELL_COMMAND="bash"
+OPENCODE_SHELL_COMMAND="nu"
 EOF
 
 mkdir -p "$TMP_DIR/development/alpha"
 PODMAN_LOG="$TMP_DIR/podman.log"
 
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-shell" alpha >"$TMP_DIR/shell.out" 2>"$TMP_DIR/shell.err"
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 bash' "$PODMAN_LOG" 'shell opens bash in the running workspace container by default'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 nu' "$PODMAN_LOG" 'shell opens nu in the running workspace container by default'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-shell" alpha env >"$TMP_DIR/command.out" 2>"$TMP_DIR/command.err"
@@ -86,12 +88,12 @@ assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 env' "$PO
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='staged' bash "$ROOT/scripts/agent/shared/opencode-shell" alpha >"$TMP_DIR/staged.out" 2>"$TMP_DIR/staged.err"
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 bash' "$PODMAN_LOG" 'shell ignores staged replacement containers and attaches to the canonical workspace container'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 nu' "$PODMAN_LOG" 'shell ignores staged replacement containers and attaches to the canonical workspace container'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='multiple' bash "$ROOT/scripts/agent/shared/opencode-shell" alpha >"$TMP_DIR/multiple.out" 2>"$TMP_DIR/multiple.err"
 assert_file_contains 'ps --sort created --format {{.Names}} --filter name=^opencode-alpha-' "$PODMAN_LOG" 'shell asks Podman to sort running containers by creation time instead of sorting names lexically'
-assert_file_contains 'exec -i opencode-alpha-1.10.0-20260418-120000-123 bash' "$PODMAN_LOG" 'shell uses the newest container returned by Podman when multiple canonical containers match'
+assert_file_contains 'exec -i opencode-alpha-1.10.0-20260418-120000-123 nu' "$PODMAN_LOG" 'shell uses the newest container returned by Podman when multiple canonical containers match'
 assert_file_contains 'ps --sort created --format {{.Names}} --filter name=^opencode-alpha-[0-9]' "$PODMAN_LOG" 'shell uses a workspace filter that does not collide with prefix-matching workspace names'
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='next-only' bash "$ROOT/scripts/agent/shared/opencode-shell" alpha >/dev/null 2>"$TMP_DIR/next-only.err"; then

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# This script opens bash by default, or runs a command inside a running workspace container.
+# This script opens nu by default, or runs a command inside a running workspace container.
 
 # This finds the repo root so the script can reach shared helpers.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -1,49 +1,31 @@
-# This image consumes shared config via build args and keeps the runtime contract in env vars.
-FROM ubuntu:24.04
+# This image keeps the upstream Dockerfile shape while letting config pin Alpine.
+ARG OPENCODE_ALPINE_VERSION
+ARG OPENCODE_ALPINE_DIGEST
+FROM alpine:${OPENCODE_ALPINE_VERSION}@${OPENCODE_ALPINE_DIGEST} AS base
 
-# Build args mirror the shared config so the image shape stays config-driven.
-ARG OPENCODE_HOST_UID
-ARG OPENCODE_HOST_GID
-ARG OPENCODE_CONTAINER_HOME
-ARG OPENCODE_CONTAINER_WORKSPACE
-ARG OPENCODE_CONTAINER_DEVELOPMENT
-ARG OPENCODE_CONTAINER_PROJECT
-ARG OPENCODE_RELEASE_ARCHIVE_URL
-ARG OPENCODE_RELEASE_ARCHIVE_SHA512
+# This keeps the upstream container default of disabling Bun's transpiler cache.
+ARG BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=${BUN_RUNTIME_TRANSPILER_CACHE_PATH}
 
-# These env vars define the runtime locations OpenCode expects after the host mounts are attached.
-ENV DEBIAN_FRONTEND=noninteractive \
-    HOME=${OPENCODE_CONTAINER_HOME}
+# These wrapper additions keep git and the documented interactive shells available.
+RUN apk add --no-cache bash git libgcc libstdc++ nushell ripgrep
 
-# Install only the base packages needed to run OpenCode and keep PID 1 well-behaved.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
-    curl \
-    git \
-    tar \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+FROM base AS build-amd64
+COPY dist/opencode-linux-x64-baseline-musl/bin/opencode /usr/local/bin/opencode
 
-# The container user and writable directories must match the host-mounted paths from config.
-RUN groupadd -o -g "$OPENCODE_HOST_GID" opencode \
-    && useradd -o -m -u "$OPENCODE_HOST_UID" -g "$OPENCODE_HOST_GID" -d "$OPENCODE_CONTAINER_HOME" -s /bin/bash opencode \
-    && mkdir -p "$OPENCODE_CONTAINER_HOME" "$OPENCODE_CONTAINER_WORKSPACE" "$OPENCODE_CONTAINER_DEVELOPMENT" "$OPENCODE_CONTAINER_PROJECT" \
-    && chown -R opencode:opencode /workspace "$OPENCODE_CONTAINER_HOME"
+FROM base AS build-arm64
+COPY dist/opencode-linux-arm64-musl/bin/opencode /usr/local/bin/opencode
 
-# OpenCode is installed from the official release tarball so the runtime command path stays predictable.
-RUN test -n "$OPENCODE_RELEASE_ARCHIVE_URL" && test -n "$OPENCODE_RELEASE_ARCHIVE_SHA512" \
-    && tmpdir="$(mktemp -d)" \
-    && curl -fsSL "$OPENCODE_RELEASE_ARCHIVE_URL" -o "$tmpdir/opencode.tgz" \
-    && printf '%s  %s\n' "$OPENCODE_RELEASE_ARCHIVE_SHA512" "$tmpdir/opencode.tgz" | sha512sum -c - \
-    && tar -xzf "$tmpdir/opencode.tgz" -C "$tmpdir" \
-    && install -m 755 "$tmpdir/package/bin/opencode" /usr/local/bin/opencode \
-    && rm -rf "$tmpdir"
+ARG TARGETARCH
+FROM build-${TARGETARCH}
 
-# WORKDIR follows the fixed project mount so project-facing exec commands start there.
-USER opencode
-WORKDIR ${OPENCODE_CONTAINER_PROJECT}
+# This wrapper keeps a stable home path for the workspace-mounted OpenCode state.
+ENV HOME=/root
 
-# Tini remains PID 1 so interactive exec sessions shut down cleanly.
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sleep", "infinity"]
+# This wrapper keeps the stable project-facing working directory expected by the scripts.
+WORKDIR /workspace/project
+
+RUN opencode --version
+
+# This wrapper keeps the OpenCode entrypoint while run-time commands decide the long-lived mode.
+ENTRYPOINT ["opencode"]
