@@ -35,7 +35,7 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 EOF
 
-# This fake git lets the test choose between clean and dirty states.
+# This fake git lets the test choose between branch policy states.
 cat >"$FAKE_BIN/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -54,12 +54,26 @@ case "$1 $2 ${3:-}" in
     fi
     printf 'deadbeef\n'
     ;;
-  'rev-parse --abbrev-ref --symbolic-full-name')
+  'symbolic-ref --quiet --short')
     case "$mode" in
-      local-only|clean|dirty|no-commit)
+      clean|dirty|no-commit|main-origin-synced|main-origin-ahead|main-origin-behind|main-origin-diverged|main-no-upstream|main-wrong-head)
+        printf 'main\n'
+        ;;
+      local-only|feature-upstream)
+        printf 'feature-work\n'
+        ;;
+      *)
+        printf 'unexpected branch mode: %s\n' "$mode" >&2
         exit 1
         ;;
-      default-upstream-synced|default-upstream-ahead|default-upstream-behind|default-upstream-diverged)
+    esac
+    ;;
+  'rev-parse --abbrev-ref --symbolic-full-name')
+    case "$mode" in
+      local-only|main-no-upstream|no-commit)
+        exit 1
+        ;;
+      clean|dirty|main-origin-synced|main-origin-ahead|main-origin-behind|main-origin-diverged|main-wrong-head)
         printf 'origin/main\n'
         ;;
       feature-upstream)
@@ -72,20 +86,27 @@ case "$1 $2 ${3:-}" in
     esac
     ;;
   'symbolic-ref refs/remotes/origin/HEAD ')
-    printf 'refs/remotes/origin/main\n'
+    case "$mode" in
+      main-wrong-head)
+        printf 'refs/remotes/origin/feature-work\n'
+        ;;
+      *)
+        printf 'refs/remotes/origin/main\n'
+        ;;
+    esac
     ;;
   'rev-list --left-right --count')
     case "$mode" in
-      default-upstream-synced)
+      clean|main-origin-synced|main-wrong-head)
         printf '0\t0\n'
         ;;
-      default-upstream-ahead)
+      main-origin-ahead)
         printf '1\t0\n'
         ;;
-      default-upstream-behind)
+      main-origin-behind)
         printf '0\t1\n'
         ;;
-      default-upstream-diverged)
+      main-origin-diverged)
         printf '2\t3\n'
         ;;
       *)
@@ -270,36 +291,49 @@ assert_file_not_contains 'newer OpenCode version available:' "$TMP_DIR/fallback.
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='local-only' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
-assert_file_not_contains 'symbolic-ref refs/remotes/origin/HEAD' "$PODMAN_LOG" 'build does not query the remote default branch for a local-only worktree branch'
+assert_file_contains 'symbolic-ref --quiet --short HEAD' "$PODMAN_LOG" 'build resolves the current branch before applying the build policy'
+assert_file_not_contains 'symbolic-ref refs/remotes/origin/HEAD' "$PODMAN_LOG" 'build does not consult cached origin HEAD for a local-only worktree branch'
 assert_file_not_contains 'rev-list --left-right --count HEAD...@{upstream}' "$PODMAN_LOG" 'build does not require upstream sync checks for a local-only worktree branch'
 
 : >"$PODMAN_LOG"
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='default-upstream-synced' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
-assert_file_contains 'symbolic-ref refs/remotes/origin/HEAD' "$PODMAN_LOG" 'build checks the remote default branch when the current branch has an upstream'
-assert_file_contains 'rev-list --left-right --count HEAD...@{upstream}' "$PODMAN_LOG" 'build checks ahead and behind counts when tracking the remote default branch'
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='main-origin-synced' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
+assert_file_contains 'rev-parse --abbrev-ref --symbolic-full-name @{upstream}' "$PODMAN_LOG" 'build resolves the configured upstream when on main'
+assert_file_contains 'rev-list --left-right --count HEAD...@{upstream}' "$PODMAN_LOG" 'build checks ahead and behind counts when main tracks origin/main'
+assert_file_contains 'symbolic-ref refs/remotes/origin/HEAD' "$PODMAN_LOG" 'build warns from cached origin HEAD only after the main policy passes'
 
-if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='default-upstream-ahead' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/ahead.stderr"; then
-  fail 'build should fail when the current branch is ahead of the remote default-branch upstream'
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='main-origin-ahead' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/ahead.stderr"; then
+  fail 'build should fail when main is ahead of origin/main'
 fi
 
-assert_file_contains 'Build requires the current branch to be pushed and in sync with its upstream when tracking the remote default branch.' "$TMP_DIR/ahead.stderr" 'build explains ahead-of-default-branch failures clearly'
+assert_file_contains 'Build requires main to be pushed and in sync with origin/main.' "$TMP_DIR/ahead.stderr" 'build explains ahead-of-origin-main failures clearly'
 
-if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='default-upstream-behind' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/behind.stderr"; then
-  fail 'build should fail when the current branch is behind the remote default-branch upstream'
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='main-origin-behind' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/behind.stderr"; then
+  fail 'build should fail when main is behind origin/main'
 fi
 
-assert_file_contains 'Build requires the current branch to be pushed and in sync with its upstream when tracking the remote default branch.' "$TMP_DIR/behind.stderr" 'build explains behind-default-branch failures clearly'
+assert_file_contains 'Build requires main to be pushed and in sync with origin/main.' "$TMP_DIR/behind.stderr" 'build explains behind-origin-main failures clearly'
 
-if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='default-upstream-diverged' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/diverged.stderr"; then
-  fail 'build should fail when the current branch has diverged from the remote default-branch upstream'
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='main-origin-diverged' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/diverged.stderr"; then
+  fail 'build should fail when main has diverged from origin/main'
 fi
 
-assert_file_contains 'Build requires the current branch to be pushed and in sync with its upstream when tracking the remote default branch.' "$TMP_DIR/diverged.stderr" 'build explains diverged-default-branch failures clearly'
+assert_file_contains 'Build requires main to be pushed and in sync with origin/main.' "$TMP_DIR/diverged.stderr" 'build explains diverged-origin-main failures clearly'
+
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='main-no-upstream' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/main-no-upstream.stderr"; then
+  fail 'build should fail when main does not track origin/main'
+fi
+
+assert_file_contains 'Build requires main to track origin/main.' "$TMP_DIR/main-no-upstream.stderr" 'build requires main to track origin/main before building'
+
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='feature-upstream' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/feature-upstream.stderr"; then
+  fail 'build should fail when a non-main branch tracks a remote upstream'
+fi
+
+assert_file_contains 'Build only allows remote-tracking builds from main. Use a clean committed local worktree branch or main tracking origin/main.' "$TMP_DIR/feature-upstream.stderr" 'build rejects remote-tracking non-main branches clearly'
 
 : >"$PODMAN_LOG"
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='feature-upstream' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
-assert_file_contains 'symbolic-ref refs/remotes/origin/HEAD' "$PODMAN_LOG" 'build still resolves the remote default branch when an upstream exists'
-assert_file_not_contains 'rev-list --left-right --count HEAD...@{upstream}' "$PODMAN_LOG" 'build skips sync enforcement when the upstream is not the remote default branch'
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='main-wrong-head' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/wrong-head.stderr"
+assert_file_contains 'warning: local origin/HEAD points to refs/remotes/origin/feature-work, expected refs/remotes/origin/main; ignoring cached remote HEAD for build policy.' "$TMP_DIR/wrong-head.stderr" 'build only warns when cached origin HEAD is wrong locally'
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='dirty' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/dirty.stderr"; then
   fail 'build should fail when the checkout is dirty'

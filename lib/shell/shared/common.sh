@@ -143,6 +143,12 @@ opencode_require_clean_committed_checkout() {
   fi
 }
 
+# This resolves the current local branch name from HEAD.
+opencode_git_current_branch() {
+  local checkout_root="${1:-$ROOT}"
+  git -C "$checkout_root" symbolic-ref --quiet --short HEAD
+}
+
 # This checks whether the current branch has a configured upstream.
 opencode_git_has_upstream() {
   local checkout_root="${1:-$ROOT}"
@@ -155,31 +161,15 @@ opencode_git_upstream_ref() {
   git -C "$checkout_root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'
 }
 
-# This extracts the remote name from the upstream ref.
-opencode_git_upstream_remote() {
+# This warns when cached origin HEAD is stale without changing build policy decisions.
+opencode_warn_if_origin_head_is_not_main() {
   local checkout_root="${1:-$ROOT}"
-  local upstream_ref
-  upstream_ref="$(opencode_git_upstream_ref "$checkout_root")"
-  printf '%s\n' "${upstream_ref%%/*}"
-}
-
-# This resolves the remote default branch ref for the upstream remote.
-opencode_git_remote_default_ref() {
-  local checkout_root="${1:-$ROOT}"
-  local remote_name remote_head
-  remote_name="$(opencode_git_upstream_remote "$checkout_root")"
-  remote_head="$(git -C "$checkout_root" symbolic-ref "refs/remotes/${remote_name}/HEAD" 2>/dev/null || true)"
-  [[ -n "$remote_head" ]] || fail "Build could not determine the remote default branch for ${remote_name}."
-  printf '%s\n' "${remote_head#refs/remotes/}"
-}
-
-# This checks whether the configured upstream is exactly the remote default branch ref.
-opencode_git_upstream_is_remote_default_branch() {
-  local checkout_root="${1:-$ROOT}"
-  local upstream_ref remote_default_ref
-  upstream_ref="$(opencode_git_upstream_ref "$checkout_root")"
-  remote_default_ref="$(opencode_git_remote_default_ref "$checkout_root")"
-  [[ "$upstream_ref" == "$remote_default_ref" ]]
+  local remote_head
+  remote_head="$(git -C "$checkout_root" symbolic-ref 'refs/remotes/origin/HEAD' 2>/dev/null || true)"
+  [[ -n "$remote_head" ]] || return 0
+  if [[ "$remote_head" != 'refs/remotes/origin/main' ]]; then
+    opencode_warn "local origin/HEAD points to ${remote_head}, expected refs/remotes/origin/main; ignoring cached remote HEAD for build policy."
+  fi
 }
 
 # This prints the ahead/behind counts against the configured upstream.
@@ -188,19 +178,24 @@ opencode_git_branch_ahead_behind() {
   git -C "$checkout_root" rev-list --left-right --count HEAD...@{upstream}
 }
 
-# This enforces the build checkout policy for local-only and upstreamed branches.
+# This enforces the build checkout policy for main and local worktree branches.
 opencode_require_build_ready_checkout() {
   local checkout_root="${1:-$ROOT}"
-  local counts ahead behind
+  local branch_name counts ahead behind upstream_ref
 
   opencode_require_clean_committed_checkout "$checkout_root"
+  branch_name="$(opencode_git_current_branch "$checkout_root")"
 
-  if ! opencode_git_has_upstream "$checkout_root"; then
+  if [[ "$branch_name" != 'main' ]]; then
+    if opencode_git_has_upstream "$checkout_root"; then
+      fail 'Build only allows remote-tracking builds from main. Use a clean committed local worktree branch or main tracking origin/main.'
+    fi
     return 0
   fi
 
-  if ! opencode_git_upstream_is_remote_default_branch "$checkout_root"; then
-    return 0
+  upstream_ref="$(opencode_git_upstream_ref "$checkout_root" 2>/dev/null || true)"
+  if [[ "$upstream_ref" != 'origin/main' ]]; then
+    fail 'Build requires main to track origin/main.'
   fi
 
   counts="$(opencode_git_branch_ahead_behind "$checkout_root")"
@@ -208,8 +203,10 @@ opencode_require_build_ready_checkout() {
   behind="$(printf '%s\n' "$counts" | awk '{print $2}')"
 
   if [[ "$ahead" != '0' || "$behind" != '0' ]]; then
-    fail 'Build requires the current branch to be pushed and in sync with its upstream when tracking the remote default branch.'
+    fail 'Build requires main to be pushed and in sync with origin/main.'
   fi
+
+  opencode_warn_if_origin_head_is_not_main "$checkout_root"
 }
 
 # This reads the saved workspace list and splits it into names and offsets.
