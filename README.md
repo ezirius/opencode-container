@@ -2,6 +2,8 @@
 
 This repository builds and runs a local OpenCode container with repository-owned configuration, wrapper scripts, shell helpers, and shell tests.
 
+The official upstream image is a minimal CLI container. This repo adds a documented wrapper convention for stable mounts, project selection, and one long-lived container per workspace.
+
 ## Layout
 
 The repository uses a normalized path shape:
@@ -49,12 +51,15 @@ config/containers/shared/Containerfile
 
 ## Runtime Contract
 
-- Container user: `opencode`
-- Container home: `/home/opencode`
+- Container user: `root`
+- Container home: `/root`
 - General workspace mount: `/workspace/general`
 - Development root mount: `/workspace/development`
 - Selected project mount: `/workspace/project`
 - Default in-container working directory: `/workspace/project`
+- Default interactive shell: `nu`
+- Wrapper server port mapping: `4096 + workspace offset`
+- Interactive attach flow: `opencode attach http://127.0.0.1:4096`
 
 ## Tests
 

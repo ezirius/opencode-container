@@ -128,15 +128,17 @@ OPENCODE_VERSION="1.4.3"
 OPENCODE_RELEASE_TAG="v1.4.3"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
-OPENCODE_WORKSPACES="alpha:100 alpha-prod:150 beta:200"
-OPENCODE_CONTAINER_HOME="/home/opencode"
+OPENCODE_ALPINE_VERSION="3.23"
+OPENCODE_ALPINE_DIGEST="sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11"
+OPENCODE_WORKSPACES="alpha:10000 alpha-prod:15000 beta:20000"
+OPENCODE_CONTAINER_HOME="/root"
 OPENCODE_CONTAINER_WORKSPACE="/workspace/general"
 OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"
 OPENCODE_CONTAINER_PROJECT="/workspace/project"
 OPENCODE_HOST_HOME_DIRNAME="opencode-home"
 OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
 OPENCODE_DEFAULT_COMMAND="opencode"
-OPENCODE_SHELL_COMMAND="bash"
+OPENCODE_SHELL_COMMAND="nu"
 EOF
 
 mkdir -p "$TMP_DIR/development/alpha" "$TMP_DIR/development/beta"
@@ -148,11 +150,15 @@ printf '1\n2\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" 
 
 assert_file_contains 'Selection:' "$TMP_DIR/run.err" 'run shows the interactive picker prompts'
 assert_file_contains '--name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run derives the workspace container name from the image suffix'
-assert_file_contains "$TMP_DIR/base/alpha/opencode-home:/home/opencode" "$PODMAN_LOG" 'run mounts the concrete host home path'
+assert_file_contains '--userns keep-id' "$PODMAN_LOG" 'run keeps the container root user aligned to the host user namespace'
+assert_file_contains '-w /workspace/project' "$PODMAN_LOG" 'run sets the project path as the working directory'
+assert_file_contains '-p 14096:4096' "$PODMAN_LOG" 'run publishes the stable workspace server port derived from the offset'
+assert_file_contains "$TMP_DIR/base/alpha/opencode-home:/root" "$PODMAN_LOG" 'run mounts the concrete host home path at /root'
 assert_file_contains "$TMP_DIR/base/alpha/opencode-general:/workspace/general" "$PODMAN_LOG" 'run mounts the concrete host general path'
 assert_file_contains "$TMP_DIR/development:/workspace/development" "$PODMAN_LOG" 'run mounts the development root'
 assert_file_contains "$TMP_DIR/development/beta:/workspace/project" "$PODMAN_LOG" 'run mounts the selected project at the fixed project path'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode' "$PODMAN_LOG" 'run attaches to OpenCode after the container is ready'
+assert_file_contains 'serve --hostname 0.0.0.0 --port 4096' "$PODMAN_LOG" 'run starts the long-lived upstream server mode inside the workspace container'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run attaches to the long-lived OpenCode server after the container is ready'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='old-version' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/version-bump.out" 2>"$TMP_DIR/version-bump.err"
@@ -190,7 +196,7 @@ assert_file_not_contains 'rm -f opencode-alpha-1.4.3-20260418-120000-123' "$PODM
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse.out" 2>"$TMP_DIR/reuse.err"
 assert_file_not_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run reuses an exact matching container when the project mount already matches'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode' "$PODMAN_LOG" 'run still attaches after reusing an exact matching container'
+assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches to the long-lived server after reusing an exact matching container'
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" gamma beta >"$TMP_DIR/unconfigured.out" 2>"$TMP_DIR/unconfigured.err"; then
   fail 'run should reject a workspace that is not configured'

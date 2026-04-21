@@ -11,6 +11,17 @@ source "$ROOT/tests/agent/shared/test-asserts.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# These fake archives stand in for the official upstream Linux release assets.
+X64_STAGE_DIR="$TMP_DIR/opencode-linux-x64-baseline-musl"
+ARM64_STAGE_DIR="$TMP_DIR/opencode-linux-arm64-musl"
+mkdir -p "$X64_STAGE_DIR" "$ARM64_STAGE_DIR"
+printf 'linux-x64-binary\n' >"$X64_STAGE_DIR/opencode"
+printf 'linux-arm64-binary\n' >"$ARM64_STAGE_DIR/opencode"
+tar -czf "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" -C "$X64_STAGE_DIR" opencode
+tar -czf "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" -C "$ARM64_STAGE_DIR" opencode
+X64_ARCHIVE_SHA="$(sha256sum "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" | awk '{print $1}')"
+ARM64_ARCHIVE_SHA="$(sha256sum "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" | awk '{print $1}')"
+
 FAKE_BIN="$TMP_DIR/fake-bin"
 mkdir -p "$FAKE_BIN"
 
@@ -96,36 +107,59 @@ case "$1 $2 ${3:-}" in
 esac
 EOF
 
-# This fake curl serves the release metadata that the build script resolves.
-cat >"$FAKE_BIN/curl" <<'EOF'
+# This fake curl serves release metadata, version checks, and fake asset downloads.
+cat >"$FAKE_BIN/curl" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
-url="${@: -1}"
-case "$url" in
-  https://registry.npmjs.org/opencode-linux-x64/1.4.3)
-    printf '{"dist":{"tarball":"https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.4.3.tgz","integrity":"sha512-RS6TsDqTUrW5sefxD1KD9Xy9mSYGXAlr2DlGrdi8vNm9e/Bt4r4u557VB7f/Uj2CxTt2Gf7OWl08ZoPlxMJ5Gg=="}}'
+output_path=''
+args=()
+
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in
+    -o)
+      output_path="\$2"
+      shift 2
+      ;;
+    -fsSL|-f|-s|-S|-L)
+      shift
+      ;;
+    *)
+      args+=("\$1")
+      shift
+      ;;
+  esac
+done
+
+url="\${args[\${#args[@]}-1]}"
+
+case "\$url" in
+  https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.4.3)
+    printf '{"assets":[{"name":"opencode-linux-arm64-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-arm64-musl.tar.gz"},{"name":"opencode-linux-x64-baseline-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
+    ;;
+  https://api.github.com/repos/anomalyco/opencode/releases/latest)
+    printf '{"tag_name":"v1.4.4"}'
+    ;;
+  https://hub.docker.com/v2/repositories/library/alpine/tags/3.23)
+    printf '{"name":"3.23","digest":"sha256:newer-alpine-digest"}'
+    ;;
+  https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100)
+    printf '{"results":[{"name":"latest"},{"name":"3.24"},{"name":"3.23"},{"name":"3.22"}]}'
+    ;;
+  https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz)
+    cp "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" "\$output_path"
+    ;;
+  https://example.invalid/opencode-linux-arm64-musl.tar.gz)
+    cp "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" "\$output_path"
     ;;
   *)
-    printf 'unexpected curl url: %s\n' "$url" >&2
+    printf 'unexpected curl url: %s\n' "\$url" >&2
     exit 1
     ;;
 esac
 EOF
 
-# This fake id keeps host uid and gid resolution controllable.
-cat >"$FAKE_BIN/id" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-case "${1-}" in
-  -u) printf '%s\n' "${OPENCODE_TEST_HOST_UID:-1001}" ;;
-  -g) printf '%s\n' "${OPENCODE_TEST_HOST_GID:-1001}" ;;
-  *) printf 'unexpected id invocation\n' >&2; exit 1 ;;
-esac
-EOF
-
-chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/git" "$FAKE_BIN/curl" "$FAKE_BIN/id"
+chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/git" "$FAKE_BIN/curl"
 
 # This fake uname keeps the architecture-specific package resolution predictable.
 cat >"$FAKE_BIN/uname" <<'EOF'
@@ -138,26 +172,30 @@ chmod +x "$FAKE_BIN/uname"
 
 PODMAN_LOG="$TMP_DIR/podman.log"
 
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build.out" 2>"$TMP_DIR/build.err"
 
-assert_file_contains 'build --build-arg OPENCODE_HOST_UID=' "$PODMAN_LOG" 'build passes the host uid into the container image build'
-assert_file_contains '--build-arg OPENCODE_HOST_GID=' "$PODMAN_LOG" 'build passes the host gid into the container image build'
-assert_file_contains '--build-arg OPENCODE_CONTAINER_HOME=/home/opencode' "$PODMAN_LOG" 'build passes the concrete container home path'
-assert_file_contains '--build-arg OPENCODE_CONTAINER_WORKSPACE=/workspace/general' "$PODMAN_LOG" 'build passes the concrete workspace path'
-assert_file_contains '--build-arg OPENCODE_CONTAINER_DEVELOPMENT=/workspace/development' "$PODMAN_LOG" 'build passes the concrete development path'
-assert_file_contains '--build-arg OPENCODE_CONTAINER_PROJECT=/workspace/project' "$PODMAN_LOG" 'build passes the concrete project path'
-assert_file_contains '--build-arg OPENCODE_RELEASE_ARCHIVE_URL=https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.4.3.tgz' "$PODMAN_LOG" 'build resolves the OpenCode release tarball url from npm metadata'
-assert_file_contains '--build-arg OPENCODE_RELEASE_ARCHIVE_SHA512=' "$PODMAN_LOG" 'build resolves the release sha512 from npm metadata'
+assert_file_contains 'build --build-arg OPENCODE_ALPINE_VERSION=' "$PODMAN_LOG" 'build passes the pinned Alpine tag into the container image build'
+assert_file_contains '--build-arg OPENCODE_ALPINE_DIGEST=' "$PODMAN_LOG" 'build passes the pinned Alpine digest into the container image build'
+assert_file_contains '--build-arg OPENCODE_CONTAINER_HOME=/root' "$PODMAN_LOG" 'build passes the concrete container home path'
 assert_file_contains 'config/containers/shared/Containerfile' "$PODMAN_LOG" 'build uses the Hermes-style containerfile path'
-assert_file_contains '--build-arg OPENCODE_HOST_UID=1001' "$PODMAN_LOG" 'build uses the detected non-root host uid by default'
-assert_file_contains '--build-arg OPENCODE_HOST_GID=1001' "$PODMAN_LOG" 'build uses the detected non-root host gid by default'
+assert_file_not_contains '--build-arg OPENCODE_RELEASE_ARCHIVE_URL=' "$PODMAN_LOG" 'build no longer passes npm release tarball metadata into the container build'
+assert_file_not_contains '--build-arg OPENCODE_RELEASE_ARCHIVE_SHA512=' "$PODMAN_LOG" 'build no longer passes npm release checksums into the container build'
+assert_file_not_contains '--build-arg OPENCODE_HOST_UID=' "$PODMAN_LOG" 'build no longer passes host uid into the upstream-root image build'
+assert_file_not_contains '--build-arg OPENCODE_HOST_GID=' "$PODMAN_LOG" 'build no longer passes host gid into the upstream-root image build'
+assert_file_contains 'linux-x64-binary' "$ROOT/dist/opencode-linux-x64-baseline-musl/bin/opencode" 'build stages the official x64 musl binary into the upstream dist path'
+assert_file_contains 'linux-arm64-binary' "$ROOT/dist/opencode-linux-arm64-musl/bin/opencode" 'build stages the official arm64 musl binary into the upstream dist path'
+assert_file_contains 'Built image: opencode-1.4.3-' "$TMP_DIR/build.out" 'build still prints the built image name after staging binaries'
+assert_file_contains 'newer OpenCode version available: 1.4.4' "$TMP_DIR/build.err" 'build warns when a newer OpenCode release exists'
+assert_file_contains 'newer Alpine version available: 3.24' "$TMP_DIR/build.err" 'build warns when a newer Alpine tag line exists'
+assert_file_contains 'newer Alpine digest available for 3.23' "$TMP_DIR/build.err" 'build warns when a newer Alpine digest exists for the pinned tag'
+assert_file_contains 'warning:' "$TMP_DIR/build.err" 'build emits warning output for newer pinned values'
+assert_file_not_contains "$(printf '\033[33m')" "$TMP_DIR/build.err" 'build avoids ANSI color escapes when stderr is not a terminal'
 
 MAC_BASE64_BIN="$TMP_DIR/mac-base64-bin"
 mkdir -p "$MAC_BASE64_BIN"
 ln -sf "$FAKE_BIN/podman" "$MAC_BASE64_BIN/podman"
 ln -sf "$FAKE_BIN/git" "$MAC_BASE64_BIN/git"
 ln -sf "$FAKE_BIN/curl" "$MAC_BASE64_BIN/curl"
-ln -sf "$FAKE_BIN/id" "$MAC_BASE64_BIN/id"
 ln -sf "$FAKE_BIN/uname" "$MAC_BASE64_BIN/uname"
 
 cat >"$MAC_BASE64_BIN/base64" <<'EOF'
@@ -174,17 +212,56 @@ EOF
 
 chmod +x "$MAC_BASE64_BIN/base64"
 
-PATH="$MAC_BASE64_BIN:/usr/bin:/bin" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
+PATH="$MAC_BASE64_BIN:/usr/bin:/bin" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>/dev/null
+
+cat >"$FAKE_BIN/curl" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+output_path=''
+args=()
+
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in
+    -o)
+      output_path="\$2"
+      shift 2
+      ;;
+    -fsSL|-f|-s|-S|-L)
+      shift
+      ;;
+    *)
+      args+=("\$1")
+      shift
+      ;;
+  esac
+done
+
+url="\${args[\${#args[@]}-1]}"
+
+case "\$url" in
+  https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.4.3)
+    printf '{"assets":[{"name":"opencode-linux-arm64-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-arm64-musl.tar.gz"},{"name":"opencode-linux-x64-baseline-musl.tar.gz","digest":"sha256:%s","browser_download_url":"https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz"}]}' "$ARM64_ARCHIVE_SHA" "$X64_ARCHIVE_SHA"
+    ;;
+  https://example.invalid/opencode-linux-x64-baseline-musl.tar.gz)
+    cp "$TMP_DIR/opencode-linux-x64-baseline-musl.tar.gz" "\$output_path"
+    ;;
+  https://example.invalid/opencode-linux-arm64-musl.tar.gz)
+    cp "$TMP_DIR/opencode-linux-arm64-musl.tar.gz" "\$output_path"
+    ;;
+  *)
+    printf 'transient lookup failure\n' >&2
+    exit 22
+    ;;
+esac
+EOF
+
+chmod +x "$FAKE_BIN/curl"
 
 : >"$PODMAN_LOG"
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_HOST_UID='0' OPENCODE_TEST_HOST_GID='0' SUDO_UID='4242' SUDO_GID='4343' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
-assert_file_contains '--build-arg OPENCODE_HOST_UID=4242' "$PODMAN_LOG" 'build prefers sudo caller uid when the build itself runs as root'
-assert_file_contains '--build-arg OPENCODE_HOST_GID=4343' "$PODMAN_LOG" 'build prefers sudo caller gid when the build itself runs as root'
-
-: >"$PODMAN_LOG"
-env -u SUDO_UID -u SUDO_GID PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_HOST_UID='0' OPENCODE_TEST_HOST_GID='0' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null
-assert_file_contains '--build-arg OPENCODE_HOST_UID=0' "$PODMAN_LOG" 'build preserves true root uid when invoked directly as root without sudo metadata'
-assert_file_contains '--build-arg OPENCODE_HOST_GID=0' "$PODMAN_LOG" 'build preserves true root gid when invoked directly as root without sudo metadata'
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/fallback.out" 2>"$TMP_DIR/fallback.err"
+assert_file_contains 'Built image: opencode-1.4.3-' "$TMP_DIR/fallback.out" 'build still succeeds when latest-version checks fail'
+assert_file_not_contains 'newer OpenCode version available:' "$TMP_DIR/fallback.err" 'build skips OpenCode update warnings when the lookup fails'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='local-only' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null

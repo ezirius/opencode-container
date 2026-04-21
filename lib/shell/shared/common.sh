@@ -269,6 +269,14 @@ opencode_workspace_offset() {
   fail "Workspace $workspace is not configured."
 }
 
+# This derives the stable host port used for the wrapper's long-lived OpenCode server.
+opencode_workspace_server_port() {
+  local workspace="$1"
+  local offset
+  offset="$(opencode_workspace_offset "$workspace")"
+  printf '%s\n' "$((4096 + offset))"
+}
+
 # This lists direct-child project names from the configured development root.
 project_names_from_development_root() {
   local candidate project_name
@@ -472,37 +480,125 @@ opencode_container_project_matches() {
   printf '%s\n' "$mounts" | sed 's/[[:space:]]*:[[:space:]]*/:/g' | grep -Fqx -- "$expected"
 }
 
-# This resolves the binary package name for the current host architecture.
-opencode_release_package_name() {
-  case "$(uname -m)" in
-    x86_64|amd64) printf 'opencode-linux-x64\n' ;;
-    aarch64|arm64) printf 'opencode-linux-arm64\n' ;;
-    *) fail "unsupported host architecture: $(uname -m)" ;;
+# This prints a yellow warning when the terminal supports color.
+opencode_warn() {
+  local message="$1"
+  if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
+    printf '\033[33mwarning:\033[0m %s\n' "$message" >&2
+    return 0
+  fi
+  printf 'warning: %s\n' "$message" >&2
+}
+
+# This maps each required Linux release asset to the upstream dist directory name.
+opencode_release_asset_dist_dir() {
+  local asset_name="$1"
+  case "$asset_name" in
+    opencode-linux-x64-baseline-musl.tar.gz) printf 'opencode-linux-x64-baseline-musl\n' ;;
+    opencode-linux-arm64-musl.tar.gz) printf 'opencode-linux-arm64-musl\n' ;;
+    *) fail "unsupported release asset: $asset_name" ;;
   esac
 }
 
-# This resolves the release archive metadata from the npm registry.
-opencode_resolve_release_metadata() {
-  local package_name metadata_url metadata_json
-  local tarball integrity integrity_b64 sha
-  package_name="$(opencode_release_package_name)"
-  metadata_url="https://registry.npmjs.org/${package_name}/${OPENCODE_VERSION}"
-  metadata_json="$(curl -fsSL "$metadata_url")"
+# This returns the two official Linux musl release assets needed by the wrapper image build.
+opencode_release_asset_names() {
+  printf 'opencode-linux-x64-baseline-musl.tar.gz\n'
+  printf 'opencode-linux-arm64-musl.tar.gz\n'
+}
 
-  tarball="$(printf '%s' "$metadata_json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p')"
-  integrity="$(printf '%s' "$metadata_json" | sed -n 's/.*"integrity":"\([^"]*\)".*/\1/p')"
-  [[ -n "$tarball" ]] || fail 'failed to resolve OpenCode release tarball url'
-  [[ "$integrity" == sha512-* ]] || fail 'unsupported integrity format'
-  integrity_b64="${integrity#sha512-}"
+# This fetches the pinned upstream release metadata from GitHub.
+opencode_release_metadata_json() {
+  curl -fsSL "https://api.github.com/repos/anomalyco/opencode/releases/tags/${OPENCODE_RELEASE_TAG}"
+}
 
-  if sha="$(printf '%s' "$integrity_b64" | base64 -d 2>/dev/null | od -An -tx1 -v | tr -d ' \n')" && [[ -n "$sha" ]]; then
-    :
-  else
-    sha="$(printf '%s' "$integrity_b64" | base64 -D 2>/dev/null | od -An -tx1 -v | tr -d ' \n')"
+# This extracts one asset field from the pinned upstream release metadata.
+opencode_release_asset_field() {
+  local metadata_json="$1"
+  local asset_name="$2"
+  local field_name="$3"
+  local compact_json asset_block
+  compact_json="$(printf '%s' "$metadata_json" | tr -d '\n')"
+  asset_block="$(printf '%s' "$compact_json" | sed -n "s/.*{\([^{}]*\"name\":\"${asset_name}\"[^{}]*\)}.*/\1/p")"
+  [[ -n "$asset_block" ]] || fail "failed to find release metadata for ${asset_name}"
+  printf '%s' "$asset_block" | sed -n "s/.*\"${field_name}\":\"\([^\"]*\)\".*/\1/p"
+}
+
+# This downloads and stages one official OpenCode binary into the upstream dist layout.
+opencode_stage_release_asset() {
+  local checkout_root="$1"
+  local metadata_json="$2"
+  local asset_name="$3"
+  local asset_url asset_sha stage_dir archive_path unpack_dir
+  asset_url="$(opencode_release_asset_field "$metadata_json" "$asset_name" browser_download_url)"
+  asset_sha="$(opencode_release_asset_field "$metadata_json" "$asset_name" digest)"
+  [[ -n "$asset_url" ]] || fail "failed to resolve download url for ${asset_name}"
+  [[ "$asset_sha" == sha256:* ]] || fail "failed to resolve sha256 digest for ${asset_name}"
+
+  stage_dir="$checkout_root/dist/$(opencode_release_asset_dist_dir "$asset_name")/bin"
+  archive_path="$checkout_root/dist/${asset_name}"
+  unpack_dir="$checkout_root/dist/.tmp-${asset_name%.tar.gz}"
+
+  # This recreates the staged output so each build starts from known release assets.
+  rm -rf "$stage_dir" "$unpack_dir"
+  mkdir -p "$stage_dir" "$unpack_dir"
+
+  curl -fsSL "$asset_url" -o "$archive_path"
+  printf '%s  %s\n' "${asset_sha#sha256:}" "$archive_path" | sha256sum -c - >/dev/null
+  tar -xzf "$archive_path" -C "$unpack_dir"
+  install -m 755 "$unpack_dir/opencode" "$stage_dir/opencode"
+  rm -rf "$unpack_dir" "$archive_path"
+}
+
+# This stages the official upstream Linux release binaries into the local build context.
+opencode_stage_release_binaries() {
+  local checkout_root="$1"
+  local metadata_json asset_name
+  metadata_json="$(opencode_release_metadata_json)"
+  while IFS= read -r asset_name; do
+    [[ -n "$asset_name" ]] || continue
+    opencode_stage_release_asset "$checkout_root" "$metadata_json" "$asset_name"
+  done < <(opencode_release_asset_names)
+}
+
+# This fetches the newest published upstream OpenCode release version.
+opencode_latest_release_version() {
+  local latest_json latest_tag
+  latest_json="$(curl -fsSL "https://api.github.com/repos/anomalyco/opencode/releases/latest" 2>/dev/null)" || return 1
+  latest_tag="$(printf '%s' "$latest_json" | tr -d '\n' | sed -n 's/.*"tag_name":"v\{0,1\}\([^"]*\)".*/\1/p')"
+  [[ -n "$latest_tag" ]] || return 1
+  printf '%s\n' "$latest_tag"
+}
+
+# This resolves the newest published Alpine tag line from Docker Hub.
+opencode_latest_alpine_version() {
+  local tags_json
+  tags_json="$(curl -fsSL 'https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100' 2>/dev/null)" || return 1
+  printf '%s' "$tags_json" | grep -Eo '"name":"[0-9]+\.[0-9]+"' | sed 's/"name":"//; s/"$//' | sort -V | sed -n '$p'
+}
+
+# This resolves the current Docker Hub digest for the pinned Alpine tag.
+opencode_current_alpine_digest() {
+  local tag_json tag_digest
+  tag_json="$(curl -fsSL "https://hub.docker.com/v2/repositories/library/alpine/tags/${OPENCODE_ALPINE_VERSION}" 2>/dev/null)" || return 1
+  tag_digest="$(printf '%s' "$tag_json" | tr -d '\n' | sed -n 's/.*"digest":"\([^"]*\)".*/\1/p')"
+  [[ -n "$tag_digest" ]] || return 1
+  printf '%s\n' "$tag_digest"
+}
+
+# This checks pinned versions and prints warnings without blocking a reproducible build.
+opencode_warn_if_pins_are_outdated() {
+  local latest_version latest_alpine_version current_alpine_digest
+  if latest_version="$(opencode_latest_release_version)" && [[ "$latest_version" != "$OPENCODE_VERSION" ]]; then
+    opencode_warn "newer OpenCode version available: ${latest_version}"
   fi
 
-  [[ -n "$sha" ]] || fail 'failed to decode OpenCode release integrity'
-  printf '%s\n%s\n' "$tarball" "$sha"
+  if latest_alpine_version="$(opencode_latest_alpine_version)" && [[ -n "$latest_alpine_version" && "$latest_alpine_version" != "$OPENCODE_ALPINE_VERSION" ]]; then
+    opencode_warn "newer Alpine version available: ${latest_alpine_version}"
+  fi
+
+  if current_alpine_digest="$(opencode_current_alpine_digest)" && [[ "$current_alpine_digest" != "$OPENCODE_ALPINE_DIGEST" ]]; then
+    opencode_warn "newer Alpine digest available for ${OPENCODE_ALPINE_VERSION}"
+  fi
 }
 
 # This resolves the uid that should own mounted workspace paths on the host.
