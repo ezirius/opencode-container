@@ -609,9 +609,9 @@ opencode_release_asset_field() {
 
         if (char == "}") {
           if (depth == 2 && capture) {
-            if (object ~ ("\"name\":\"" asset_name "\"")) {
+            if (object ~ ("\"name\"[[:space:]]*:[[:space:]]*\"" asset_name "\"")) {
               value = object
-              sub(".*\"" field_name "\":\"", "", value)
+              sub(".*\"" field_name "\"[[:space:]]*:[[:space:]]*\"", "", value)
               sub("\".*", "", value)
               if (value != object) {
                 found = 1
