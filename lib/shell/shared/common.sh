@@ -498,7 +498,6 @@ opencode_open_published_url_detached() {
     ' _ "$url" >/dev/null 2>&1 < /dev/null &
   fi
 }
-
 # This gathers a short state summary without failing the wrapper when diagnostics break.
 opencode_container_state_summary() {
   local container_name="$1"

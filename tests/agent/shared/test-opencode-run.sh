@@ -169,7 +169,6 @@ fi
 if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
   printf 'open-done %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
 fi
-
 exit "${OPENCODE_TEST_OPEN_EXIT_CODE:-0}"
 EOF
 
@@ -191,7 +190,6 @@ fi
 if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
   printf 'xdg-open-done %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
 fi
-
 exit "${OPENCODE_TEST_XDG_OPEN_EXIT_CODE:-0}"
 EOF
 
@@ -209,7 +207,6 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_GIO_LOG"
 if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
   printf 'gio-done %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
 fi
-
 exit "${OPENCODE_TEST_GIO_EXIT_CODE:-0}"
 EOF
 
