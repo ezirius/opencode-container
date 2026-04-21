@@ -277,6 +277,22 @@ opencode_workspace_server_port() {
   printf '%s\n' "$((4096 + offset))"
 }
 
+# This checks whether the current host shell is running on macOS.
+opencode_host_is_macos() {
+  [[ "$(uname -s)" == 'Darwin' ]]
+}
+
+# This checks whether the current host shell is running on Linux.
+opencode_host_is_linux() {
+  [[ "$(uname -s)" == 'Linux' ]]
+}
+
+# This builds the browser URL for the published workspace server port.
+opencode_workspace_published_url() {
+  local workspace="$1"
+  printf 'http://127.0.0.1:%s\n' "$(opencode_workspace_server_port "$workspace")"
+}
+
 # This lists direct-child project names from the configured development root.
 project_names_from_development_root() {
   local candidate project_name
@@ -435,6 +451,36 @@ opencode_wait_for_stable_running_container() {
     sleep 1
   done
   opencode_container_is_running "$container_name"
+}
+
+# This waits briefly for the published host URL to answer before opening a browser.
+opencode_wait_for_published_url() {
+  local url="$1"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if curl -fsS --connect-timeout 1 --max-time 1 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+# This opens the published host URL with the best available host browser launcher.
+opencode_open_published_url() {
+  local url="$1"
+
+  if opencode_host_is_macos; then
+    open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  if opencode_host_is_linux; then
+    if xdg-open "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    gio open "$url" >/dev/null 2>&1 || true
+  fi
 }
 
 # This gathers a short state summary without failing the wrapper when diagnostics break.
