@@ -296,6 +296,8 @@ EVENT_LOG="$TMP_DIR/event.log"
 printf '1\n2\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" >"$TMP_DIR/run.out" 2>"$TMP_DIR/run.err"
 
 assert_file_contains 'Selection:' "$TMP_DIR/run.err" 'run shows the interactive picker prompts'
+# This checks that the default path reaches podman run without tripping over an empty publish argument expansion.
+assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run reaches podman run on the default non-publish path'
 assert_file_contains '--name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run derives the workspace container name from the image suffix'
 assert_file_contains '--userns keep-id' "$PODMAN_LOG" 'run keeps the container root user aligned to the host user namespace'
 assert_file_contains '-w /workspace/project' "$PODMAN_LOG" 'run sets the project path as the working directory'

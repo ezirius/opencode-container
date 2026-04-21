@@ -80,18 +80,27 @@ rename_after_start=0
 # This creates the workspace container with the current image and fixed mount contract.
 create_workspace_container() {
   local target_container_name="$1"
-  local -a publish_args=()
 
   # This publishes the stable host port only when the current run asked for external access.
   if [[ "$publish_external" == '1' ]]; then
-    publish_args=(-p "$published_port:4096")
+    podman run -d \
+      --name "$target_container_name" \
+      --userns keep-id \
+      -w "$OPENCODE_CONTAINER_PROJECT" \
+      -p "$published_port:4096" \
+      -v "$host_home:$OPENCODE_CONTAINER_HOME" \
+      -v "$host_workspace:$OPENCODE_CONTAINER_WORKSPACE" \
+      -v "$OPENCODE_DEVELOPMENT_ROOT:$OPENCODE_CONTAINER_DEVELOPMENT" \
+      -v "$project_root:$OPENCODE_CONTAINER_PROJECT" \
+      "$image_name" \
+      serve --hostname 0.0.0.0 --port 4096
+    return
   fi
 
   podman run -d \
     --name "$target_container_name" \
     --userns keep-id \
     -w "$OPENCODE_CONTAINER_PROJECT" \
-    "${publish_args[@]}" \
     -v "$host_home:$OPENCODE_CONTAINER_HOME" \
     -v "$host_workspace:$OPENCODE_CONTAINER_WORKSPACE" \
     -v "$OPENCODE_DEVELOPMENT_ROOT:$OPENCODE_CONTAINER_DEVELOPMENT" \
