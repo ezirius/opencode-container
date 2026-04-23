@@ -53,34 +53,34 @@ set -euo pipefail
 
 printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 
-case "$1" in
+  case "$1" in
   images)
-    printf 'opencode-1.4.3-20260418-120000-123\n'
+    printf 'opencode-1.14.21-20260418-120000-123\n'
     ;;
   ps)
     if [[ "${2-}" == '-aq' ]]; then
       if [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'present' ]]; then
         printf 'stale-1\nstale-2\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'prefix-collision' ]]; then
-        printf 'opencode-alpha-prod-1.4.3-20260417-120000-123\n'
+        printf 'opencode-alpha-prod-1.14.21\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'old-version' ]]; then
-        printf 'opencode-alpha-1.4.2-20260417-120000-123\n'
+        printf 'opencode-alpha-1.14.20-20260417-120000-123\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name' ]]; then
-        printf 'opencode-alpha-1.4.3-20260418-120000-123\n'
+        printf 'opencode-alpha-1.14.21-20260418-120000-123\n'
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'running' ]]; then
       if [[ "$*" == *'next-'* ]]; then
         next_name="$(printf '%s' "$*" | sed -n 's/.*name=^\(.*\)\$$/\1/p' | sed 's/\\\././g')"
         printf '%s\n' "$next_name"
       else
-        printf 'opencode-alpha-1.4.3-20260418-120000-123\n'
+        printf 'opencode-alpha-1.14.21-20260418-120000-123\n'
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'dies-before-attach' ]]; then
       if [[ "$*" == *'next-'* && ! -f "${OPENCODE_TEST_PODMAN_LOG}.next-running-once" ]]; then
         : >"${OPENCODE_TEST_PODMAN_LOG}.next-running-once"
-        printf 'opencode-alpha-1.4.3-20260418-120000-123-next-999\n'
+        printf 'opencode-alpha-1.14.21-20260418-120000-123-next-999\n'
       elif [[ "$*" != *'next-'* ]]; then
-        printf 'opencode-alpha-1.4.3-20260418-120000-123\n'
+        printf 'opencode-alpha-1.14.21-20260418-120000-123\n'
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'stopped' ]]; then
       if [[ -f "${OPENCODE_TEST_PODMAN_LOG}.started" || -f "${OPENCODE_TEST_PODMAN_LOG}.ran" ]]; then
@@ -88,7 +88,7 @@ case "$1" in
           next_name="$(printf '%s' "$*" | sed -n 's/.*name=^\(.*\)\$$/\1/p' | sed 's/\\\././g')"
           printf '%s\n' "$next_name"
         else
-          printf 'opencode-alpha-1.4.3-20260418-120000-123\n'
+          printf 'opencode-alpha-1.14.21-20260418-120000-123\n'
         fi
       fi
     fi
@@ -255,15 +255,14 @@ EOF
 chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/id" "$FAKE_BIN/chown" "$FAKE_BIN/uname" "$FAKE_BIN/open" "$FAKE_BIN/xdg-open" "$FAKE_BIN/gio" "$FAKE_BIN/curl" "$FAKE_BIN/sleep"
 
 cat >"$CONFIG_PATH" <<EOF
-# OpenCode runtime and build configuration.
+# OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_VERSION="1.4.3"
-OPENCODE_RELEASE_TAG="v1.4.3"
+OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
+OPENCODE_VERSION="1.14.21"
+OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
-OPENCODE_ALPINE_VERSION="3.23"
-OPENCODE_ALPINE_DIGEST="sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11"
 OPENCODE_WORKSPACES="alpha:10000 alpha-prod:15000 beta:20000"
 OPENCODE_CONTAINER_HOME="/root"
 OPENCODE_CONTAINER_WORKSPACE="/workspace/general"
@@ -272,7 +271,7 @@ OPENCODE_CONTAINER_PROJECT="/workspace/project"
 OPENCODE_HOST_HOME_DIRNAME="opencode-home"
 OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
 OPENCODE_DEFAULT_COMMAND="opencode"
-OPENCODE_SHELL_COMMAND="nu"
+OPENCODE_SHELL_COMMAND="sh"
 EOF
 
 mkdir -p "$TMP_DIR/development/alpha" "$TMP_DIR/development/beta"
@@ -294,8 +293,11 @@ printf '1\n2\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" 
 
 assert_file_contains 'Selection:' "$TMP_DIR/run.err" 'run shows the interactive picker prompts'
 # This checks that the default path reaches podman run without tripping over an empty publish argument expansion.
-assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run reaches podman run on the default non-publish path'
-assert_file_contains '--name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run derives the workspace container name from the image suffix'
+assert_file_contains 'images --sort created --format {{.Repository}}' "$PODMAN_LOG" 'run looks up the newest locally built image before starting a workspace'
+assert_file_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run reaches podman run on the default non-publish path'
+assert_file_contains '--name opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run derives the workspace container name from the built image suffix'
+assert_file_not_contains '--arch arm64' "$PODMAN_LOG" 'run does not pass a separate runtime arch flag when using the built local image'
+assert_file_contains 'opencode-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run uses the newest locally built OpenCode image'
 assert_file_contains '--userns keep-id' "$PODMAN_LOG" 'run keeps the container root user aligned to the host user namespace'
 assert_file_contains '-w /workspace/project' "$PODMAN_LOG" 'run sets the project path as the working directory'
 assert_file_not_contains '-p 14096:4096' "$PODMAN_LOG" 'run does not publish the stable workspace server port unless --publish is requested'
@@ -304,7 +306,7 @@ assert_file_contains "$TMP_DIR/base/alpha/opencode-general:/workspace/general" "
 assert_file_contains "$TMP_DIR/development:/workspace/development" "$PODMAN_LOG" 'run mounts the development root'
 assert_file_contains "$TMP_DIR/development/beta:/workspace/project" "$PODMAN_LOG" 'run mounts the selected project at the fixed project path'
 assert_file_contains 'serve --hostname 0.0.0.0 --port 4096' "$PODMAN_LOG" 'run starts the long-lived upstream server mode inside the workspace container'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run attaches to the long-lived OpenCode server after the container is ready'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run attaches to the long-lived OpenCode server after the container is ready'
 test ! -s "$OPEN_LOG" || fail 'run does not open a browser on macOS unless --publish is requested'
 test ! -s "$XDG_OPEN_LOG" || fail 'run does not open a browser on Linux unless --publish is requested'
 test ! -s "$GIO_LOG" || fail 'run does not fall back to gio on Linux unless --publish is requested'
@@ -313,11 +315,11 @@ test ! -s "$CURL_LOG" || fail 'run does not probe the published browser URL unle
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/publish.out" 2>"$TMP_DIR/publish.err"
 assert_file_contains '-p 14096:4096' "$PODMAN_LOG" 'run publishes the stable workspace server port when --publish is requested'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches to the long-lived OpenCode server when --publish is requested'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches to the long-lived OpenCode server when --publish is requested'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='old-version' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/version-bump.out" 2>"$TMP_DIR/version-bump.err"
-assert_file_contains 'rm -f opencode-alpha-1.4.2-20260417-120000-123' "$PODMAN_LOG" 'run removes an older-version workspace container after the new container proves stable'
+assert_file_contains 'rm -f opencode-alpha-1.14.20-20260417-120000-123' "$PODMAN_LOG" 'run removes an older-version workspace container after the new container proves stable'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='prefix-collision' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/prefix-collision.out" 2>"$TMP_DIR/prefix-collision.err"
@@ -326,49 +328,49 @@ assert_file_contains 'ps -aq --format {{.Names}} --filter name=^opencode-alpha-[
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.ran" "${PODMAN_LOG}.started"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" OPENCODE_TEST_RUNNING_MODE='stopped' OPENCODE_TEST_START_FAIL='1' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/start-fail.out" 2>"$TMP_DIR/start-fail.err"
-assert_file_contains 'start opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run first attempts to start a stopped exact-match container'
-assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run recovers from a failed start by recreating the canonical workspace container'
+assert_file_contains 'start opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run first attempts to start a stopped exact-match container'
+assert_file_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run recovers from a failed start by recreating the canonical workspace container'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/alpha" bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/project-change-success.out" 2>"$TMP_DIR/project-change-success.err"
-assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123-next-' "$PODMAN_LOG" 'run stages a replacement container under a temporary name when the project mount changes'
-assert_file_contains 'rename opencode-alpha-1.4.3-20260418-120000-123-next-' "$PODMAN_LOG" 'run renames a healthy staged replacement into the canonical workspace container name'
-assert_file_contains 'rm -f opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run removes the old canonical workspace container only after the staged replacement is ready'
+assert_file_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123-next-' "$PODMAN_LOG" 'run stages a replacement container under a temporary name when the project mount changes'
+assert_file_contains 'rename opencode-alpha-1.14.21-20260418-120000-123-next-' "$PODMAN_LOG" 'run renames a healthy staged replacement into the canonical workspace container name'
+assert_file_contains 'rm -f opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run removes the old canonical workspace container only after the staged replacement is ready'
 
 : >"$PODMAN_LOG"
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/alpha" OPENCODE_TEST_RUN_FAIL='1' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/project-change-fail.out" 2>"$TMP_DIR/project-change-fail.err"; then
   fail 'run should fail when replacement creation fails during a project change'
 fi
-assert_file_not_contains 'rm -f opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run keeps the existing exact-match container until the replacement project container is proven viable'
+assert_file_not_contains 'rm -f opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run keeps the existing exact-match container until the replacement project container is proven viable'
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.next-running-once"
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/alpha" OPENCODE_TEST_RUNNING_MODE='dies-before-attach' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/project-change-dies.out" 2>"$TMP_DIR/project-change-dies.err"; then
   fail 'run should fail when a staged replacement dies before attach during a project change'
 fi
-assert_file_not_contains 'rm -f opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run keeps the existing exact-match container when a staged replacement dies before attach'
+assert_file_not_contains 'rm -f opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run keeps the existing exact-match container when a staged replacement dies before attach'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse.out" 2>"$TMP_DIR/reuse.err"
-assert_file_not_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123' "$PODMAN_LOG" 'run reuses an exact matching container when the project mount already matches'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches to the long-lived server after reusing an exact matching container'
+assert_file_not_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123' "$PODMAN_LOG" 'run reuses an exact matching container when the project mount already matches'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches to the long-lived server after reusing an exact matching container'
 
 : >"$PODMAN_LOG"
 : >"$OPEN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse-closed.out" 2>"$TMP_DIR/reuse-closed.err"
-assert_file_not_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123-next-' "$PODMAN_LOG" 'run reuses an exact matching non-published container when --publish is not requested'
+assert_file_not_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123-next-' "$PODMAN_LOG" 'run reuses an exact matching non-published container when --publish is not requested'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/reuse-publish-mismatch.out" 2>"$TMP_DIR/reuse-publish-mismatch.err"
-assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123-next-' "$PODMAN_LOG" 'run replaces an exact matching container when --publish is requested and the existing container has no published host port'
+assert_file_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123-next-' "$PODMAN_LOG" 'run replaces an exact matching container when --publish is requested and the existing container has no published host port'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" OPENCODE_TEST_PUBLISHED_PORT='14096' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse-unpublish-mismatch.out" 2>"$TMP_DIR/reuse-unpublish-mismatch.err"
-assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123-next-' "$PODMAN_LOG" 'run replaces an exact matching container when the existing container still publishes a host port but --publish was not requested'
+assert_file_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123-next-' "$PODMAN_LOG" 'run replaces an exact matching container when the existing container still publishes a host port but --publish was not requested'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name' OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/beta" OPENCODE_TEST_PUBLISHED_PORT='15000' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse-wrong-port-mismatch.out" 2>"$TMP_DIR/reuse-wrong-port-mismatch.err"
-assert_file_contains 'run -d --name opencode-alpha-1.4.3-20260418-120000-123-next-' "$PODMAN_LOG" 'run replaces an exact matching container when the existing container publishes the server on a different host port but --publish was not requested'
+assert_file_contains 'run -d --name opencode-alpha-1.14.21-20260418-120000-123-next-' "$PODMAN_LOG" 'run replaces an exact matching container when the existing container publishes the server on a different host port but --publish was not requested'
 
 : >"$PODMAN_LOG"
 : >"$OPEN_LOG"
@@ -383,8 +385,8 @@ wait_for_file_contains 'http://127.0.0.1:14096' "$OPEN_LOG" 'run opens the publi
 assert_equals 'http://127.0.0.1:14096' "$(tr -d '\n' < "$OPEN_LOG")" 'run passes the published browser URL as the open command argument on Darwin hosts'
 wait_for_file_contains 'open-start http://127.0.0.1:14096' "$EVENT_LOG" 'run starts browser open after probing the published URL on Darwin hosts'
 wait_for_file_contains 'open-done http://127.0.0.1:14096' "$EVENT_LOG" 'run finishes browser open on Darwin hosts'
-wait_for_file_contains 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach alongside browser open on Darwin hosts'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after opening the browser on Darwin hosts'
+wait_for_file_contains 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach alongside browser open on Darwin hosts'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after opening the browser on Darwin hosts'
 
 : >"$PODMAN_LOG"
 : >"$OPEN_LOG"
@@ -395,8 +397,8 @@ rm -f "${CURL_LOG}.attempts"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_EVENT_LOG="$EVENT_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Darwin' OPENCODE_TEST_OPEN_BLOCK='1' OPENCODE_TEST_DISABLE_SLEEP='1' bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/macos-open-blocking.out" 2>"$TMP_DIR/macos-open-blocking.err"
 wait_for_file_contains 'open-start http://127.0.0.1:14096' "$EVENT_LOG" 'run starts the blocking Darwin opener'
 wait_for_file_contains 'open-done http://127.0.0.1:14096' "$EVENT_LOG" 'run lets the blocking Darwin opener finish eventually'
-wait_for_file_contains 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run reaches attach during the blocking Darwin opener case'
-macos_attach_line="$(grep -n 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" | cut -d: -f1 | head -n 1)"
+wait_for_file_contains 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run reaches attach during the blocking Darwin opener case'
+macos_attach_line="$(grep -n 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" | cut -d: -f1 | head -n 1)"
 macos_open_done_line="$(grep -n 'open-done http://127.0.0.1:14096' "$EVENT_LOG" | cut -d: -f1 | head -n 1)"
 (( macos_attach_line < macos_open_done_line )) || fail 'run starts attach before the blocking Darwin opener finishes'
 
@@ -407,7 +409,7 @@ rm -f "${CURL_LOG}.attempts"
 # This checks that a failed browser launch does not break macOS attach.
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_UNAME='Darwin' OPENCODE_TEST_OPEN_EXIT_CODE='1' bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/macos-open-fail.out" 2>"$TMP_DIR/macos-open-fail.err"
 wait_for_file_contains 'http://127.0.0.1:14096' "$OPEN_LOG" 'run still attempts to open the published browser URL on Darwin hosts when open fails'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after open fails on Darwin hosts'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after open fails on Darwin hosts'
 
 : >"$PODMAN_LOG"
 : >"$OPEN_LOG"
@@ -417,7 +419,7 @@ rm -f "${CURL_LOG}.attempts"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='99' OPENCODE_TEST_UNAME='Darwin' bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/macos-not-ready.out" 2>"$TMP_DIR/macos-not-ready.err"
 assert_file_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run keeps probing the published browser URL when it is not ready on Darwin hosts'
 test ! -s "$OPEN_LOG" || fail 'run does not open the browser before the published URL becomes ready on Darwin hosts'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when the published browser URL never becomes ready on Darwin hosts'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when the published browser URL never becomes ready on Darwin hosts'
 
 : >"$PODMAN_LOG"
 : >"$XDG_OPEN_LOG"
@@ -432,8 +434,8 @@ wait_for_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run opens the p
 test ! -s "$GIO_LOG" || fail 'run does not fall back to gio when xdg-open succeeds on Linux hosts'
 wait_for_file_contains 'xdg-open-start http://127.0.0.1:14096' "$EVENT_LOG" 'run starts xdg-open after probing the published URL on Linux hosts'
 wait_for_file_contains 'xdg-open-done http://127.0.0.1:14096' "$EVENT_LOG" 'run finishes xdg-open on Linux hosts'
-wait_for_file_contains 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach alongside xdg-open on Linux hosts'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after xdg-open on Linux hosts'
+wait_for_file_contains 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach alongside xdg-open on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after xdg-open on Linux hosts'
 
 : >"$PODMAN_LOG"
 : >"$XDG_OPEN_LOG"
@@ -445,8 +447,8 @@ rm -f "${CURL_LOG}.attempts"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_EVENT_LOG="$EVENT_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Linux' OPENCODE_TEST_XDG_OPEN_BLOCK='1' OPENCODE_TEST_DISABLE_SLEEP='1' bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/linux-xdg-open-blocking.out" 2>"$TMP_DIR/linux-xdg-open-blocking.err"
 wait_for_file_contains 'xdg-open-start http://127.0.0.1:14096' "$EVENT_LOG" 'run starts the blocking Linux opener'
 wait_for_file_contains 'xdg-open-done http://127.0.0.1:14096' "$EVENT_LOG" 'run lets the blocking Linux opener finish eventually'
-wait_for_file_contains 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run reaches attach during the blocking Linux opener case'
-linux_attach_line="$(grep -n 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" | cut -d: -f1 | head -n 1)"
+wait_for_file_contains 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run reaches attach during the blocking Linux opener case'
+linux_attach_line="$(grep -n 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" | cut -d: -f1 | head -n 1)"
 linux_open_done_line="$(grep -n 'xdg-open-done http://127.0.0.1:14096' "$EVENT_LOG" | cut -d: -f1 | head -n 1)"
 (( linux_attach_line < linux_open_done_line )) || fail 'run starts attach before the blocking Linux opener finishes'
 
@@ -462,8 +464,8 @@ wait_for_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run first tries
 wait_for_file_contains 'open http://127.0.0.1:14096' "$GIO_LOG" 'run falls back to gio open for the published browser URL on Linux hosts'
 wait_for_file_contains 'xdg-open-start http://127.0.0.1:14096' "$EVENT_LOG" 'run first tries xdg-open before Linux fallback'
 wait_for_file_contains 'gio-start open http://127.0.0.1:14096' "$EVENT_LOG" 'run falls back to gio after xdg-open on Linux hosts'
-wait_for_file_contains 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach after gio fallback on Linux hosts'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after gio fallback on Linux hosts'
+wait_for_file_contains 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach after gio fallback on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after gio fallback on Linux hosts'
 
 : >"$PODMAN_LOG"
 : >"$XDG_OPEN_LOG"
@@ -477,8 +479,8 @@ wait_for_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run still tries
 wait_for_file_contains 'open http://127.0.0.1:14096' "$GIO_LOG" 'run falls back to gio open when xdg-open fails on Linux hosts'
 wait_for_file_contains 'xdg-open-start http://127.0.0.1:14096' "$EVENT_LOG" 'run still tries xdg-open before Linux fallback when xdg-open fails'
 wait_for_file_contains 'gio-start open http://127.0.0.1:14096' "$EVENT_LOG" 'run falls back to gio after failed xdg-open on Linux hosts'
-wait_for_file_contains 'attach exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach after failed xdg-open fallback on Linux hosts'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after failed xdg-open fallback on Linux hosts'
+wait_for_file_contains 'attach exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$EVENT_LOG" 'run still reaches attach after failed xdg-open fallback on Linux hosts'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches after failed xdg-open fallback on Linux hosts'
 
 : >"$PODMAN_LOG"
 : >"$XDG_OPEN_LOG"
@@ -489,7 +491,7 @@ rm -f "${CURL_LOG}.attempts"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_CURL_FAILS_BEFORE_SUCCESS='1' OPENCODE_TEST_UNAME='Linux' OPENCODE_TEST_XDG_OPEN_EXIT_CODE='127' OPENCODE_TEST_GIO_EXIT_CODE='1' bash "$ROOT/scripts/agent/shared/opencode-run" --publish alpha beta >"$TMP_DIR/linux-open-fail.out" 2>"$TMP_DIR/linux-open-fail.err"
 wait_for_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run still attempts xdg-open on Linux hosts when all browser launchers fail'
 wait_for_file_contains 'open http://127.0.0.1:14096' "$GIO_LOG" 'run still attempts gio open on Linux hosts when xdg-open is unavailable'
-assert_file_contains 'exec -i opencode-alpha-1.4.3-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when Linux browser launchers fail'
+assert_file_contains 'exec -i opencode-alpha-1.14.21-20260418-120000-123 opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run still attaches when Linux browser launchers fail'
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" gamma beta >"$TMP_DIR/unconfigured.out" 2>"$TMP_DIR/unconfigured.err"; then
   fail 'run should reject a workspace that is not configured'

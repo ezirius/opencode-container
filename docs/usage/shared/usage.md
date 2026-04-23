@@ -1,12 +1,10 @@
 # OpenCode Wrapper Usage
 
-This repo builds and runs a local OpenCode container with all repo-owned settings kept in `config/agent/shared/opencode-settings-shared.conf`.
+This repo builds and runs a thin local image derived from the official upstream container with all repo-owned settings kept in `config/agent/shared/opencode-settings-shared.conf`.
 
 The shared scripts are intended to work on both macOS and Linux hosts.
 
-The official upstream image is a minimal CLI container. The paths and lifecycle documented here are this wrapper repo's convention.
-
-For local builds, this wrapper consumes pinned public upstream musl CLI assets and stages them into local build-context paths for the Alpine `Containerfile`.
+The official upstream container is the base image. The paths and lifecycle documented here are this wrapper repo's convention.
 
 ## Commands
 
@@ -38,17 +36,12 @@ The default in-container working directory is `/workspace/project`.
 - When passed `--publish`, `opencode-run` publishes host port `4096 + workspace offset`, so workspace `ezirius:10000` maps to host port `14096`.
 - When passed `--publish`, `opencode-run` also opens the published server URL in the default browser on macOS and Linux.
 
-## Build Inputs
+## Runtime Pin
 
-Pinned public upstream musl CLI assets come from shared config, for example:
-
-- `opencode-linux-x64-baseline-musl.tar.gz`
-- `opencode-linux-arm64-musl.tar.gz`
-
-Those public asset names are staged into local build-context paths:
-
-- `dist/opencode-linux-x64-baseline-musl/bin/opencode`
-- `dist/opencode-linux-arm64-musl/bin/opencode`
+- Upstream base image: `ghcr.io/anomalyco/opencode:1.14.21`
+- Architecture: `arm64`
+- Local `Containerfile`: thin wrapper over the official upstream container
+- Added packages: `git`, `bash`, `nushell`
 
 ## Workspace Safety
 

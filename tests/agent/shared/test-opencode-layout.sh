@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# This test checks that the repo keeps the Hermes-style layout and command surface.
+# This test checks that the repo keeps the derived-image wrapper layout and command surface.
 
 # This finds the repo root so every path check runs from the same place.
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -46,10 +46,9 @@ test -f "$ROOT/tests/agent/shared/test-opencode-run.sh"
 test -f "$ROOT/tests/agent/shared/test-opencode-shell.sh"
 
 # These checks make sure the config keeps the concrete OpenCode path contract.
-grep -q '^OPENCODE_ALPINE_VERSION="' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
-grep -q '^OPENCODE_ALPINE_DIGEST="sha256:' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
-grep -q '^OPENCODE_RELEASE_LINUX_X64_ASSET="opencode-linux-x64-baseline-musl.tar.gz"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
-grep -q '^OPENCODE_RELEASE_LINUX_ARM64_ASSET="opencode-linux-arm64-musl.tar.gz"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
+grep -q '^OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
+grep -q '^OPENCODE_VERSION="1.14.21"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
+grep -q '^OPENCODE_TARGET_ARCH="arm64"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_HOME="/root"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_WORKSPACE="/workspace/general"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
@@ -57,13 +56,15 @@ grep -q '^OPENCODE_CONTAINER_PROJECT="/workspace/project"$' "$ROOT/config/agent/
 grep -q '^OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_SHELL_COMMAND="nu"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 
-# These checks make sure the containerfile follows the upstream Alpine shape with wrapper additions.
-grep -q '^FROM alpine:' "$ROOT/config/containers/shared/Containerfile"
-grep -q '^COPY dist/opencode-linux-x64-baseline-musl/bin/opencode /usr/local/bin/opencode$' "$ROOT/config/containers/shared/Containerfile"
-grep -q '^COPY dist/opencode-linux-arm64-musl/bin/opencode /usr/local/bin/opencode$' "$ROOT/config/containers/shared/Containerfile"
-grep -q 'apk add .*git' "$ROOT/config/containers/shared/Containerfile"
-grep -q 'apk add .*bash' "$ROOT/config/containers/shared/Containerfile"
-grep -q 'apk add .*nushell' "$ROOT/config/containers/shared/Containerfile"
+# These checks make sure the containerfile stays a thin wrapper around the official image.
+grep -q '^FROM ghcr.io/anomalyco/opencode:1.14.21$' "$ROOT/config/containers/shared/Containerfile"
+grep -q 'apk add --no-cache .*git' "$ROOT/config/containers/shared/Containerfile"
+grep -q 'apk add --no-cache .*bash' "$ROOT/config/containers/shared/Containerfile"
+grep -q 'apk add --no-cache .*nushell' "$ROOT/config/containers/shared/Containerfile"
+grep -q '^WORKDIR /workspace/project$' "$ROOT/config/containers/shared/Containerfile"
+grep -q '^ENTRYPOINT \["opencode"\]$' "$ROOT/config/containers/shared/Containerfile"
+! grep -q '^ARG OPENCODE_ALPINE_VERSION' "$ROOT/config/containers/shared/Containerfile"
+! grep -q '^COPY dist/' "$ROOT/config/containers/shared/Containerfile"
 ! grep -q '^USER ' "$ROOT/config/containers/shared/Containerfile"
 
 # These checks make sure docs and script headers describe the current behavior.
@@ -72,9 +73,9 @@ grep -q '`scripts/agent/shared/opencode-run`' "$ROOT/README.md"
 grep -q '`scripts/agent/shared/opencode-shell`' "$ROOT/README.md"
 grep -q '/root' "$ROOT/README.md"
 grep -q 'Container user: `root`' "$ROOT/README.md"
-grep -q 'wrapper convention' "$ROOT/README.md"
-grep -q 'opencode-linux-x64-baseline-musl.tar.gz' "$ROOT/README.md"
-grep -q 'opencode-linux-arm64-musl.tar.gz' "$ROOT/README.md"
+grep -q 'official upstream container' "$ROOT/README.md"
+grep -q '1.14.21' "$ROOT/README.md"
+grep -q 'arm64' "$ROOT/README.md"
 grep -q '/workspace/general' "$ROOT/docs/usage/shared/usage.md"
 grep -q '/workspace/development' "$ROOT/docs/usage/shared/usage.md"
 grep -q '/workspace/project' "$ROOT/docs/usage/shared/usage.md"
@@ -82,14 +83,15 @@ grep -q '/root' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'When passed `--publish`, `opencode-run` publishes host port `4096 + workspace offset`' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'serve --hostname 0.0.0.0 --port 4096' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'When passed `--publish`, `opencode-run` also opens the published server URL in the default browser on macOS and Linux\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'public upstream musl CLI assets' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'dist/opencode-linux-x64-baseline-musl/bin/opencode' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'dist/opencode-linux-arm64-musl/bin/opencode' "$ROOT/docs/usage/shared/usage.md"
+grep -q 'official upstream container' "$ROOT/docs/usage/shared/usage.md"
+grep -q 'arm64' "$ROOT/docs/usage/shared/usage.md"
+grep -q '`nu`' "$ROOT/docs/usage/shared/usage.md"
+grep -q '`scripts/agent/shared/opencode-build`' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'staged `-next-<pid>` replacement container' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'wrapper convention' "$ROOT/docs/usage/shared/architecture.md"
-grep -q 'official upstream image is a minimal CLI container' "$ROOT/docs/usage/shared/architecture.md"
-grep -q 'does not infer public asset names from upstream Dockerfile internals' "$ROOT/docs/usage/shared/architecture.md"
+grep -q 'official upstream container' "$ROOT/docs/usage/shared/architecture.md"
+grep -q 'thin local `Containerfile`' "$ROOT/docs/usage/shared/architecture.md"
 grep -q '`nu`' "$ROOT/docs/usage/shared/architecture.md"
+grep -q 'git' "$ROOT/docs/usage/shared/architecture.md"
 grep -q '^# This file holds the shared shell helpers used by the wrapper scripts\.$' "$ROOT/lib/shell/shared/common.sh"
 grep -q '^# This script builds a fresh OpenCode image from the saved repo settings\.$' "$ROOT/scripts/agent/shared/opencode-build"
 grep -q '^# This script starts one saved workspace container and opens OpenCode inside it\.$' "$ROOT/scripts/agent/shared/opencode-run"

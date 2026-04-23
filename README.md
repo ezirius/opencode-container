@@ -1,10 +1,8 @@
 # OpenCode Wrapper Repo
 
-This repository builds and runs a local OpenCode container with repository-owned configuration, wrapper scripts, shell helpers, and shell tests.
+This repository builds and runs a thin local image derived from the official upstream container with repository-owned configuration, wrapper scripts, shell helpers, and shell tests.
 
-The official upstream image is a minimal CLI container. This repo adds a documented wrapper convention for stable mounts, project selection, and one long-lived container per workspace.
-
-For local builds, this wrapper consumes pinned public upstream musl CLI assets instead of inferring public download names from upstream Dockerfile internals.
+The wrapper keeps a stable mount contract, project selection, and one long-lived container per workspace while staying close to the native official upstream container.
 
 ## Layout
 
@@ -45,16 +43,13 @@ Repo-owned runtime and build settings live in:
 config/agent/shared/opencode-settings-shared.conf
 ```
 
-Container build configuration lives in:
+The thin local `Containerfile` lives in:
 
 ```text
 config/containers/shared/Containerfile
 ```
 
-Pinned public musl CLI assets live in config too, for example:
-
-- `opencode-linux-x64-baseline-musl.tar.gz`
-- `opencode-linux-arm64-musl.tar.gz`
+The wrapper pins the official upstream container base to version `1.14.21` on `arm64`.
 
 ## Runtime Contract
 

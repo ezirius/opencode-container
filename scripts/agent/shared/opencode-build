@@ -17,24 +17,12 @@ fi
 # This stops the build unless the checkout satisfies the branch policy for image changes.
 opencode_require_build_ready_checkout "$ROOT"
 
-# This warns about newer pinned values before the local build stages the official binaries.
-opencode_warn_if_pins_are_outdated
-
-# This stages the official Linux release binaries into the upstream dist layout.
-opencode_stage_release_binaries "$ROOT"
-
 # This makes a unique image name so each successful build can be found later.
 printf -v build_suffix '%03d' "$(( $$ % 1000 ))"
 timestamp="$(/bin/date +"%Y%m%d-%H%M%S")-$build_suffix"
 image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp"
 
 podman build \
-  --build-arg OPENCODE_ALPINE_VERSION="$OPENCODE_ALPINE_VERSION" \
-  --build-arg OPENCODE_ALPINE_DIGEST="$OPENCODE_ALPINE_DIGEST" \
-  --build-arg OPENCODE_CONTAINER_HOME="$OPENCODE_CONTAINER_HOME" \
-  --build-arg OPENCODE_CONTAINER_WORKSPACE="$OPENCODE_CONTAINER_WORKSPACE" \
-  --build-arg OPENCODE_CONTAINER_DEVELOPMENT="$OPENCODE_CONTAINER_DEVELOPMENT" \
-  --build-arg OPENCODE_CONTAINER_PROJECT="$OPENCODE_CONTAINER_PROJECT" \
   -f "$ROOT/config/containers/shared/Containerfile" \
   -t "$image_name" \
   "$ROOT"
