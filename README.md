@@ -61,8 +61,8 @@ The wrapper pins the official upstream container base to version `1.14.21` on `a
 - Default in-container working directory: `/workspace/project`
 - Default interactive shell: `nu`
 - Internal upstream server port: `4096`
-- External publish flag: `scripts/agent/shared/opencode-run --publish`
-- Published host port mapping: `4096 + workspace offset` when `--publish` is used
+- Port opt-out flag: `scripts/agent/shared/opencode-run --no-ports`
+- Published host port mapping: `4096 + workspace offset` by default unless `--no-ports` is used
 - Interactive attach flow: `opencode attach http://127.0.0.1:4096`
 
 ## Tests

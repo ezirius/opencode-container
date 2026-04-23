@@ -12,13 +12,13 @@ source "$ROOT/lib/shell/shared/common.sh"
 # This loads the saved workspace list before the script picks or validates a workspace.
 opencode_load_workspaces
 
-publish_external=0
+publish_external=1
 
 # This parses the small wrapper flag surface before positional workspace arguments.
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --publish)
-      publish_external=1
+    --no-ports)
+      publish_external=0
       shift
       ;;
     --)
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $# -gt 2 ]]; then
-  printf 'This script takes an optional --publish flag plus zero, one, or two arguments: [workspace] [project].\n' >&2
+  printf 'This script takes an optional --no-ports flag plus zero, one, or two arguments: [workspace] [project].\n' >&2
   exit 1
 fi
 

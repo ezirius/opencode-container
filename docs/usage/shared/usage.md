@@ -33,8 +33,9 @@ The default in-container working directory is `/workspace/project`.
 - `opencode-shell` opens `nu` by default.
 - `opencode-run` starts `serve --hostname 0.0.0.0 --port 4096` inside the long-lived workspace container.
 - `opencode-run` then opens `opencode attach http://127.0.0.1:4096` inside that same container so the interactive session uses the long-lived server.
-- When passed `--publish`, `opencode-run` publishes host port `4096 + workspace offset`, so workspace `ezirius:10000` maps to host port `14096`.
-- When passed `--publish`, `opencode-run` also opens the published server URL in the default browser on macOS and Linux.
+- By default, `opencode-run` publishes host port `4096 + workspace offset`, so workspace `ezirius:10000` maps to host port `14096`.
+- By default, `opencode-run` also opens the published server URL in the default browser on macOS and Linux.
+- When passed `--no-ports`, `opencode-run` skips both the published host port and browser open behavior.
 
 ## Runtime Pin
 
