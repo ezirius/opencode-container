@@ -17,14 +17,27 @@ fi
 # This stops the build unless the checkout satisfies the branch policy for image changes.
 opencode_require_build_ready_checkout "$ROOT"
 
-# This makes a unique image name so each successful build can be found later.
-printf -v build_suffix '%03d' "$(( $$ % 1000 ))"
-timestamp="$(/bin/date +"%Y%m%d-%H%M%S")-$build_suffix"
-image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp"
+# This builds a timestamped temporary tag before renaming it with the full image id.
+timestamp="$(/bin/date +"%Y%m%d-%H%M%S")"
+temporary_image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp-$$"
+
+# This removes the temporary image tag after success and on post-build failures.
+cleanup_temporary_image() {
+  podman rmi "$temporary_image_name" >/dev/null 2>&1 || true
+}
+
+trap cleanup_temporary_image EXIT
 
 podman build \
   -f "$ROOT/config/containers/shared/Containerfile" \
-  -t "$image_name" \
+  -t "$temporary_image_name" \
   "$ROOT"
+
+# This resolves the built image id and folds it into the final local image name.
+image_id="$(podman image inspect --format '{{.Id}}' "$temporary_image_name")"
+image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp-${image_id#sha256:}"
+podman tag "$temporary_image_name" "$image_name"
+trap - EXIT
+cleanup_temporary_image
 
 printf 'Built image: %s\n' "$image_name"

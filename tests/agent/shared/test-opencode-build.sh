@@ -10,18 +10,37 @@ source "$ROOT/tests/agent/shared/test-asserts.sh"
 
 TMP_DIR="$(mktemp -d)"
 CONFIG_PATH="$ROOT/config/agent/shared/opencode-settings-shared.conf"
-CONFIG_BACKUP="$TMP_DIR/opencode-settings-shared.conf.bak"
-cp "$CONFIG_PATH" "$CONFIG_BACKUP"
-trap 'cp "$CONFIG_BACKUP" "$CONFIG_PATH"; rm -rf "$TMP_DIR"' EXIT
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# This loads the saved config values so test expectations track the real naming inputs.
+# shellcheck disable=SC1090
+source "$CONFIG_PATH"
+
+# This escapes config values before using them inside shell regex assertions.
+escape_regex() {
+  printf '%s\n' "$1" | sed 's/[][(){}.^$*+?|\\]/\\&/g'
+}
 
 FAKE_BIN="$TMP_DIR/fake-bin"
 mkdir -p "$FAKE_BIN"
 
-# This fake Podman records the build command instead of building a real image.
+# This fake Podman records build and inspect commands without using a real image store.
 cat >"$FAKE_BIN/podman" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
+
+printf '%q ' "$@" >>"$OPENCODE_TEST_PODMAN_LOG"
+printf '\n' >>"$OPENCODE_TEST_PODMAN_LOG"
+
+case "${1-} ${2-} ${3-}" in
+  'image inspect --format')
+    printf 'sha256:%064d\n' 7
+    ;;
+esac
+
+if [[ "${1-}" == 'tag' && "${OPENCODE_TEST_PODMAN_TAG_FAIL:-0}" == '1' ]]; then
+  exit 1
+fi
 EOF
 
 # This fake git lets the test choose between branch policy states.
@@ -124,14 +143,36 @@ chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/git"
 
 PODMAN_LOG="$TMP_DIR/podman.log"
 
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" unexpected >/dev/null 2>"$TMP_DIR/args.err"; then
+  fail 'build should reject unexpected arguments'
+fi
+assert_file_contains 'This script takes no arguments.' "$TMP_DIR/args.err" 'build rejects unexpected arguments clearly'
+
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build.out" 2>"$TMP_DIR/build.err"
+assert_file_contains 'Built image:' "$TMP_DIR/build.out" 'build prints the built image name after a successful thin-image build'
+built_image_line="$(grep '^Built image:' "$TMP_DIR/build.out")"
+built_image_name="${built_image_line#Built image: }"
 
 assert_file_contains 'build -f' "$PODMAN_LOG" 'build invokes podman build with the canonical containerfile path'
 assert_file_contains 'config/containers/shared/Containerfile' "$PODMAN_LOG" 'build uses the canonical containerfile path'
-assert_file_contains '-t opencode-1.14.21-' "$PODMAN_LOG" 'build tags the local image with the version-prefixed naming contract'
+assert_file_contains "-t ${OPENCODE_IMAGE_BASENAME}-${OPENCODE_VERSION}-" "$PODMAN_LOG" 'build tags the temporary local image with the version-prefixed naming contract'
+assert_file_contains 'image inspect --format' "$PODMAN_LOG" 'build resolves the full image id after building the local image'
+assert_file_contains "tag ${OPENCODE_IMAGE_BASENAME}-${OPENCODE_VERSION}-" "$PODMAN_LOG" 'build retags the temporary image into the final image name'
+assert_file_contains "rmi ${OPENCODE_IMAGE_BASENAME}-${OPENCODE_VERSION}-" "$PODMAN_LOG" 'build removes the temporary image tag after retagging'
 assert_file_not_contains 'OPENCODE_ALPINE_VERSION' "$PODMAN_LOG" 'build does not pass old Alpine pin build arguments'
 assert_file_not_contains 'OPENCODE_RELEASE_LINUX_' "$PODMAN_LOG" 'build does not pass old release asset metadata'
-assert_file_contains 'Built image: opencode-1.14.21-' "$TMP_DIR/build.out" 'build prints the built image name after a successful thin-image build'
+
+# This checks the new image naming contract with a full timestamp and full image id suffix.
+expected_image_regex="^$(escape_regex "$OPENCODE_IMAGE_BASENAME")-$(escape_regex "$OPENCODE_VERSION")-[0-9]{8}-[0-9]{6}-[0-9a-f]{64}$"
+if [[ ! "$built_image_name" =~ $expected_image_regex ]]; then
+  fail 'build should print the version, timestamp, and full image id in the built image name'
+fi
+
+: >"$PODMAN_LOG"
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_PODMAN_TAG_FAIL='1' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/tag-fail.err"; then
+  fail 'build should fail when retagging the temporary image fails'
+fi
+assert_file_contains "rmi ${OPENCODE_IMAGE_BASENAME}-${OPENCODE_VERSION}-" "$PODMAN_LOG" 'build cleans up the temporary image tag when retagging fails'
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_GIT_MODE='local-only' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null

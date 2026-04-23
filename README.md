@@ -2,7 +2,7 @@
 
 This repository builds and runs a thin local image derived from the official upstream container with repository-owned configuration, wrapper scripts, shell helpers, and shell tests.
 
-The wrapper keeps a stable mount contract, project selection, and one long-lived container per workspace while staying close to the native official upstream container.
+The wrapper keeps a stable mount contract, project selection, and a two-container runtime per workspace: one shared published runtime plus private project containers.
 
 ## Layout
 
@@ -33,7 +33,7 @@ tests/agent/shared/test-opencode-shell.sh
 
 - Build the image: `scripts/agent/shared/opencode-build`
 - Start a configured workspace: `scripts/agent/shared/opencode-run`
-- Open a shell in a running workspace container: `scripts/agent/shared/opencode-shell`
+- Open a shell in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
 
 ## Configuration
 
@@ -57,13 +57,19 @@ The wrapper pins the official upstream container base to version `1.14.21` on `a
 - Container home: `/root`
 - General workspace mount: `/workspace/general`
 - Development root mount: `/workspace/development`
+- Shared runtime projects mount: `/workspace/projects`
 - Selected project mount: `/workspace/project`
 - Default in-container working directory: `/workspace/project`
 - Default interactive shell: `nu`
 - Internal upstream server port: `4096`
-- Port opt-out flag: `scripts/agent/shared/opencode-run --no-ports`
-- Published host port mapping: `4096 + workspace offset` by default unless `--no-ports` is used
-- Interactive attach flow: `opencode attach http://127.0.0.1:4096`
+- Published host port mapping: shared runtime container only, using `4096 + workspace offset`
+- Interactive attach flow: project containers run `opencode attach http://host.containers.internal:<published-port>`
+- Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<full-image-id>`
+- Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<full-image-id>-<workspace>`
+- Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<full-image-id>-<workspace>-<project>`
+- New container creation: staged as `<canonical>-next-<pid>`, then promoted after it stays healthy
+- Shared runtime container: always ports-on, reused or started before project-container handling
+- Existing project container: reused unchanged when already running, or started unchanged when stopped
 
 ## Tests
 
