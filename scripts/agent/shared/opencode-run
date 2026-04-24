@@ -42,6 +42,8 @@ fi
 
 image_name="$(opencode_latest_image)"
 [[ -n "$image_name" ]] || fail 'No built OpenCode image found. Run scripts/agent/shared/opencode-build first.'
+image_short_id="$(opencode_latest_image_short_id)"
+[[ -n "$image_short_id" ]] || fail 'No built OpenCode image id found. Run scripts/agent/shared/opencode-build first.'
 
 if [[ $# -ge 1 ]]; then
   workspace="$1"
@@ -69,13 +71,14 @@ host_home="$(opencode_host_home_dir "$workspace")"
 host_workspace="$(opencode_host_workspace_dir "$workspace")"
 project_root="$(project_root_dir "$project_name")"
 old_containers="$(opencode_workspace_containers "$workspace")"
-image_suffix="${image_name#$OPENCODE_IMAGE_BASENAME-}"
-container_name="$OPENCODE_IMAGE_BASENAME-$workspace-$image_suffix"
+container_name="$(opencode_workspace_container_name "$image_name" "$image_short_id" "$workspace")"
 launch_container_name="$container_name"
 reuse_existing=0
 matching_running_container=""
 recreated_exact_match_container=0
 rename_after_start=0
+created_workspace_container=0
+started_workspace_container=0
 
 # This creates the workspace container with the current image and fixed mount contract.
 create_workspace_container() {
@@ -94,6 +97,7 @@ create_workspace_container() {
       -v "$project_root:$OPENCODE_CONTAINER_PROJECT" \
       "$image_name" \
       serve --hostname 0.0.0.0 --port 4096
+    created_workspace_container=1
     return
   fi
 
@@ -107,6 +111,7 @@ create_workspace_container() {
     -v "$project_root:$OPENCODE_CONTAINER_PROJECT" \
     "$image_name" \
     serve --hostname 0.0.0.0 --port 4096
+  created_workspace_container=1
 }
 
 mkdir -p "$host_home" "$host_workspace"
@@ -128,7 +133,7 @@ done <<< "$old_containers"
 matching_running_container="$(podman ps --format '{{.Names}}' --filter "name=$(opencode_container_name_regex "$container_name")" | head -n 1)"
 
 if [[ "$reuse_existing" == '1' ]]; then
-  if ! opencode_container_project_matches "$container_name" "$project_name" || ! opencode_container_publish_matches "$container_name" "$workspace" "$publish_external"; then
+  if ! opencode_container_project_matches "$container_name" "$project_name" || ! opencode_container_workspace_matches "$container_name" "$workspace" || ! opencode_container_publish_matches "$container_name" "$workspace" "$publish_external"; then
     reuse_existing=0
     matching_running_container=""
     rename_after_start=1
@@ -139,7 +144,9 @@ fi
 if [[ "$reuse_existing" != '1' ]]; then
   create_workspace_container "$launch_container_name"
 elif [[ "$matching_running_container" != "$container_name" ]]; then
-  podman start "$container_name" >/dev/null 2>&1 || true
+  if podman start "$container_name" >/dev/null 2>&1; then
+    started_workspace_container=1
+  fi
 fi
 
 while true; do
@@ -191,7 +198,9 @@ while true; do
 done
 
 # This waits for the published host URL before best-effort host browser launch.
-if [[ "$publish_external" == '1' ]]; then
+if [[ "$publish_external" == '1' && ( "$created_workspace_container" == '1' || "$started_workspace_container" == '1' ) ]]; then
+  printf 'Published OpenCode server: %s\n' "$published_url" >&2
+  printf 'Host port: %s\n' "$published_port" >&2
   if opencode_wait_for_published_url "$published_url"; then
     opencode_open_published_url_detached "$published_url"
   fi

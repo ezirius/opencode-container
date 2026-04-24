@@ -59,11 +59,12 @@ opencode_image_name_regex() {
 # This builds the regex used to find containers for one workspace.
 opencode_container_filter_regex() {
   local workspace="$1"
-  local escaped_basename escaped_workspace
+  local escaped_basename escaped_version escaped_workspace
 
   escaped_basename="$(opencode_regex_escape "$OPENCODE_IMAGE_BASENAME")"
+  escaped_version="$(opencode_regex_escape "$OPENCODE_VERSION")"
   escaped_workspace="$(opencode_regex_escape "$workspace")"
-  printf '^%s-%s-[0-9]' "$escaped_basename" "$escaped_workspace"
+  printf '^%s-%s-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{12}-%s(-next-[0-9]+)?$\n' "$escaped_basename" "$escaped_version" "$escaped_workspace"
 }
 
 # This expands a leading tilde so saved host paths work as expected in config.
@@ -387,18 +388,47 @@ opencode_project_mount_spec() {
   printf '%s:%s\n' "$(project_root_dir "$project_name")" "$OPENCODE_CONTAINER_PROJECT"
 }
 
+# This trims one Podman image or container id down to the usual short 12 characters.
+opencode_short_id() {
+  local full_id="$1"
+  printf '%.12s\n' "$full_id"
+}
+
+# This builds the canonical workspace container name from the image name, short id, and workspace.
+opencode_workspace_container_name() {
+  local image_name="$1"
+  local image_short_id="$2"
+  local workspace="$3"
+  printf '%s-%s-%s\n' "$image_name" "$image_short_id" "$workspace"
+}
+
 # This finds the newest local image that matches the saved OpenCode naming rules.
 opencode_latest_image() {
-  local image_name normalized image_regex
+  local image_name image_id normalized image_regex
   image_regex="$(opencode_image_name_regex)"
-  while IFS= read -r image_name; do
+  while read -r image_name image_id; do
     [[ -n "$image_name" ]] || continue
     normalized="${image_name#localhost/}"
     if [[ "$normalized" =~ $image_regex ]]; then
       printf '%s\n' "$normalized"
       return 0
     fi
-  done < <(podman images --sort created --format '{{.Repository}}' 2>/dev/null || true)
+  done < <(podman images --sort created --format '{{.Repository}} {{.ID}}' 2>/dev/null || true)
+  printf '\n'
+}
+
+# This finds the newest local image short id that pairs with the saved OpenCode image name.
+opencode_latest_image_short_id() {
+  local image_name image_id normalized image_regex
+  image_regex="$(opencode_image_name_regex)"
+  while read -r image_name image_id; do
+    [[ -n "$image_name" && -n "$image_id" ]] || continue
+    normalized="${image_name#localhost/}"
+    if [[ "$normalized" =~ $image_regex ]]; then
+      opencode_short_id "$image_id"
+      return 0
+    fi
+  done < <(podman images --sort created --format '{{.Repository}} {{.ID}}' 2>/dev/null || true)
   printf '\n'
 }
 
@@ -537,6 +567,16 @@ opencode_container_project_matches() {
   local project_name="$2"
   local mounts expected
   expected="$(project_root_dir "$project_name"):$OPENCODE_CONTAINER_PROJECT"
+  mounts="$(podman inspect --format '{{range .Mounts}}{{println .Source ":" .Destination}}{{end}}' "$container_name" 2>/dev/null || true)"
+  printf '%s\n' "$mounts" | sed 's/[[:space:]]*:[[:space:]]*/:/g' | grep -Fqx -- "$expected"
+}
+
+# This checks whether a container already mounts the selected host general path at the fixed workspace path.
+opencode_container_workspace_matches() {
+  local container_name="$1"
+  local workspace="$2"
+  local mounts expected
+  expected="$(opencode_host_workspace_dir "$workspace"):$OPENCODE_CONTAINER_WORKSPACE"
   mounts="$(podman inspect --format '{{range .Mounts}}{{println .Source ":" .Destination}}{{end}}' "$container_name" 2>/dev/null || true)"
   printf '%s\n' "$mounts" | sed 's/[[:space:]]*:[[:space:]]*/:/g' | grep -Fqx -- "$expected"
 }
