@@ -10,7 +10,11 @@ The official upstream container is the base image. The paths and lifecycle docum
 
 - Build the image: `scripts/agent/shared/opencode-build`
 - Start a configured workspace: `scripts/agent/shared/opencode-run`
-- Open a shell in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
+- Open a shell or run a command in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
+
+`opencode-shell <workspace> <project>` opens `nu` by default.
+
+`opencode-shell <workspace> <project> [command...]` runs the command directly inside the project container.
 
 ## Host To Container Mappings
 
@@ -34,9 +38,12 @@ The default in-container working directory is `/workspace/project`.
 - `opencode-shell` prompts for workspace and project, then opens `nu` by default.
 - `opencode-shell <workspace>` prompts for project, then opens `nu` by default.
 - `opencode-shell <workspace> <project>` opens `nu` by default.
+- `opencode-shell <workspace> <project> [command...]` runs the command directly inside the project container.
 - `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname 0.0.0.0 --port 4096`.
+- The shared runtime container is the published browser server for the workspace.
 - That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `4096 + workspace offset`.
-- Project containers do not publish host ports; they run `opencode attach http://host.containers.internal:<published-port>` against the shared runtime.
+- Each project container runs a private local OpenCode server for its selected project and attaches to that server at `http://127.0.0.1:4096`.
+- Project containers do not publish host ports; they run their own `serve --hostname 0.0.0.0 --port 4096` process and attach to `http://127.0.0.1:4096` inside the project container.
 - `opencode-run` opens the published server URL in the default browser on macOS and Linux only when it creates or starts the shared runtime container.
 
 ## Naming
@@ -49,7 +56,7 @@ The default in-container working directory is `/workspace/project`.
 ## Runtime Pin
 
 - Upstream base image: `ghcr.io/anomalyco/opencode:1.14.25`
-- Architecture: `arm64`
+- Configured target architecture: `arm64`; the build uses the local `Containerfile` image tag without passing a separate platform flag.
 - Local `Containerfile`: thin wrapper over the official upstream container
 - Added packages: `git`, `bash`, `nushell`
 - `opencode-build` and `opencode-run` check the latest upstream OpenCode release before container build or run work starts.

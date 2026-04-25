@@ -41,13 +41,14 @@ opencode_project_name_is_safe() {
   [[ "$project_name" != *:* ]] || return 1
   [[ "$project_name" != '.' ]] || return 1
   [[ "$project_name" != '..' ]] || return 1
+  [[ "$project_name" != '--' ]] || return 1
 }
 
 # This checks that a project name is a direct-child directory token.
 opencode_require_project_name() {
   local project_name="$1"
   [[ -n "$project_name" ]] || fail "project name must not be empty"
-  opencode_project_name_is_safe "$project_name" || fail "project name $project_name may only contain letters, numbers, dots, underscores, and hyphens"
+  opencode_project_name_is_safe "$project_name" || fail "project name $project_name may only contain letters, numbers, dots, underscores, and hyphens, and must not be '.', '..', or '--'"
 }
 
 # This escapes special regex symbols so names are matched safely.

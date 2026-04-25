@@ -30,6 +30,7 @@ test ! -d "$ROOT/tests/shared"
 # These checks prove the normalized wrapper paths are present.
 test -f "$ROOT/README.md"
 test -f "$ROOT/AGENTS.md"
+test -f "$ROOT/.dockerignore"
 test -f "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 test -f "$ROOT/config/containers/shared/Containerfile"
 test -f "$ROOT/docs/usage/shared/usage.md"
@@ -64,58 +65,114 @@ grep -q 'apk add --no-cache .*bash' "$ROOT/config/containers/shared/Containerfil
 grep -q 'apk add --no-cache .*nushell' "$ROOT/config/containers/shared/Containerfile"
 grep -q '^WORKDIR /workspace/project$' "$ROOT/config/containers/shared/Containerfile"
 grep -q '^ENTRYPOINT \["opencode"\]$' "$ROOT/config/containers/shared/Containerfile"
-! grep -q '^ARG OPENCODE_ALPINE_VERSION' "$ROOT/config/containers/shared/Containerfile"
-! grep -q '^COPY dist/' "$ROOT/config/containers/shared/Containerfile"
-! grep -q '^USER ' "$ROOT/config/containers/shared/Containerfile"
+# These fail explicitly because negated grep does not trip errexit when it matches.
+if grep -q '^ARG OPENCODE_ALPINE_VERSION' "$ROOT/config/containers/shared/Containerfile"; then
+  printf 'Containerfile must not define OPENCODE_ALPINE_VERSION\n' >&2
+  exit 1
+fi
+
+if grep -q '^COPY dist/' "$ROOT/config/containers/shared/Containerfile"; then
+  printf 'Containerfile must not copy local dist output\n' >&2
+  exit 1
+fi
+
+if grep -q '^USER ' "$ROOT/config/containers/shared/Containerfile"; then
+  printf 'Containerfile must not override the upstream user\n' >&2
+  exit 1
+fi
 
 # These checks make sure docs and script headers describe the current behavior.
 grep -q '`scripts/agent/shared/opencode-build`' "$ROOT/README.md"
 grep -q '`scripts/agent/shared/opencode-run`' "$ROOT/README.md"
-grep -q 'scripts/agent/shared/opencode-shell <workspace> <project>`' "$ROOT/README.md"
-grep -q '/root' "$ROOT/README.md"
-grep -q 'Container user: `root`' "$ROOT/README.md"
-grep -q 'official upstream container' "$ROOT/README.md"
+grep -q 'scripts/agent/shared/opencode-shell <workspace> <project> \[command...\]`' "$ROOT/README.md"
+grep -q 'tests/agent/shared/test-asserts.sh' "$ROOT/README.md"
+grep -q 'tests/agent/shared/test-all.sh' "$ROOT/README.md"
+grep -q 'docs/superpowers/plans/2026-04-16-opencode-project-runtime-and-status.md' "$ROOT/README.md"
 grep -q '1.14.25' "$ROOT/README.md"
 grep -q 'arm64' "$ROOT/README.md"
-grep -q 'Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`' "$ROOT/README.md"
-grep -q 'Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`' "$ROOT/README.md"
-grep -q 'Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`' "$ROOT/README.md"
+grep -q 'opencode attach http://127.0.0.1:4096' "$ROOT/README.md"
+# This fails explicitly because negated grep does not trip errexit when it matches.
+if grep -q 'host\.containers\.internal:<published-port>' "$ROOT/README.md"; then
+  printf 'README must not document host.containers.internal project attach flow\n' >&2
+  exit 1
+fi
 grep -q '/workspace/general' "$ROOT/docs/usage/shared/usage.md"
 grep -q '/workspace/development' "$ROOT/docs/usage/shared/usage.md"
 grep -q '/workspace/projects' "$ROOT/docs/usage/shared/usage.md"
 grep -q '/workspace/project' "$ROOT/docs/usage/shared/usage.md"
 grep -q '/root' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'shared per-workspace runtime container is running `serve --hostname 0.0.0.0 --port 4096`\.' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'serve --hostname 0.0.0.0 --port 4096' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'opens the published server URL in the default browser on macOS and Linux only when it creates or starts the shared runtime container\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'official upstream container' "$ROOT/docs/usage/shared/usage.md"
+grep -q 'http://127.0.0.1:4096' "$ROOT/docs/usage/shared/usage.md"
+# This fails explicitly because negated grep does not trip errexit when it matches.
+if grep -q 'host\.containers\.internal:<published-port>' "$ROOT/docs/usage/shared/usage.md"; then
+  printf 'usage docs must not document host.containers.internal project attach flow\n' >&2
+  exit 1
+fi
 grep -q 'arm64' "$ROOT/docs/usage/shared/usage.md"
 grep -q '`nu`' "$ROOT/docs/usage/shared/usage.md"
 grep -q '`scripts/agent/shared/opencode-build`' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'Built images are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q '`opencode-build` and `opencode-run` check the latest upstream OpenCode release before container build or run work starts\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'If a newer release exists, they warn on stderr and continue with the pinned version\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'The warning label is amber/yellow only when stderr is a terminal and `NO_COLOR` is unset; otherwise it stays plain text\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'They pause with `Press any key to continue...` only when both stdin and stderr are real terminals\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'Shared runtime containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'Project containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q '`opencode-shell` prompts for workspace and project, then opens `nu` by default\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q '`opencode-shell <workspace>` prompts for project, then opens `nu` by default\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q '`opencode-shell <workspace> <project>` opens `nu` by default\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'created directly with their final canonical names' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'Enter `q` to cancel selection\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q 'official upstream container' "$ROOT/docs/usage/shared/architecture.md"
-grep -q 'thin local `Containerfile`' "$ROOT/docs/usage/shared/architecture.md"
+grep -q 'scripts/agent/shared/opencode-shell <workspace> <project> \[command...\]`' "$ROOT/docs/usage/shared/usage.md"
+grep -q 'opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>' "$ROOT/docs/usage/shared/usage.md"
+grep -q '<development-root-basename>' "$ROOT/docs/usage/shared/usage.md"
+grep -q '<workspace>-<project>' "$ROOT/docs/usage/shared/usage.md"
 grep -q '`nu`' "$ROOT/docs/usage/shared/architecture.md"
 grep -q 'git' "$ROOT/docs/usage/shared/architecture.md"
-grep -q '`opencode-build` and `opencode-run` share a best-effort pinned-version freshness check before expensive or interactive container work\.' "$ROOT/docs/usage/shared/architecture.md"
-grep -q 'OpenCode release lookup failures never fail build or run\.' "$ROOT/docs/usage/shared/architecture.md"
-grep -q 'Freshness warning color and pause behavior are TTY-gated so non-interactive tests and automation keep plain, non-blocking stderr\.' "$ROOT/docs/usage/shared/architecture.md"
-grep -q 'shared-runtime-plus-project-container lifecycle' "$ROOT/docs/usage/shared/architecture.md"
+grep -q 'opencode attach http://127.0.0.1:4096' "$ROOT/docs/usage/shared/architecture.md"
+# This fails explicitly because negated grep does not trip errexit when it matches.
+if grep -q 'host\.containers\.internal:<published-port>' "$ROOT/docs/usage/shared/architecture.md"; then
+  printf 'architecture docs must not document host.containers.internal project attach flow\n' >&2
+  exit 1
+fi
 grep -q '/workspace/projects' "$ROOT/docs/usage/shared/architecture.md"
-grep -q '^# This file holds the shared shell helpers used by the wrapper scripts\.$' "$ROOT/lib/shell/shared/common.sh"
-grep -q '^# This script builds a fresh OpenCode image from the saved repo settings\.$' "$ROOT/scripts/agent/shared/opencode-build"
-grep -q '^# This script starts one saved workspace container and opens OpenCode inside it\.$' "$ROOT/scripts/agent/shared/opencode-run"
-grep -q '^# This script opens nu by default, or runs a command inside a running project container\.$' "$ROOT/scripts/agent/shared/opencode-shell"
+grep -q '^IMAGE_ID=.1234567890ab.$' "$ROOT/tests/agent/shared/test-opencode-shell.sh"
+grep -q '^OLD_IMAGE_ID=.fedcba098765.$' "$ROOT/tests/agent/shared/test-opencode-shell.sh"
+grep -q '`scripts/agent/shared/opencode-shell`' "$ROOT/AGENTS.md"
+grep -q '\[command...\]' "$ROOT/AGENTS.md"
+grep -q '`config/agent`' "$ROOT/AGENTS.md"
+grep -q '\[repo base\]/category/subcategory/scope/file' "$ROOT/AGENTS.md"
+grep -q '\[repo base\]/scripts/agent/shared/opencode-run' "$ROOT/AGENTS.md"
+grep -q '^- `plans`$' "$ROOT/AGENTS.md"
+grep -q '^- `docs/superpowers/...`$' "$ROOT/AGENTS.md"
+grep -q '^- `docs/superpowers/plans/2026-04-16-opencode-project-runtime-and-status.md`$' "$ROOT/AGENTS.md"
+grep -q '`config/containers/shared/Containerfile`' "$ROOT/AGENTS.md"
+grep -q '`tests/agent/shared/test-all.sh`' "$ROOT/AGENTS.md"
+grep -q '`.dockerignore`' "$ROOT/AGENTS.md"
+if grep -q 'Use the cleanup worktree at `.worktrees/cleanup`' "$ROOT/AGENTS.md"; then
+  printf 'AGENTS must not include local cleanup-worktree instructions\n' >&2
+  exit 1
+fi
+if grep -q 'moving in-progress cleanup changes into a worktree' "$ROOT/AGENTS.md"; then
+  printf 'AGENTS must not include cleanup-migration workflow instructions\n' >&2
+  exit 1
+fi
+grep -q '^\.git$' "$ROOT/.dockerignore"
+grep -q '^\.git/$' "$ROOT/.dockerignore"
+grep -q '^\.worktrees/$' "$ROOT/.dockerignore"
+grep -q '^build/$' "$ROOT/.dockerignore"
+grep -q '^dist/$' "$ROOT/.dockerignore"
+grep -q '^coverage/$' "$ROOT/.dockerignore"
+grep -q '^tmp/$' "$ROOT/.dockerignore"
+grep -q '^\.tmp/$' "$ROOT/.dockerignore"
+grep -q '^temp/$' "$ROOT/.dockerignore"
+grep -q '^cache/$' "$ROOT/.dockerignore"
+grep -q '^__pycache__/$' "$ROOT/.dockerignore"
+grep -q '^\*.pyc$' "$ROOT/.dockerignore"
+grep -q '^\.DS_Store$' "$ROOT/.dockerignore"
+# These keep repo-owned source and container build inputs inside the build context.
+for ignored_repo_path in \
+  'config/' \
+  'scripts/' \
+  'docs/' \
+  'tests/' \
+  'lib/' \
+  'config/containers/' \
+  'config/containers/shared/' \
+  'config/containers/shared/Containerfile'
+do
+  if grep -qxF "$ignored_repo_path" "$ROOT/.dockerignore"; then
+    printf '.dockerignore must not exclude repo-owned path: %s\n' "$ignored_repo_path" >&2
+    exit 1
+  fi
+done
 
 echo "OpenCode layout checks passed"

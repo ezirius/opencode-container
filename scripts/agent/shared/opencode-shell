@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# This script opens nu by default, or runs a command inside a running project container.
+# This script opens a shell or runs a command inside a running project container.
 
 # This finds the repo root so the script can reach shared helpers.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,11 +12,7 @@ source "$ROOT/lib/shell/shared/common.sh"
 # This loads the saved workspace list before the script picks or validates a workspace.
 opencode_load_workspaces
 
-if [[ $# -gt 2 ]]; then
-  printf 'This script takes zero, one, or two arguments: [workspace] [project].\n' >&2
-  exit 1
-fi
-
+# This uses the first argument as workspace and leaves any later args for project/command parsing.
 if [[ $# -ge 1 ]]; then
   workspace="$1"
   opencode_validate_workspace_name "$workspace"

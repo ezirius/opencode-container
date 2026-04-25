@@ -11,7 +11,9 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 - `config/containers/shared/Containerfile` is a thin local `Containerfile` that stays close to the official upstream container.
 - `lib/shell/shared/common.sh` is the only shared shell library path.
 - `scripts/agent/shared/opencode-build` builds the thin local image from the official upstream base while keeping the old git safety checks.
-- `scripts/agent/shared/opencode-run` first ensures a shared per-workspace runtime container exists, mounts the host development root there at `/workspace/projects`, keeps that shared container published on the stable host port, creates containers directly with their canonical names, and uses project containers to run `opencode attach` against that shared runtime.
+- `scripts/agent/shared/opencode-run` first ensures a shared per-workspace runtime container exists, mounts the host development root there at `/workspace/projects`, keeps that shared container published on the stable host port, creates containers directly with their canonical names, and project containers run `opencode attach http://127.0.0.1:4096` inside their own container.
+- The shared runtime container owns the published host port and browser URL for the workspace.
+- Project containers keep project sessions private: they do not publish host ports, run their own local server, and attach to `http://127.0.0.1:4096` inside the container.
 - `scripts/agent/shared/opencode-shell` connects to an existing workspace/project container and opens `nu` by default.
 - `tests/agent/shared/*` verify behavior and layout.
 
@@ -20,9 +22,9 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 - The official upstream container is the runtime source.
 - The official upstream container is the base image, not the final runtime image used by the wrapper.
 - This wrapper's mount paths, `/root` home mapping, project picker, and shared-runtime-plus-project-container lifecycle are wrapper convention, not upstream-required behavior.
-- The wrapper pins version `1.14.25` and `arm64` in config so runtime selection is explicit.
+- The wrapper records target architecture `arm64` in config; the `Containerfile` pins the image tag and does not enforce a platform by itself.
 - The local `Containerfile` stays thin and adds `git`, `bash`, and `nushell`.
-- Local images and containers use wrapper-owned names derived from the pinned version, a build timestamp, and the full image ID.
+- Local images and containers use wrapper-owned names derived from the pinned version, a build timestamp, and the 12-character image ID prefix.
 - `opencode-build` and `opencode-run` share a best-effort pinned-version freshness check before expensive or interactive container work.
 - OpenCode release lookup failures never fail build or run.
 - Freshness warning color and pause behavior are TTY-gated so non-interactive tests and automation keep plain, non-blocking stderr.
