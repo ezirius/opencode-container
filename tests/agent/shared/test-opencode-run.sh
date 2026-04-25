@@ -353,7 +353,42 @@ if [[ -n "${OPENCODE_TEST_EVENT_LOG:-}" ]]; then
   printf 'curl %s\n' "$*" >>"$OPENCODE_TEST_EVENT_LOG"
 fi
 
-printf '%s\n' "$*" >>"$OPENCODE_TEST_CURL_LOG"
+if [[ -n "${OPENCODE_TEST_CURL_LOG:-}" ]]; then
+  printf '%s\n' "$*" >>"$OPENCODE_TEST_CURL_LOG"
+fi
+
+# This serves fake upstream release metadata separately from browser readiness probes.
+if [[ "$*" == *'api.github.com/repos/anomalyco/opencode/releases/latest'* ]]; then
+  case "$*" in
+    *'--connect-timeout 2 --max-time 5'*) ;;
+    *)
+      printf 'curl missing bounded timeout arguments: %s\n' "$*" >&2
+      exit 2
+      ;;
+  esac
+
+  case "${OPENCODE_TEST_LATEST_OPENCODE_VERSION:-same}" in
+    same)
+      printf '{"tag_name":"v1.14.21"}\n'
+      ;;
+    newer)
+      printf '{"tag_name":"v1.14.22"}\n'
+      ;;
+    older)
+      printf '{"tag_name":"v1.14.20"}\n'
+      ;;
+    empty)
+      printf '{}\n'
+      ;;
+    fail)
+      exit 7
+      ;;
+    *)
+      printf '{"tag_name":"v%s"}\n' "$OPENCODE_TEST_LATEST_OPENCODE_VERSION"
+      ;;
+  esac
+  exit 0
+fi
 
 attempt_file="${OPENCODE_TEST_CURL_LOG}.attempts"
 attempt_count=0
@@ -447,6 +482,38 @@ assert_equals '14096:4096' "$shared_publish_spec" 'run helper always publishes t
 project_publish_spec="$(ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; opencode_project_container_publish_spec alpha')"
 assert_equals '' "$project_publish_spec" 'run helper never publishes ports for project containers'
 
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+rm -f "${PODMAN_LOG}.names"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='newer' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/run-newer.out" 2>"$TMP_DIR/run-newer.err"
+assert_file_contains 'api.github.com/repos/anomalyco/opencode/releases/latest' "$CURL_LOG" 'run checks the latest upstream OpenCode release before container work'
+assert_file_contains 'warning: newer OpenCode version available (1.14.22); continuing with pinned version 1.14.21' "$TMP_DIR/run-newer.err" 'run warns when the upstream release differs from the pinned version'
+assert_file_not_contains $'\033[' "$TMP_DIR/run-newer.err" 'run keeps warning text plain when stderr is not a terminal'
+assert_file_not_contains 'Press any key to continue...' "$TMP_DIR/run-newer.err" 'run does not pause for a newer version in non-interactive runs'
+assert_file_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run continues with container work after a newer-version warning'
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+rm -f "${PODMAN_LOG}.names"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='older' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/run-older.out" 2>"$TMP_DIR/run-older.err"
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/run-older.err" 'run does not warn when the pinned version is ahead of the latest upstream release'
+assert_file_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run continues when the pinned version is ahead of latest upstream'
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+rm -f "${PODMAN_LOG}.names"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='empty' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/run-empty.out" 2>"$TMP_DIR/run-empty.err"
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/run-empty.err" 'run does not warn when the latest release cannot be parsed'
+assert_file_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run continues when the latest release cannot be parsed'
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+rm -f "${PODMAN_LOG}.names"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='fail' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/run-curl-fail.out" 2>"$TMP_DIR/run-curl-fail.err"
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/run-curl-fail.err" 'run does not warn when the latest release lookup fails'
+assert_file_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run continues when the latest release lookup fails'
+
+rm -f "${PODMAN_LOG}.names"
 printf '1\n2\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_OPEN_LOG="$OPEN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_GIO_LOG="$GIO_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" bash "$ROOT/scripts/agent/shared/opencode-run" >"$TMP_DIR/run.out" 2>"$TMP_DIR/run.err"
 
 assert_file_contains 'Selection:' "$TMP_DIR/run.err" 'run shows the interactive picker prompts'
@@ -515,7 +582,7 @@ rm -f "${CURL_LOG}.attempts"
 : >"$XDG_OPEN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_SHARED_MODE='running' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/shared-reuse.out" 2>"$TMP_DIR/shared-reuse.err"
 assert_file_not_contains "run -d --name ${shared_runtime_name} --userns keep-id -w /workspace/general" "$PODMAN_LOG" 'run does not recreate a running shared runtime container'
-test ! -s "$CURL_LOG" || fail 'run does not reprobe the published URL when the shared runtime is already running'
+assert_file_not_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run does not reprobe the published URL when the shared runtime is already running'
 test ! -s "$XDG_OPEN_LOG" || fail 'run does not reopen the browser when the shared runtime is already running'
 
 : >"$PODMAN_LOG"

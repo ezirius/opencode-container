@@ -14,6 +14,9 @@ if [[ $# -ne 0 ]]; then
   exit 1
 fi
 
+# This warns about stale version pins before build policy and container work begin.
+opencode_warn_if_pinned_version_is_stale
+
 # This stops the build unless the checkout satisfies the branch policy for image changes.
 opencode_require_build_ready_checkout "$ROOT"
 

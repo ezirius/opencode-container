@@ -139,17 +139,59 @@ case "$1 $2 ${3:-}" in
 esac
 EOF
 
-chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/git"
+# This fake curl lets the test choose upstream release lookup results without network access.
+cat >"$FAKE_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${OPENCODE_TEST_CURL_LOG:-}" ]]; then
+  printf '%s\n' "$*" >>"$OPENCODE_TEST_CURL_LOG"
+fi
+
+case "$*" in
+  *'--connect-timeout 2 --max-time 5'*) ;;
+  *)
+    printf 'curl missing bounded timeout arguments: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
+
+case "${OPENCODE_TEST_LATEST_OPENCODE_VERSION:-same}" in
+  same)
+    printf '{"tag_name":"v1.14.21"}\n'
+    ;;
+  newer)
+    printf '{"tag_name":"v1.14.22"}\n'
+    ;;
+  older)
+    printf '{"tag_name":"v1.14.20"}\n'
+    ;;
+  empty)
+    printf '{}\n'
+    ;;
+  fail)
+    exit 7
+    ;;
+  *)
+    printf '{"tag_name":"v%s"}\n' "$OPENCODE_TEST_LATEST_OPENCODE_VERSION"
+    ;;
+esac
+EOF
+
+chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/git" "$FAKE_BIN/curl"
 
 PODMAN_LOG="$TMP_DIR/podman.log"
+CURL_LOG="$TMP_DIR/curl.log"
 
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" unexpected >/dev/null 2>"$TMP_DIR/args.err"; then
   fail 'build should reject unexpected arguments'
 fi
 assert_file_contains 'This script takes no arguments.' "$TMP_DIR/args.err" 'build rejects unexpected arguments clearly'
 
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build.out" 2>"$TMP_DIR/build.err"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build.out" 2>"$TMP_DIR/build.err"
 assert_file_contains 'Built image:' "$TMP_DIR/build.out" 'build prints the built image name after a successful thin-image build'
+assert_file_contains 'api.github.com/repos/anomalyco/opencode/releases/latest' "$CURL_LOG" 'build checks the latest upstream OpenCode release before build work'
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/build.err" 'build does not warn when the upstream release matches the pinned version'
 built_image_line="$(grep '^Built image:' "$TMP_DIR/build.out")"
 built_image_name="${built_image_line#Built image: }"
 
@@ -167,6 +209,32 @@ expected_image_regex="^$(escape_regex "$OPENCODE_IMAGE_BASENAME")-$(escape_regex
 if [[ ! "$built_image_name" =~ $expected_image_regex ]]; then
   fail 'build should print the version, timestamp, and 12-character image id in the built image name'
 fi
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='newer' bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build-newer.out" 2>"$TMP_DIR/build-newer.err"
+assert_file_contains 'warning: newer OpenCode version available (1.14.22); continuing with pinned version 1.14.21' "$TMP_DIR/build-newer.err" 'build warns when the upstream release differs from the pinned version'
+assert_file_not_contains $'\033[' "$TMP_DIR/build-newer.err" 'build keeps warning text plain when stderr is not a terminal'
+assert_file_not_contains 'Press any key to continue...' "$TMP_DIR/build-newer.err" 'build does not pause for a newer version in non-interactive runs'
+assert_file_contains 'build -f' "$PODMAN_LOG" 'build continues after a newer-version warning'
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='older' bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build-older.out" 2>"$TMP_DIR/build-older.err"
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/build-older.err" 'build does not warn when the pinned version is ahead of the latest upstream release'
+assert_file_contains 'build -f' "$PODMAN_LOG" 'build continues when the pinned version is ahead of latest upstream'
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='empty' bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build-empty.out" 2>"$TMP_DIR/build-empty.err"
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/build-empty.err" 'build does not warn when the latest release cannot be parsed'
+assert_file_contains 'build -f' "$PODMAN_LOG" 'build continues when the latest release cannot be parsed'
+
+: >"$PODMAN_LOG"
+: >"$CURL_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='fail' bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build-curl-fail.out" 2>"$TMP_DIR/build-curl-fail.err"
+assert_file_not_contains 'newer OpenCode version available' "$TMP_DIR/build-curl-fail.err" 'build does not warn when the latest release lookup fails'
+assert_file_contains 'build -f' "$PODMAN_LOG" 'build continues when the latest release lookup fails'
 
 : >"$PODMAN_LOG"
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_PODMAN_TAG_FAIL='1' bash "$ROOT/scripts/agent/shared/opencode-build" >/dev/null 2>"$TMP_DIR/tag-fail.err"; then

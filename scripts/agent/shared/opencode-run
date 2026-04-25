@@ -34,6 +34,9 @@ if [[ $# -gt 2 ]]; then
   exit 1
 fi
 
+# This warns about stale version pins before image lookup and container work begin.
+opencode_warn_if_pinned_version_is_stale
+
 image_name="$(opencode_latest_image)"
 [[ -n "$image_name" ]] || fail 'No built OpenCode image found. Run scripts/agent/shared/opencode-build first.'
 

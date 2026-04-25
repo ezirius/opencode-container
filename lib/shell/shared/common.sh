@@ -113,6 +113,68 @@ opencode_use_interactive_tty() {
   [[ -t 0 ]]
 }
 
+# This tells us whether stderr is a real terminal for warning output.
+opencode_use_warning_terminal() {
+  [[ -t 2 ]]
+}
+
+# This pauses only when a person can see stderr and answer on stdin.
+opencode_pause_for_interactive_warning() {
+  local _pressed_key
+
+  if [[ -t 0 && -t 2 ]]; then
+    printf 'Press any key to continue...' >&2
+    IFS= read -r -n 1 -s _pressed_key
+    printf '\n' >&2
+  fi
+}
+
+# This fetches the latest upstream OpenCode release version without failing callers.
+opencode_latest_upstream_version() {
+  local release_json tag_regex
+
+  if ! release_json="$(curl -fsSL --connect-timeout 2 --max-time 5 'https://api.github.com/repos/anomalyco/opencode/releases/latest' 2>/dev/null)"; then
+    printf '\n'
+    return 0
+  fi
+
+  tag_regex='"tag_name"[[:space:]]*:[[:space:]]*"v([0-9]+\.[0-9]+\.[0-9]+)"'
+  if [[ "$release_json" =~ $tag_regex ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  printf '\n'
+}
+
+# This compares simple numeric upstream versions like 1.14.22 against a pinned version.
+opencode_version_is_newer_than() {
+  local candidate_version="$1"
+  local pinned_version="$2"
+  local candidate_major candidate_minor candidate_patch pinned_major pinned_minor pinned_patch
+
+  IFS=. read -r candidate_major candidate_minor candidate_patch <<< "$candidate_version"
+  IFS=. read -r pinned_major pinned_minor pinned_patch <<< "$pinned_version"
+
+  (( candidate_major > pinned_major )) && return 0
+  (( candidate_major < pinned_major )) && return 1
+  (( candidate_minor > pinned_minor )) && return 0
+  (( candidate_minor < pinned_minor )) && return 1
+  (( candidate_patch > pinned_patch ))
+}
+
+# This warns when the pinned OpenCode version is not the latest upstream release.
+opencode_warn_if_pinned_version_is_stale() {
+  local latest_version
+
+  latest_version="$(opencode_latest_upstream_version)"
+  [[ -n "$latest_version" ]] || return 0
+  opencode_version_is_newer_than "$latest_version" "$OPENCODE_VERSION" || return 0
+
+  opencode_warn "newer OpenCode version available (${latest_version}); continuing with pinned version ${OPENCODE_VERSION}"
+  opencode_pause_for_interactive_warning
+}
+
 # This runs interactive Podman commands in a way that still works from pipes.
 opencode_exec_podman_interactive_command() {
   local subcommand="$1"
@@ -678,7 +740,7 @@ opencode_container_publish_matches() {
 # This prints a yellow warning when the terminal supports color.
 opencode_warn() {
   local message="$1"
-  if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
+  if opencode_use_warning_terminal && [[ -z "${NO_COLOR:-}" ]]; then
     printf '\033[33mwarning:\033[0m %s\n' "$message" >&2
     return 0
   fi

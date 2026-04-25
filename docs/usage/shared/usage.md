@@ -51,6 +51,10 @@ The default in-container working directory is `/workspace/project`.
 - Architecture: `arm64`
 - Local `Containerfile`: thin wrapper over the official upstream container
 - Added packages: `git`, `bash`, `nushell`
+- `opencode-build` and `opencode-run` check the latest upstream OpenCode release before container build or run work starts.
+- If a newer release exists, they warn on stderr and continue with the pinned version.
+- The warning label is amber/yellow only when stderr is a terminal and `NO_COLOR` is unset; otherwise it stays plain text.
+- They pause with `Press any key to continue...` only when both stdin and stderr are real terminals.
 
 ## Workspace Safety
 

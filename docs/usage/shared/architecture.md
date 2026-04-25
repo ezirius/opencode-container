@@ -23,6 +23,9 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 - The wrapper pins version `1.14.21` and `arm64` in config so runtime selection is explicit.
 - The local `Containerfile` stays thin and adds `git`, `bash`, and `nushell`.
 - Local images and containers use wrapper-owned names derived from the pinned version, a build timestamp, and the full image ID.
+- `opencode-build` and `opencode-run` share a best-effort pinned-version freshness check before expensive or interactive container work.
+- OpenCode release lookup failures never fail build or run.
+- Freshness warning color and pause behavior are TTY-gated so non-interactive tests and automation keep plain, non-blocking stderr.
 
 ## Design Constraints
 
