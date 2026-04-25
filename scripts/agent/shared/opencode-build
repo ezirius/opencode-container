@@ -33,9 +33,11 @@ podman build \
   -t "$temporary_image_name" \
   "$ROOT"
 
-# This resolves the built image id and folds it into the final local image name.
+# This resolves the built image id and folds its 12-character prefix into the final local image name.
 image_id="$(podman image inspect --format '{{.Id}}' "$temporary_image_name")"
-image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp-${image_id#sha256:}"
+image_short_id="${image_id#sha256:}"
+image_short_id="${image_short_id:0:12}"
+image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp-$image_short_id"
 podman tag "$temporary_image_name" "$image_name"
 trap - EXIT
 cleanup_temporary_image

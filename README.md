@@ -64,9 +64,9 @@ The wrapper pins the official upstream container base to version `1.14.21` on `a
 - Internal upstream server port: `4096`
 - Published host port mapping: shared runtime container only, using `4096 + workspace offset`
 - Interactive attach flow: project containers run `opencode attach http://host.containers.internal:<published-port>`
-- Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<full-image-id>`
-- Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<full-image-id>-<workspace>`
-- Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<full-image-id>-<workspace>-<project>`
+- Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`
+- Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>`
+- Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`
 - New container creation: staged as `<canonical>-next-<pid>`, then promoted after it stays healthy
 - Shared runtime container: always ports-on, reused or started before project-container handling
 - Existing project container: reused unchanged when already running, or started unchanged when stopped

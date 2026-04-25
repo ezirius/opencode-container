@@ -61,7 +61,7 @@ opencode_image_name_regex() {
   local escaped_basename escaped_version
   escaped_basename="$(opencode_regex_escape "$OPENCODE_IMAGE_BASENAME")"
   escaped_version="$(opencode_regex_escape "$OPENCODE_VERSION")"
-  printf '^%s-%s-[0-9]{8}-[0-9]{6}-[0-9a-f]{64}$\n' "$escaped_basename" "$escaped_version"
+  printf '^%s-%s-[0-9]{8}-[0-9]{6}-[0-9a-f]{12}$\n' "$escaped_basename" "$escaped_version"
 }
 
 # This builds the canonical container name for one image, workspace, and project.

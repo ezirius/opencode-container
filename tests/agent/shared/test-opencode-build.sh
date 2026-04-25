@@ -162,10 +162,10 @@ assert_file_contains "rmi ${OPENCODE_IMAGE_BASENAME}-${OPENCODE_VERSION}-" "$POD
 assert_file_not_contains 'OPENCODE_ALPINE_VERSION' "$PODMAN_LOG" 'build does not pass old Alpine pin build arguments'
 assert_file_not_contains 'OPENCODE_RELEASE_LINUX_' "$PODMAN_LOG" 'build does not pass old release asset metadata'
 
-# This checks the new image naming contract with a full timestamp and full image id suffix.
-expected_image_regex="^$(escape_regex "$OPENCODE_IMAGE_BASENAME")-$(escape_regex "$OPENCODE_VERSION")-[0-9]{8}-[0-9]{6}-[0-9a-f]{64}$"
+# This checks the new image naming contract with a full timestamp and 12-character image id suffix.
+expected_image_regex="^$(escape_regex "$OPENCODE_IMAGE_BASENAME")-$(escape_regex "$OPENCODE_VERSION")-[0-9]{8}-[0-9]{6}-[0-9a-f]{12}$"
 if [[ ! "$built_image_name" =~ $expected_image_regex ]]; then
-  fail 'build should print the version, timestamp, and full image id in the built image name'
+  fail 'build should print the version, timestamp, and 12-character image id in the built image name'
 fi
 
 : >"$PODMAN_LOG"

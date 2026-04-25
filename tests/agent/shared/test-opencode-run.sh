@@ -14,9 +14,9 @@ TMP_DIR="$(mktemp -d)"
 TEST_HOME="$TMP_DIR/home"
 DEVELOPMENT_ROOT="$TEST_HOME/development"
 cleanup_done=0
-IMAGE_ID='1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+IMAGE_ID='1234567890ab'
 IMAGE_NAME="opencode-1.14.21-20260418-120000-${IMAGE_ID}"
-OLD_IMAGE_NAME='opencode-1.14.20-20260417-120000-fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321'
+OLD_IMAGE_NAME='opencode-1.14.20-20260417-120000-fedcba098765'
 
 # This restores the shared config and temp files exactly once.
 cleanup() {
@@ -60,13 +60,13 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 names_file="${OPENCODE_TEST_PODMAN_LOG}.names"
 
 # This keeps shared runtime state separate from project container state.
-shared_name="opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha"
+shared_name="opencode-1.14.21-20260418-120000-1234567890ab-alpha"
 shared_mode="${OPENCODE_TEST_SHARED_MODE:-absent}"
 shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
 
   case "$1" in
   images)
-    printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n'
+    printf 'opencode-1.14.21-20260418-120000-1234567890ab\n'
     ;;
   ps)
     if [[ "${2-}" == '-aq' ]]; then
@@ -76,21 +76,21 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
       if [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'present' ]]; then
         printf 'stale-1\nstale-2\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'prefix-collision' ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-prod-beta\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-prod-beta\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'project-workspace-collision' ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-beta-alpha-prod\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-beta-alpha-prod\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-workspace-different-project' ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-alpha\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-alpha\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'old-version' ]]; then
-        printf 'opencode-1.14.20-20260417-120000-fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321-alpha-beta\n'
+        printf 'opencode-1.14.20-20260417-120000-fedcba098765-alpha-beta\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name' ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-stale' ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
-        printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-legacy\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
+        printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-legacy\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-same-project-sibling' ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
-        printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
+        printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta\n'
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'running' ]]; then
       ps_args="$*"
@@ -122,31 +122,31 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
         next_name="$(printf '%s' "$ps_args" | sed -n 's/.*name=^\(.*\)\$$/\1/p' | sed 's/\\\././g')"
         printf '%s\n' "$next_name"
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name' || "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-stale' ]]; then
-         if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta$' ]]; then
-           printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
+         if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.21-20260418-120000-1234567890ab-alpha-beta$' ]]; then
+           printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
          fi
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-same-project-sibling' ]]; then
-         if [[ "$name_filter" == 'name=^opencode-1\.14\.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta$' ]]; then
-           printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
-         elif [[ "$name_filter" == 'name=^opencode-1\.13\.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta$' ]]; then
-           printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta\n'
+         if [[ "$name_filter" == 'name=^opencode-1\.14\.21-20260418-120000-1234567890ab-alpha-beta$' ]]; then
+           printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
+         elif [[ "$name_filter" == 'name=^opencode-1\.13\.99-20260401-010101-aaaaaaaaaaaa-alpha-beta$' ]]; then
+           printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta\n'
          elif [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* ]]; then
-           printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta\n'
-           printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
+           printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta\n'
+           printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
          fi
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-workspace-different-project' ]]; then
-         printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-alpha\n'
+         printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-alpha\n'
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'old-version' ]]; then
-        if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.20-20260417-120000-fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321-alpha-beta$' ]]; then
-          printf 'opencode-1.14.20-20260417-120000-fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321-alpha-beta\n'
+        if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.20-20260417-120000-fedcba098765-alpha-beta$' ]]; then
+          printf 'opencode-1.14.20-20260417-120000-fedcba098765-alpha-beta\n'
         fi
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'dies-before-attach' ]]; then
       if [[ "$*" == *'next-'* && ! -f "${OPENCODE_TEST_PODMAN_LOG}.next-running-once" ]]; then
         : >"${OPENCODE_TEST_PODMAN_LOG}.next-running-once"
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta-next-999\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta-next-999\n'
       elif [[ "$*" != *'next-'* ]]; then
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
+        printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'stopped' ]]; then
       if [[ -f "${OPENCODE_TEST_PODMAN_LOG}.started" || -f "${OPENCODE_TEST_PODMAN_LOG}.ran" ]]; then
@@ -154,7 +154,7 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
           next_name="$(printf '%s' "$*" | sed -n 's/.*name=^\(.*\)\$$/\1/p' | sed 's/\\\././g')"
           printf '%s\n' "$next_name"
         else
-          printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
+          printf 'opencode-1.14.21-20260418-120000-1234567890ab-alpha-beta\n'
         fi
       fi
     fi
@@ -450,7 +450,7 @@ export OPENCODE_TEST_DEVELOPMENT_ROOT="$DEVELOPMENT_ROOT"
 : >"$CURL_LOG"
 
 latest_image="$(PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; opencode_latest_image')"
-assert_equals "$IMAGE_NAME" "$latest_image" 'run helper accepts the full image id naming contract when resolving the newest local image'
+assert_equals "$IMAGE_NAME" "$latest_image" 'run helper accepts the 12-character image id naming contract when resolving the newest local image'
 
 nullglob_state="$(ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; shopt -s nullglob; project_names_from_development_root >/dev/null; shopt -p nullglob')"
 assert_equals 'shopt -s nullglob' "$nullglob_state" 'run helper preserves an already enabled nullglob shell option after project discovery'
@@ -620,15 +620,15 @@ assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta opencode attach http://12
 rm -f "${PODMAN_LOG}.names"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name-with-stale' OPENCODE_TEST_PROJECT_MOUNT="$DEVELOPMENT_ROOT/beta" OPENCODE_TEST_PUBLISHED_PORT='14096' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse-cleanup.out" 2>"$TMP_DIR/reuse-cleanup.err"
 assert_file_not_contains "run -d --name ${IMAGE_NAME}-alpha-beta" "$PODMAN_LOG" 'run still reuses the exact matching container when stale siblings exist'
-assert_file_not_contains 'rm -f opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-legacy' "$PODMAN_LOG" 'run leaves stale sibling project containers alone when reusing the canonical container'
+assert_file_not_contains 'rm -f opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-legacy' "$PODMAN_LOG" 'run leaves stale sibling project containers alone when reusing the canonical container'
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.names"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_STALE_MODE='same-name-with-same-project-sibling' OPENCODE_TEST_PROJECT_MOUNT="$DEVELOPMENT_ROOT/beta" OPENCODE_TEST_PUBLISHED_PORT='14096' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/reuse-canonical-priority.out" 2>"$TMP_DIR/reuse-canonical-priority.err"
 assert_file_not_contains "run -d --name ${IMAGE_NAME}-alpha-beta-next-" "$PODMAN_LOG" 'run does not stage a replacement when the running canonical container already exists beside a same-project sibling'
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta opencode attach http://127.0.0.1:4096" "$PODMAN_LOG" 'run prefers the exact canonical container over a same-project running sibling'
-assert_file_not_contains 'exec -i opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run does not attach to a same-project sibling when the exact canonical container is already running'
-assert_file_not_contains 'rm -f opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta' "$PODMAN_LOG" 'run leaves same-project siblings untouched when the canonical container is already running'
+assert_file_not_contains 'exec -i opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run does not attach to a same-project sibling when the exact canonical container is already running'
+assert_file_not_contains 'rm -f opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta' "$PODMAN_LOG" 'run leaves same-project siblings untouched when the canonical container is already running'
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.names"
@@ -637,7 +637,7 @@ PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOW
 assert_file_contains "start ${IMAGE_NAME}-alpha-beta" "$PODMAN_LOG" 'run starts the stopped canonical container even when a same-project sibling is already running'
 assert_file_contains "Starting existing container: ${IMAGE_NAME}-alpha-beta" "$TMP_DIR/reuse-stopped-canonical-priority.err" 'run reports when it starts a stopped canonical container'
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta opencode attach http://127.0.0.1:4096" "$PODMAN_LOG" 'run attaches to the canonical container after starting it'
-assert_file_not_contains 'exec -i opencode-1.13.99-20260401-010101-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha-beta opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run does not fall back to a same-project sibling when the canonical container exists but is stopped'
+assert_file_not_contains 'exec -i opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta opencode attach http://127.0.0.1:4096' "$PODMAN_LOG" 'run does not fall back to a same-project sibling when the canonical container exists but is stopped'
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.names"
