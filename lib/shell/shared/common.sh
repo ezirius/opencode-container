@@ -147,7 +147,7 @@ opencode_latest_upstream_version() {
   printf '\n'
 }
 
-# This compares simple numeric upstream versions like 1.14.22 against a pinned version.
+# This compares simple numeric upstream versions like 1.14.25 against a pinned version.
 opencode_version_is_newer_than() {
   local candidate_version="$1"
   local pinned_version="$2"

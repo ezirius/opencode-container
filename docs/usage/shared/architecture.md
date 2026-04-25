@@ -20,7 +20,7 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 - The official upstream container is the runtime source.
 - The official upstream container is the base image, not the final runtime image used by the wrapper.
 - This wrapper's mount paths, `/root` home mapping, project picker, and shared-runtime-plus-project-container lifecycle are wrapper convention, not upstream-required behavior.
-- The wrapper pins version `1.14.21` and `arm64` in config so runtime selection is explicit.
+- The wrapper pins version `1.14.24` and `arm64` in config so runtime selection is explicit.
 - The local `Containerfile` stays thin and adds `git`, `bash`, and `nushell`.
 - Local images and containers use wrapper-owned names derived from the pinned version, a build timestamp, and the full image ID.
 - `opencode-build` and `opencode-run` share a best-effort pinned-version freshness check before expensive or interactive container work.
