@@ -39,13 +39,6 @@ case "$1" in
         printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
         printf 'opencode-1.14.20-20260417-120000-fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321-alpha-beta\n'
         ;;
-      next-only)
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta-next-999\n'
-        ;;
-      staged)
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta-next-999\n'
-        printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-alpha-beta\n'
-        ;;
       project-workspace-collision)
         printf 'opencode-1.14.21-20260418-120000-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef-beta-alpha-prod\n'
         ;;
@@ -129,10 +122,6 @@ PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/script
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta /bin/sh" "$PODMAN_LOG" 'shell preserves slash-prefixed commands after --'
 
 : >"$PODMAN_LOG"
-PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='staged' bash "$ROOT/scripts/agent/shared/opencode-shell" alpha beta >"$TMP_DIR/staged.out" 2>"$TMP_DIR/staged.err"
-assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta nu" "$PODMAN_LOG" 'shell ignores staged replacement containers and attaches to the canonical workspace container'
-
-: >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='multiple' bash "$ROOT/scripts/agent/shared/opencode-shell" alpha beta >"$TMP_DIR/multiple.out" 2>"$TMP_DIR/multiple.err"
 assert_file_contains 'ps --sort created --format {{.Names}} --filter name=^opencode-' "$PODMAN_LOG" 'shell asks Podman to sort running OpenCode containers by creation time before workspace matching'
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta nu" "$PODMAN_LOG" 'shell uses the newest container returned by Podman when multiple canonical containers match'
@@ -153,10 +142,5 @@ if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_C
   fail 'shell should reject a container whose project token collides with the requested workspace name'
 fi
 assert_file_contains 'No running OpenCode container found for alpha-prod.' "$TMP_DIR/project-workspace-collision.err" 'shell does not mistake a project token for the requested workspace name'
-
-if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='next-only' bash "$ROOT/scripts/agent/shared/opencode-shell" alpha beta >/dev/null 2>"$TMP_DIR/next-only.err"; then
-  fail 'shell should fail cleanly when only staged replacement containers are running'
-fi
-assert_file_contains 'No running OpenCode container found for alpha.' "$TMP_DIR/next-only.err" 'shell keeps the friendly missing-container error when only staged replacements exist'
 
 printf 'opencode-shell behavior checks passed\n'

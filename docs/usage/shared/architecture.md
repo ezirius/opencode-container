@@ -11,7 +11,7 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 - `config/containers/shared/Containerfile` is a thin local `Containerfile` that stays close to the official upstream container.
 - `lib/shell/shared/common.sh` is the only shared shell library path.
 - `scripts/agent/shared/opencode-build` builds the thin local image from the official upstream base while keeping the old git safety checks.
-- `scripts/agent/shared/opencode-run` first ensures a shared per-workspace runtime container exists, mounts the host development root there at `/workspace/projects`, keeps that shared container published on the stable host port, stages new containers under `-next-<pid>` before promotion, and uses project containers to run `opencode attach` against that shared runtime.
+- `scripts/agent/shared/opencode-run` first ensures a shared per-workspace runtime container exists, mounts the host development root there at `/workspace/projects`, keeps that shared container published on the stable host port, creates containers directly with their canonical names, and uses project containers to run `opencode attach` against that shared runtime.
 - `scripts/agent/shared/opencode-shell` connects to an existing workspace/project container and opens `nu` by default.
 - `tests/agent/shared/*` verify behavior and layout.
 

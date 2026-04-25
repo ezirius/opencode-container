@@ -85,13 +85,6 @@ opencode_shared_container_name() {
   printf '%s-%s-%s\n' "$image_name" "$workspace" "$development_root_name"
 }
 
-# This builds the staged replacement container name from one canonical name.
-opencode_next_container_name() {
-  local container_name="$1"
-  local pid="${2:-$$}"
-  printf '%s-next-%s\n' "$container_name" "$pid"
-}
-
 # This builds the broad regex used to find OpenCode container candidates.
 opencode_container_candidate_regex() {
   local escaped_basename
@@ -500,7 +493,6 @@ opencode_running_container() {
 
   while IFS= read -r container_name; do
     [[ -n "$container_name" ]] || continue
-    [[ ! "$container_name" =~ -next-[0-9]+$ ]] || continue
     if opencode_container_workspace_matches "$container_name" "$workspace" && { [[ -z "$project_name" ]] || opencode_container_project_matches "$container_name" "$project_name"; }; then
       printf '%s\n' "$container_name"
       return 0
@@ -510,14 +502,13 @@ opencode_running_container() {
   printf '\n'
 }
 
-# This lists running containers for one workspace, newest first, excluding staged replacements.
+# This lists running containers for one workspace, newest first.
 opencode_running_containers() {
   local workspace="$1"
   local container_name
 
   while IFS= read -r container_name; do
     [[ -n "$container_name" ]] || continue
-    [[ ! "$container_name" =~ -next-[0-9]+$ ]] || continue
     if opencode_container_workspace_matches "$container_name" "$workspace"; then
       printf '%s\n' "$container_name"
     fi

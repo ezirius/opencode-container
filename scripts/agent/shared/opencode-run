@@ -62,10 +62,10 @@ project_root="$(project_root_dir "$project_name")"
 old_containers="$(opencode_workspace_containers "$workspace")"
 shared_container_name="$(opencode_shared_container_name "$image_name" "$workspace")"
 container_name="$(opencode_container_name "$image_name" "$workspace" "$project_name")"
-launch_container_name="$container_name"
 reuse_existing=0
 running_canonical_container=""
-rename_after_start=0
+shared_runtime_created=0
+shared_runtime_started=0
 
 # This creates the shared runtime container that owns workspace-wide mounts and stable port publishing.
 create_shared_runtime_container() {
@@ -79,12 +79,6 @@ create_shared_runtime_container() {
     -v "$development_root:$OPENCODE_CONTAINER_PROJECTS" \
     "$image_name" \
     serve --hostname 0.0.0.0 --port 4096
-}
-
-# This switches future creation work onto a temporary container name until startup is proven stable.
-stage_workspace_container_creation() {
-  launch_container_name="$(opencode_next_container_name "$container_name")"
-  rename_after_start=1
 }
 
 # This creates the workspace container with the current image and fixed mount contract.
@@ -117,9 +111,11 @@ if opencode_container_is_running "$shared_container_name"; then
 elif opencode_container_exists "$shared_container_name"; then
   printf 'Starting shared runtime container: %s\n' "$shared_container_name" >&2
   podman start "$shared_container_name" >/dev/null
+  shared_runtime_started=1
 else
   printf 'Creating shared runtime container: %s\n' "$shared_container_name" >&2
   create_shared_runtime_container
+  shared_runtime_created=1
 fi
 
 while IFS= read -r old_container; do
@@ -143,18 +139,13 @@ fi
 
 if [[ -n "$running_canonical_container" ]]; then
   container_name="$running_canonical_container"
-  launch_container_name="$container_name"
   reuse_existing=1
-fi
-
-if [[ "$reuse_existing" != '1' && "$rename_after_start" != '1' ]]; then
-  stage_workspace_container_creation
 fi
 
 if [[ "$reuse_existing" != '1' ]]; then
   printf 'Creating new container: %s\n' "$container_name" >&2
-  podman rm -f "$launch_container_name" >/dev/null 2>&1 || true
-  create_workspace_container "$launch_container_name"
+  podman rm -f "$container_name" >/dev/null 2>&1 || true
+  create_workspace_container "$container_name"
 elif [[ -z "$running_canonical_container" ]]; then
   printf 'Starting existing container: %s\n' "$container_name" >&2
   podman start "$container_name" >/dev/null 2>&1 || true
@@ -163,41 +154,26 @@ else
 fi
 
 while true; do
-  if ! opencode_wait_for_running_container "$launch_container_name"; then
-    printf 'OpenCode container failed to stay running: %s\n' "$launch_container_name" >&2
-    opencode_print_container_startup_diagnostics "$launch_container_name"
+  if ! opencode_wait_for_running_container "$container_name"; then
+    printf 'OpenCode container failed to stay running: %s\n' "$container_name" >&2
+    opencode_print_container_startup_diagnostics "$container_name"
     exit 1
   fi
 
-  if ! opencode_wait_for_stable_running_container "$launch_container_name"; then
-    printf 'OpenCode container stopped before attach: %s\n' "$launch_container_name" >&2
-    opencode_print_container_startup_diagnostics "$launch_container_name"
+  if ! opencode_wait_for_stable_running_container "$container_name"; then
+    printf 'OpenCode container stopped before attach: %s\n' "$container_name" >&2
+    opencode_print_container_startup_diagnostics "$container_name"
     exit 1
-  fi
-
-  while IFS= read -r old_container; do
-    [[ -n "$old_container" ]] || continue
-    [[ "$old_container" == "$launch_container_name" ]] && continue
-    [[ "$old_container" == "$container_name" && "$rename_after_start" != '1' ]] && continue
-    [[ "$old_container" == "$container_name" || "$old_container" =~ ^${container_name}-next-[0-9]+$ ]] || continue
-    podman rm -f "$old_container" >/dev/null 2>&1 || true
-  done <<< "$old_containers"
-
-  if [[ "$rename_after_start" == '1' ]]; then
-    printf 'Promoting new container: %s -> %s\n' "$launch_container_name" "$container_name" >&2
-    podman rm -f "$container_name" >/dev/null 2>&1 || true
-    podman rename "$launch_container_name" "$container_name" >/dev/null
-    launch_container_name="$container_name"
-    rename_after_start=0
-    old_containers="$(printf '%s\n%s\n' "$old_containers" "$launch_container_name" | sed '/^$/d')"
   fi
 
   break
 done
 
 # This waits for the published host URL before best-effort host browser launch.
-if opencode_wait_for_published_url "$published_url"; then
-  opencode_open_published_url_detached "$published_url"
+if [[ "$shared_runtime_created" == '1' || "$shared_runtime_started" == '1' ]]; then
+  if opencode_wait_for_published_url "$published_url"; then
+    opencode_open_published_url_detached "$published_url"
+  fi
 fi
 
 opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach http://127.0.0.1:4096

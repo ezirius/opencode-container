@@ -67,7 +67,7 @@ The wrapper pins the official upstream container base to version `1.14.21` on `a
 - Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`
 - Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`
 - Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`
-- New container creation: staged as `<canonical>-next-<pid>`, then promoted after it stays healthy
+- New container creation: created directly with the final canonical container name
 - Shared runtime container: always ports-on, reused or started before project-container handling
 - Existing project container: reused unchanged when already running, or started unchanged when stopped
 

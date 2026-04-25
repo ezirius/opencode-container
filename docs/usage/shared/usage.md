@@ -36,14 +36,14 @@ The default in-container working directory is `/workspace/project`.
 - `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname 0.0.0.0 --port 4096`.
 - That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `4096 + workspace offset`.
 - Project containers do not publish host ports; they run `opencode attach http://host.containers.internal:<published-port>` against the shared runtime.
-- `opencode-run` always opens the published server URL in the default browser on macOS and Linux after the shared runtime is ready.
+- `opencode-run` opens the published server URL in the default browser on macOS and Linux only when it creates or starts the shared runtime container.
 
 ## Naming
 
 - Built images are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`.
 - Shared runtime containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`.
 - Project containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`.
-- New shared or project containers are first created as `<canonical>-next-<pid>` and renamed only after they stay healthy.
+- New shared and project containers are created directly with their final canonical names.
 
 ## Runtime Pin
 
@@ -58,7 +58,7 @@ If the selected workspace already has a shared runtime container, `opencode-run`
 
 If the selected workspace/project already has a canonical project container, `opencode-run` keeps using that same container instead of replacing it for image drift, project drift, or port drift.
 
-If no shared runtime or project container exists yet, the wrapper stages a `-next-<pid>` container, waits for it to stay healthy, then renames it to the canonical container name.
+If no shared runtime or project container exists yet, the wrapper creates it directly with its canonical container name and waits for it to stay healthy before attaching.
 
 ## Selection UX
 
