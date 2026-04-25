@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# This script opens nu by default, or runs a command inside a running workspace container.
+# This script opens nu by default, or runs a command inside a running project container.
 
 # This finds the repo root so the script can reach shared helpers.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -21,18 +21,13 @@ else
   workspace="$(opencode_pick_workspace)"
 fi
 
-project_name=''
-
-if [[ $# -ge 1 && "$1" == '--' ]]; then
-  shift
-elif [[ $# -ge 2 ]]; then
+# This uses an explicit project when supplied, otherwise it prompts from discovered projects.
+if [[ $# -ge 1 ]]; then
   opencode_require_project_name "$1"
   project_name="$1"
   shift
-elif [[ $# -eq 1 ]]; then
-  opencode_require_project_name "$1"
-  project_name="$1"
-  shift
+else
+  project_name="$(opencode_resolve_project_name '')"
 fi
 
 if [[ $# -eq 0 ]]; then
@@ -41,14 +36,7 @@ else
   command=("$@")
 fi
 
-if [[ -n "$project_name" ]]; then
-  container_name="$(opencode_running_container "$workspace" "$project_name")"
-else
-  container_name="$(opencode_running_containers "$workspace")"
-  if [[ "$container_name" == *$'\n'* ]]; then
-    fail "Multiple running OpenCode containers found for $workspace. Pass a project name."
-  fi
-fi
+container_name="$(opencode_running_container "$workspace" "$project_name")"
 
 [[ -n "$container_name" ]] || fail "No running OpenCode container found for $workspace. Run scripts/agent/shared/opencode-run first."
 

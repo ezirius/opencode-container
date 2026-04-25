@@ -49,7 +49,7 @@ The thin local `Containerfile` lives in:
 config/containers/shared/Containerfile
 ```
 
-The wrapper pins the official upstream container base to version `1.14.21` on `arm64`.
+The wrapper pins the official upstream container base to version `1.14.24` on `arm64`.
 
 ## Runtime Contract
 

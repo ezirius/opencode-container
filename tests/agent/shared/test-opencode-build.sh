@@ -158,10 +158,10 @@ esac
 
 case "${OPENCODE_TEST_LATEST_OPENCODE_VERSION:-same}" in
   same)
-    printf '{"tag_name":"v1.14.21"}\n'
+    printf '{"tag_name":"v1.14.24"}\n'
     ;;
   newer)
-    printf '{"tag_name":"v1.14.22"}\n'
+    printf '{"tag_name":"v1.14.25"}\n'
     ;;
   older)
     printf '{"tag_name":"v1.14.20"}\n'
@@ -213,7 +213,7 @@ fi
 : >"$PODMAN_LOG"
 : >"$CURL_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='newer' bash "$ROOT/scripts/agent/shared/opencode-build" >"$TMP_DIR/build-newer.out" 2>"$TMP_DIR/build-newer.err"
-assert_file_contains 'warning: newer OpenCode version available (1.14.22); continuing with pinned version 1.14.21' "$TMP_DIR/build-newer.err" 'build warns when the upstream release differs from the pinned version'
+assert_file_contains 'warning: newer OpenCode version available (1.14.25); continuing with pinned version 1.14.24' "$TMP_DIR/build-newer.err" 'build warns when the upstream release differs from the pinned version'
 assert_file_not_contains $'\033[' "$TMP_DIR/build-newer.err" 'build keeps warning text plain when stderr is not a terminal'
 assert_file_not_contains 'Press any key to continue...' "$TMP_DIR/build-newer.err" 'build does not pause for a newer version in non-interactive runs'
 assert_file_contains 'build -f' "$PODMAN_LOG" 'build continues after a newer-version warning'
