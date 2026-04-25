@@ -33,7 +33,7 @@ tests/agent/shared/test-opencode-shell.sh
 
 - Build the image: `scripts/agent/shared/opencode-build`
 - Start a configured workspace: `scripts/agent/shared/opencode-run`
-- Open a shell in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
+- Open a shell in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project>`
 
 ## Configuration
 
@@ -49,7 +49,7 @@ The thin local `Containerfile` lives in:
 config/containers/shared/Containerfile
 ```
 
-The wrapper pins the official upstream container base to version `1.14.24` on `arm64`.
+The wrapper pins the official upstream container base to version `1.14.25` on `arm64`.
 
 ## Runtime Contract
 

@@ -33,7 +33,7 @@ The default in-container working directory is `/workspace/project`.
 
 - `opencode-shell` prompts for workspace and project, then opens `nu` by default.
 - `opencode-shell <workspace>` prompts for project, then opens `nu` by default.
-- `opencode-shell <workspace> <project> [command...]` opens `nu` by default or forwards the supplied command exactly.
+- `opencode-shell <workspace> <project>` opens `nu` by default.
 - `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname 0.0.0.0 --port 4096`.
 - That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `4096 + workspace offset`.
 - Project containers do not publish host ports; they run `opencode attach http://host.containers.internal:<published-port>` against the shared runtime.
@@ -48,7 +48,7 @@ The default in-container working directory is `/workspace/project`.
 
 ## Runtime Pin
 
-- Upstream base image: `ghcr.io/anomalyco/opencode:1.14.24`
+- Upstream base image: `ghcr.io/anomalyco/opencode:1.14.25`
 - Architecture: `arm64`
 - Local `Containerfile`: thin wrapper over the official upstream container
 - Added packages: `git`, `bash`, `nushell`

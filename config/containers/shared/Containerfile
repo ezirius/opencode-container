@@ -1,4 +1,4 @@
-FROM ghcr.io/anomalyco/opencode:1.14.24
+FROM ghcr.io/anomalyco/opencode:1.14.25
 
 # This wrapper keeps a stable home path for the workspace-mounted OpenCode state.
 ENV HOME=/root

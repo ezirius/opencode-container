@@ -47,7 +47,7 @@ test -f "$ROOT/tests/agent/shared/test-opencode-shell.sh"
 
 # These checks make sure the config keeps the concrete OpenCode path contract.
 grep -q '^OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
-grep -q '^OPENCODE_VERSION="1.14.24"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
+grep -q '^OPENCODE_VERSION="1.14.25"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_TARGET_ARCH="arm64"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_HOME="/root"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_WORKSPACE="/workspace/general"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
@@ -58,7 +58,7 @@ grep -q '^OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"$' "$ROOT/config/age
 grep -q '^OPENCODE_SHELL_COMMAND="nu"$' "$ROOT/config/agent/shared/opencode-settings-shared.conf"
 
 # These checks make sure the containerfile stays a thin wrapper around the official image.
-grep -q '^FROM ghcr.io/anomalyco/opencode:1.14.24$' "$ROOT/config/containers/shared/Containerfile"
+grep -q '^FROM ghcr.io/anomalyco/opencode:1.14.25$' "$ROOT/config/containers/shared/Containerfile"
 grep -q 'apk add --no-cache .*git' "$ROOT/config/containers/shared/Containerfile"
 grep -q 'apk add --no-cache .*bash' "$ROOT/config/containers/shared/Containerfile"
 grep -q 'apk add --no-cache .*nushell' "$ROOT/config/containers/shared/Containerfile"
@@ -71,11 +71,11 @@ grep -q '^ENTRYPOINT \["opencode"\]$' "$ROOT/config/containers/shared/Containerf
 # These checks make sure docs and script headers describe the current behavior.
 grep -q '`scripts/agent/shared/opencode-build`' "$ROOT/README.md"
 grep -q '`scripts/agent/shared/opencode-run`' "$ROOT/README.md"
-grep -q 'scripts/agent/shared/opencode-shell <workspace> <project> \[command...\]' "$ROOT/README.md"
+grep -q 'scripts/agent/shared/opencode-shell <workspace> <project>`' "$ROOT/README.md"
 grep -q '/root' "$ROOT/README.md"
 grep -q 'Container user: `root`' "$ROOT/README.md"
 grep -q 'official upstream container' "$ROOT/README.md"
-grep -q '1.14.24' "$ROOT/README.md"
+grep -q '1.14.25' "$ROOT/README.md"
 grep -q 'arm64' "$ROOT/README.md"
 grep -q 'Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`' "$ROOT/README.md"
 grep -q 'Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`' "$ROOT/README.md"
@@ -101,7 +101,7 @@ grep -q 'Shared runtime containers are named `opencode-<version>-<YYYYMMDD-HHMMS
 grep -q 'Project containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`\.' "$ROOT/docs/usage/shared/usage.md"
 grep -q '`opencode-shell` prompts for workspace and project, then opens `nu` by default\.' "$ROOT/docs/usage/shared/usage.md"
 grep -q '`opencode-shell <workspace>` prompts for project, then opens `nu` by default\.' "$ROOT/docs/usage/shared/usage.md"
-grep -q '`opencode-shell <workspace> <project> \[command...\]` opens `nu` by default or forwards the supplied command exactly\.' "$ROOT/docs/usage/shared/usage.md"
+grep -q '`opencode-shell <workspace> <project>` opens `nu` by default\.' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'created directly with their final canonical names' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'Enter `q` to cancel selection\.' "$ROOT/docs/usage/shared/usage.md"
 grep -q 'official upstream container' "$ROOT/docs/usage/shared/architecture.md"

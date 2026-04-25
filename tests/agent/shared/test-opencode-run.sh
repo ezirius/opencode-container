@@ -16,7 +16,7 @@ DEVELOPMENT_ROOT="$TEST_HOME/development"
 DEVELOPMENT_ROOT_NAME="${DEVELOPMENT_ROOT##*/}"
 cleanup_done=0
 IMAGE_ID='1234567890ab'
-IMAGE_NAME="opencode-1.14.24-20260418-120000-${IMAGE_ID}"
+IMAGE_NAME="opencode-1.14.25-20260418-120000-${IMAGE_ID}"
 OLD_IMAGE_NAME='opencode-1.14.20-20260417-120000-fedcba098765'
 
 # This restores the shared config and temp files exactly once.
@@ -61,13 +61,13 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 names_file="${OPENCODE_TEST_PODMAN_LOG}.names"
 
 # This keeps shared runtime state separate from project container state.
-shared_name="opencode-1.14.24-20260418-120000-1234567890ab-alpha-development"
+shared_name="opencode-1.14.25-20260418-120000-1234567890ab-alpha-development"
 shared_mode="${OPENCODE_TEST_SHARED_MODE:-absent}"
 shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
 
   case "$1" in
   images)
-    printf 'opencode-1.14.24-20260418-120000-1234567890ab\n'
+    printf 'opencode-1.14.25-20260418-120000-1234567890ab\n'
     ;;
   ps)
     if [[ "${2-}" == '-aq' ]]; then
@@ -77,20 +77,20 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
       if [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'present' ]]; then
         printf 'stale-1\nstale-2\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'prefix-collision' ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-prod-beta\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-prod-beta\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'project-workspace-collision' ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-beta-alpha-prod\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-beta-alpha-prod\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-workspace-different-project' ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-alpha\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-alpha\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'old-version' ]]; then
         printf 'opencode-1.14.20-20260417-120000-fedcba098765-alpha-beta\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name' ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-stale' ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
         printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-legacy\n'
       elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-same-project-sibling' ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
         printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta\n'
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'running' ]]; then
@@ -129,30 +129,30 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
       fi
 
       if [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name' || "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-stale' ]]; then
-         if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.24-20260418-120000-1234567890ab-alpha-beta$' ]]; then
-           printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+         if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.25-20260418-120000-1234567890ab-alpha-beta$' ]]; then
+           printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
          fi
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-name-with-same-project-sibling' ]]; then
-          if [[ "$name_filter" == 'name=^opencode-1\.14\.24-20260418-120000-1234567890ab-alpha-beta$' ]]; then
-            printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+          if [[ "$name_filter" == 'name=^opencode-1\.14\.25-20260418-120000-1234567890ab-alpha-beta$' ]]; then
+            printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
          elif [[ "$name_filter" == 'name=^opencode-1\.13\.99-20260401-010101-aaaaaaaaaaaa-alpha-beta$' ]]; then
            printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta\n'
          elif [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* ]]; then
            printf 'opencode-1.13.99-20260401-010101-aaaaaaaaaaaa-alpha-beta\n'
-            printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+            printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
          fi
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'same-workspace-different-project' ]]; then
-          printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-alpha\n'
+          printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-alpha\n'
        elif [[ "${OPENCODE_TEST_STALE_MODE:-present}" == 'old-version' ]]; then
         if [[ -z "$name_filter" || "$name_filter" == 'name=^opencode-'* || "$name_filter" == 'name=^opencode-1\.14\.20-20260417-120000-fedcba098765-alpha-beta$' ]]; then
           printf 'opencode-1.14.20-20260417-120000-fedcba098765-alpha-beta\n'
         fi
       fi
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'dies-before-attach' ]]; then
-      printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+      printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
     elif [[ "${OPENCODE_TEST_RUNNING_MODE:-running}" == 'stopped' ]]; then
       if [[ -f "${OPENCODE_TEST_PODMAN_LOG}.started" || -f "${OPENCODE_TEST_PODMAN_LOG}.ran" ]]; then
-        printf 'opencode-1.14.24-20260418-120000-1234567890ab-alpha-beta\n'
+        printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
       fi
     fi
     ;;
@@ -369,10 +369,10 @@ if [[ "$*" == *'api.github.com/repos/anomalyco/opencode/releases/latest'* ]]; th
 
   case "${OPENCODE_TEST_LATEST_OPENCODE_VERSION:-same}" in
     same)
-      printf '{"tag_name":"v1.14.24"}\n'
+      printf '{"tag_name":"v1.14.25"}\n'
       ;;
     newer)
-      printf '{"tag_name":"v1.14.25"}\n'
+      printf '{"tag_name":"v1.14.26"}\n'
       ;;
     older)
       printf '{"tag_name":"v1.14.20"}\n'
@@ -424,7 +424,7 @@ cat >"$CONFIG_PATH" <<EOF
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
 OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
-OPENCODE_VERSION="1.14.24"
+OPENCODE_VERSION="1.14.25"
 OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="~/development"
@@ -487,7 +487,7 @@ assert_equals '' "$project_publish_spec" 'run helper never publishes ports for p
 rm -f "${PODMAN_LOG}.names"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_LATEST_OPENCODE_VERSION='newer' bash "$ROOT/scripts/agent/shared/opencode-run" alpha beta >"$TMP_DIR/run-newer.out" 2>"$TMP_DIR/run-newer.err"
 assert_file_contains 'api.github.com/repos/anomalyco/opencode/releases/latest' "$CURL_LOG" 'run checks the latest upstream OpenCode release before container work'
-assert_file_contains 'warning: newer OpenCode version available (1.14.25); continuing with pinned version 1.14.24' "$TMP_DIR/run-newer.err" 'run warns when the upstream release differs from the pinned version'
+assert_file_contains 'warning: newer OpenCode version available (1.14.26); continuing with pinned version 1.14.25' "$TMP_DIR/run-newer.err" 'run warns when the upstream release differs from the pinned version'
 assert_file_not_contains $'\033[' "$TMP_DIR/run-newer.err" 'run keeps warning text plain when stderr is not a terminal'
 assert_file_not_contains 'Press any key to continue...' "$TMP_DIR/run-newer.err" 'run does not pause for a newer version in non-interactive runs'
 assert_file_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run continues with container work after a newer-version warning'
