@@ -32,14 +32,22 @@ opencode_validate_workspace_name() {
   fi
 }
 
+# This checks whether a project name is safe without exiting the current shell.
+opencode_project_name_is_safe() {
+  local project_name="$1"
+  [[ -n "$project_name" ]] || return 1
+  [[ "$project_name" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [[ "$project_name" != */* ]] || return 1
+  [[ "$project_name" != *:* ]] || return 1
+  [[ "$project_name" != '.' ]] || return 1
+  [[ "$project_name" != '..' ]] || return 1
+}
+
 # This checks that a project name is a direct-child directory token.
 opencode_require_project_name() {
   local project_name="$1"
   [[ -n "$project_name" ]] || fail "project name must not be empty"
-  [[ "$project_name" != */* ]] || fail "project name must not contain path separators"
-  [[ "$project_name" != *:* ]] || fail "project name must not contain ':'"
-  [[ "$project_name" != '.' ]] || fail "project name must not be '.'"
-  [[ "$project_name" != '..' ]] || fail "project name must not be '..'"
+  opencode_project_name_is_safe "$project_name" || fail "project name $project_name may only contain letters, numbers, dots, underscores, and hyphens"
 }
 
 # This escapes special regex symbols so names are matched safely.
@@ -53,18 +61,35 @@ opencode_image_name_regex() {
   local escaped_basename escaped_version
   escaped_basename="$(opencode_regex_escape "$OPENCODE_IMAGE_BASENAME")"
   escaped_version="$(opencode_regex_escape "$OPENCODE_VERSION")"
-  printf '^%s-%s-[0-9]{8}-[0-9]{6}-[0-9]{3}$\n' "$escaped_basename" "$escaped_version"
+  printf '^%s-%s-[0-9]{8}-[0-9]{6}-[0-9a-f]{12}$\n' "$escaped_basename" "$escaped_version"
 }
 
-# This builds the regex used to find containers for one workspace.
-opencode_container_filter_regex() {
-  local workspace="$1"
-  local escaped_basename escaped_version escaped_workspace
+# This builds the canonical container name for one image, workspace, and project.
+opencode_container_name() {
+  local image_name="$1"
+  local workspace="$2"
+  local project_name="$3"
+  printf '%s-%s-%s\n' "$image_name" "$workspace" "$project_name"
+}
 
+# This builds the canonical shared runtime container name for one workspace.
+opencode_shared_container_name() {
+  local image_name="$1"
+  local workspace="$2"
+  local development_root development_root_name
+  development_root="$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")"
+  while [[ "$development_root" != '/' && "$development_root" == */ ]]; do
+    development_root="${development_root%/}"
+  done
+  development_root_name="${development_root##*/}"
+  printf '%s-%s-%s\n' "$image_name" "$workspace" "$development_root_name"
+}
+
+# This builds the broad regex used to find OpenCode container candidates.
+opencode_container_candidate_regex() {
+  local escaped_basename
   escaped_basename="$(opencode_regex_escape "$OPENCODE_IMAGE_BASENAME")"
-  escaped_version="$(opencode_regex_escape "$OPENCODE_VERSION")"
-  escaped_workspace="$(opencode_regex_escape "$workspace")"
-  printf '^%s-%s-[0-9]{8}-[0-9]{6}-[0-9]{3}-[0-9a-f]{12}-%s(-next-[0-9]+)?$\n' "$escaped_basename" "$escaped_version" "$escaped_workspace"
+  printf '^%s-' "$escaped_basename"
 }
 
 # This expands a leading tilde so saved host paths work as expected in config.
@@ -232,32 +257,45 @@ opencode_load_workspaces() {
 # This prints a small menu and returns the workspace the person picked.
 opencode_pick_workspace() {
   local selection index
-  printf 'Pick a workspace:\n' >&2
-  for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
-    printf '%d) %s\n' "$((index + 1))" "${OPENCODE_WORKSPACE_NAMES[$index]}" >&2
-  done
-  printf 'Selection: ' >&2
-  read -r selection
+  while true; do
+    printf 'Pick a workspace:\n' >&2
+    for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
+      printf '%d) %s\n' "$((index + 1))" "${OPENCODE_WORKSPACE_NAMES[$index]}" >&2
+    done
+    printf 'Selection: ' >&2
+    if ! read -r selection; then
+      fail 'Selection aborted.'
+    fi
+    if [[ "$selection" == 'q' ]]; then
+      fail 'Selection cancelled.'
+    fi
 
-  if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#OPENCODE_WORKSPACE_NAMES[@]} )); then
-    printf '%s\n' "${OPENCODE_WORKSPACE_NAMES[$((selection - 1))]}"
-    return 0
-  fi
-
-  for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
-    if [[ "$selection" == "${OPENCODE_WORKSPACE_NAMES[$index]}" ]]; then
-      printf '%s\n' "$selection"
+    if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#OPENCODE_WORKSPACE_NAMES[@]} )); then
+      printf '%s\n' "${OPENCODE_WORKSPACE_NAMES[$((selection - 1))]}"
       return 0
     fi
-  done
 
-  fail 'Please pick one of the configured workspaces.'
+    for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
+      if [[ "$selection" == "${OPENCODE_WORKSPACE_NAMES[$index]}" ]]; then
+        printf '%s\n' "$selection"
+        return 0
+      fi
+    done
+
+    printf 'Please pick one of the configured workspaces.\n' >&2
+  done
 }
 
 # This looks up the saved port offset for one workspace.
 opencode_workspace_offset() {
   local workspace="$1"
   local index
+
+  # This lets helper-only callers resolve workspace ports without preloading first.
+  if [[ ${#OPENCODE_WORKSPACE_NAMES[@]} -eq 0 ]]; then
+    opencode_load_workspaces
+  fi
+
   for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
     if [[ "$workspace" == "${OPENCODE_WORKSPACE_NAMES[$index]}" ]]; then
       printf '%s\n' "${OPENCODE_WORKSPACE_OFFSETS[$index]}"
@@ -296,22 +334,28 @@ project_names_from_development_root() {
   local candidate project_name
   local -a project_names=()
   local development_root
+  local nullglob_was_enabled=0
 
   development_root="$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")"
 
   [[ -d "$development_root" ]] || return 0
 
-  shopt -s nullglob
+  if shopt -q nullglob; then
+    nullglob_was_enabled=1
+  else
+    shopt -s nullglob
+  fi
   for candidate in "$development_root"/*; do
     [[ -d "$candidate" && ! -L "$candidate" ]] || continue
     project_name="${candidate##*/}"
-    [[ -n "$project_name" ]] || continue
-    [[ "$project_name" != */* ]] || continue
-    [[ "$project_name" != *:* ]] || continue
-    [[ "$project_name" != '.' && "$project_name" != '..' ]] || continue
+    if ! opencode_project_name_is_safe "$project_name"; then
+      continue
+    fi
     project_names+=("$project_name")
   done
-  shopt -u nullglob
+  if [[ "$nullglob_was_enabled" != '1' ]]; then
+    shopt -u nullglob
+  fi
 
   [[ ${#project_names[@]} -gt 0 ]] || return 0
   printf '%s\n' "${project_names[@]}" | sort
@@ -336,26 +380,33 @@ opencode_pick_project() {
     options+=("$selection")
   done <<< "$project_names"
 
-  printf 'Pick a project:\n' >&2
-  for index in "${!options[@]}"; do
-    printf '%d) %s\n' "$((index + 1))" "${options[$index]}" >&2
-  done
-  printf 'Selection: ' >&2
-  read -r selection
+  while true; do
+    printf 'Pick a project:\n' >&2
+    for index in "${!options[@]}"; do
+      printf '%d) %s\n' "$((index + 1))" "${options[$index]}" >&2
+    done
+    printf 'Selection: ' >&2
+    if ! read -r selection; then
+      fail 'Selection aborted.'
+    fi
+    if [[ "$selection" == 'q' ]]; then
+      fail 'Selection cancelled.'
+    fi
 
-  if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#options[@]} )); then
-    printf '%s\n' "${options[$((selection - 1))]}"
-    return 0
-  fi
-
-  for index in "${!options[@]}"; do
-    if [[ "$selection" == "${options[$index]}" ]]; then
-      printf '%s\n' "$selection"
+    if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#options[@]} )); then
+      printf '%s\n' "${options[$((selection - 1))]}"
       return 0
     fi
-  done
 
-  fail 'Please pick one of the discovered projects.'
+    for index in "${!options[@]}"; do
+      if [[ "$selection" == "${options[$index]}" ]]; then
+        printf '%s\n' "$selection"
+        return 0
+      fi
+    done
+
+    printf 'Please pick one of the discovered projects.\n' >&2
+  done
 }
 
 # This checks that the selected project exists as a direct child project.
@@ -388,62 +439,80 @@ opencode_project_mount_spec() {
   printf '%s:%s\n' "$(project_root_dir "$project_name")" "$OPENCODE_CONTAINER_PROJECT"
 }
 
-# This trims one Podman image or container id down to the usual short 12 characters.
-opencode_short_id() {
-  local full_id="$1"
-  printf '%.12s\n' "$full_id"
+# This formats the shared projects mount from the host development root.
+opencode_shared_projects_mount_spec() {
+  printf '%s:%s\n' "$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")" "$OPENCODE_CONTAINER_PROJECTS"
 }
 
-# This builds the canonical workspace container name from the image name, short id, and workspace.
-opencode_workspace_container_name() {
-  local image_name="$1"
-  local image_short_id="$2"
-  local workspace="$3"
-  printf '%s-%s-%s\n' "$image_name" "$image_short_id" "$workspace"
+# This formats the shared runtime published port mapping for one workspace.
+opencode_shared_container_publish_spec() {
+  local workspace="$1"
+  printf '%s:4096\n' "$(opencode_workspace_published_port "$workspace")"
+}
+
+# This formats the project container published port mapping, which is always empty.
+opencode_project_container_publish_spec() {
+  local workspace="${1-}"
+  : "$workspace"
+  printf '\n'
 }
 
 # This finds the newest local image that matches the saved OpenCode naming rules.
 opencode_latest_image() {
-  local image_name image_id normalized image_regex
+  local image_name normalized image_regex
   image_regex="$(opencode_image_name_regex)"
-  while read -r image_name image_id; do
+  while IFS= read -r image_name; do
     [[ -n "$image_name" ]] || continue
     normalized="${image_name#localhost/}"
     if [[ "$normalized" =~ $image_regex ]]; then
       printf '%s\n' "$normalized"
       return 0
     fi
-  done < <(podman images --sort created --format '{{.Repository}} {{.ID}}' 2>/dev/null || true)
-  printf '\n'
-}
-
-# This finds the newest local image short id that pairs with the saved OpenCode image name.
-opencode_latest_image_short_id() {
-  local image_name image_id normalized image_regex
-  image_regex="$(opencode_image_name_regex)"
-  while read -r image_name image_id; do
-    [[ -n "$image_name" && -n "$image_id" ]] || continue
-    normalized="${image_name#localhost/}"
-    if [[ "$normalized" =~ $image_regex ]]; then
-      opencode_short_id "$image_id"
-      return 0
-    fi
-  done < <(podman images --sort created --format '{{.Repository}} {{.ID}}' 2>/dev/null || true)
+  done < <(podman images --sort created --format '{{.Repository}}' 2>/dev/null || true)
   printf '\n'
 }
 
 # This lists all containers for one workspace, even stopped ones.
 opencode_workspace_containers() {
   local workspace="$1"
-  podman ps -aq --format '{{.Names}}' --filter "name=$(opencode_container_filter_regex "$workspace")" 2>/dev/null || true
+  local container_name
+
+  while IFS= read -r container_name; do
+    [[ -n "$container_name" ]] || continue
+    if opencode_container_workspace_matches "$container_name" "$workspace"; then
+      printf '%s\n' "$container_name"
+    fi
+  done < <(podman ps -aq --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
 }
 
-# This finds the newest running container for one workspace.
+# This finds the newest running container for one workspace and project.
 opencode_running_container() {
   local workspace="$1"
-  local containers
-  containers="$(podman ps --sort created --format '{{.Names}}' --filter "name=$(opencode_container_filter_regex "$workspace")" | grep -Ev -- '-next-[0-9]+$' || true)"
-  printf '%s\n' "$containers" | sed '/^$/d' | head -n 1
+  local project_name="${2-}"
+  local container_name
+
+  while IFS= read -r container_name; do
+    [[ -n "$container_name" ]] || continue
+    if opencode_container_workspace_matches "$container_name" "$workspace" && { [[ -z "$project_name" ]] || opencode_container_project_matches "$container_name" "$project_name"; }; then
+      printf '%s\n' "$container_name"
+      return 0
+    fi
+  done < <(podman ps --sort created --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
+
+  printf '\n'
+}
+
+# This lists running containers for one workspace, newest first.
+opencode_running_containers() {
+  local workspace="$1"
+  local container_name
+
+  while IFS= read -r container_name; do
+    [[ -n "$container_name" ]] || continue
+    if opencode_container_workspace_matches "$container_name" "$workspace"; then
+      printf '%s\n' "$container_name"
+    fi
+  done < <(podman ps --sort created --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
 }
 
 # This checks whether one exact container is running right now.
@@ -452,6 +521,14 @@ opencode_container_is_running() {
   local running_container
   running_container="$(podman ps --format '{{.Names}}' --filter "name=$(opencode_container_name_regex "$container_name")" | head -n 1)"
   [[ "$running_container" == "$container_name" ]]
+}
+
+# This checks whether one exact container exists in any state right now.
+opencode_container_exists() {
+  local container_name="$1"
+  local existing_container
+  existing_container="$(podman ps -aq --format '{{.Names}}' --filter "name=$(opencode_container_name_regex "$container_name")" | head -n 1)"
+  [[ "$existing_container" == "$container_name" ]]
 }
 
 # This waits a little because a container may need a moment to show up as running.
@@ -571,7 +648,7 @@ opencode_container_project_matches() {
   printf '%s\n' "$mounts" | sed 's/[[:space:]]*:[[:space:]]*/:/g' | grep -Fqx -- "$expected"
 }
 
-# This checks whether a container already mounts the selected host general path at the fixed workspace path.
+# This checks whether a container already mounts the selected workspace at the fixed workspace path.
 opencode_container_workspace_matches() {
   local container_name="$1"
   local workspace="$2"
@@ -608,183 +685,6 @@ opencode_warn() {
   printf 'warning: %s\n' "$message" >&2
 }
 
-# This maps each required Linux release asset to the upstream dist directory name.
-opencode_release_asset_dist_dir() {
-  local asset_name="$1"
-  case "$asset_name" in
-    "$OPENCODE_RELEASE_LINUX_X64_ASSET") printf 'opencode-linux-x64-baseline-musl\n' ;;
-    "$OPENCODE_RELEASE_LINUX_ARM64_ASSET") printf 'opencode-linux-arm64-musl\n' ;;
-    *) fail "unsupported release asset: $asset_name" ;;
-  esac
-}
-
-# This returns the two pinned public Linux musl release assets needed by the wrapper image build.
-opencode_release_asset_names() {
-  printf '%s\n' "$OPENCODE_RELEASE_LINUX_X64_ASSET"
-  printf '%s\n' "$OPENCODE_RELEASE_LINUX_ARM64_ASSET"
-}
-
-# This fetches the pinned upstream release metadata from GitHub.
-opencode_release_metadata_json() {
-  curl -fsSL "https://api.github.com/repos/anomalyco/opencode/releases/tags/${OPENCODE_RELEASE_TAG}"
-}
-
-# This extracts one asset field from the pinned upstream release metadata.
-opencode_release_asset_field() {
-  local metadata_json="$1"
-  local asset_name="$2"
-  local field_name="$3"
-  local compact_json
-  compact_json="$(printf '%s' "$metadata_json" | tr -d '\n')"
-  printf '%s' "$compact_json" | awk -v asset_name="$asset_name" -v field_name="$field_name" '
-    BEGIN {
-      in_string = 0
-      escaped = 0
-      depth = 0
-      capture = 0
-      object = ""
-      found = 0
-    }
-
-    {
-      for (position = 1; position <= length($0); position++) {
-        char = substr($0, position, 1)
-
-        if (capture) {
-          object = object char
-        }
-
-        if (in_string) {
-          if (escaped) {
-            escaped = 0
-          } else if (char == "\\") {
-            escaped = 1
-          } else if (char == "\"") {
-            in_string = 0
-          }
-          continue
-        }
-
-        if (char == "\"") {
-          in_string = 1
-          continue
-        }
-
-        if (char == "{") {
-          depth++
-          if (depth == 2) {
-            capture = 1
-            object = "{"
-          }
-          continue
-        }
-
-        if (char == "}") {
-          if (depth == 2 && capture) {
-            if (object ~ ("\"name\"[[:space:]]*:[[:space:]]*\"" asset_name "\"")) {
-              value = object
-              sub(".*\"" field_name "\"[[:space:]]*:[[:space:]]*\"", "", value)
-              sub("\".*", "", value)
-              if (value != object) {
-                found = 1
-                print value
-                exit 0
-              }
-              exit 1
-            }
-            capture = 0
-            object = ""
-          }
-          depth--
-        }
-      }
-    }
-
-    END {
-      if (!found) {
-        exit 1
-      }
-    }
-  ' || fail "failed to find release metadata for ${asset_name}"
-}
-
-# This downloads and stages one official OpenCode binary into the upstream dist layout.
-opencode_stage_release_asset() {
-  local checkout_root="$1"
-  local metadata_json="$2"
-  local asset_name="$3"
-  local asset_url asset_sha stage_dir archive_path unpack_dir
-  asset_url="$(opencode_release_asset_field "$metadata_json" "$asset_name" browser_download_url)"
-  asset_sha="$(opencode_release_asset_field "$metadata_json" "$asset_name" digest)"
-  [[ -n "$asset_url" ]] || fail "failed to resolve download url for ${asset_name}"
-  [[ "$asset_sha" == sha256:* ]] || fail "failed to resolve sha256 digest for ${asset_name}"
-
-  stage_dir="$checkout_root/dist/$(opencode_release_asset_dist_dir "$asset_name")/bin"
-  archive_path="$checkout_root/dist/${asset_name}"
-  unpack_dir="$checkout_root/dist/.tmp-${asset_name%.tar.gz}"
-
-  # This recreates the staged output so each build starts from known release assets.
-  rm -rf "$stage_dir" "$unpack_dir"
-  mkdir -p "$stage_dir" "$unpack_dir"
-
-  curl -fsSL "$asset_url" -o "$archive_path"
-  printf '%s  %s\n' "${asset_sha#sha256:}" "$archive_path" | sha256sum -c - >/dev/null
-  tar -xzf "$archive_path" -C "$unpack_dir"
-  install -m 755 "$unpack_dir/opencode" "$stage_dir/opencode"
-  rm -rf "$unpack_dir" "$archive_path"
-}
-
-# This stages the official upstream Linux release binaries into the local build context.
-opencode_stage_release_binaries() {
-  local checkout_root="$1"
-  local metadata_json asset_name
-  metadata_json="$(opencode_release_metadata_json)"
-  while IFS= read -r asset_name; do
-    [[ -n "$asset_name" ]] || continue
-    opencode_stage_release_asset "$checkout_root" "$metadata_json" "$asset_name"
-  done < <(opencode_release_asset_names)
-}
-
-# This fetches the newest published upstream OpenCode release version.
-opencode_latest_release_version() {
-  local latest_json latest_tag
-  latest_json="$(curl -fsSL "https://api.github.com/repos/anomalyco/opencode/releases/latest" 2>/dev/null)" || return 1
-  latest_tag="$(printf '%s' "$latest_json" | tr -d '\n' | sed -n 's/.*"tag_name":"v\{0,1\}\([^"]*\)".*/\1/p')"
-  [[ -n "$latest_tag" ]] || return 1
-  printf '%s\n' "$latest_tag"
-}
-
-# This resolves the newest published Alpine tag line from Docker Hub.
-opencode_latest_alpine_version() {
-  local tags_json
-  tags_json="$(curl -fsSL 'https://hub.docker.com/v2/repositories/library/alpine/tags?page_size=100' 2>/dev/null)" || return 1
-  printf '%s' "$tags_json" | grep -Eo '"name":"[0-9]+\.[0-9]+"' | sed 's/"name":"//; s/"$//' | sort -V | sed -n '$p'
-}
-
-# This resolves the current Docker Hub digest for the pinned Alpine tag.
-opencode_current_alpine_digest() {
-  local tag_json tag_digest
-  tag_json="$(curl -fsSL "https://hub.docker.com/v2/repositories/library/alpine/tags/${OPENCODE_ALPINE_VERSION}" 2>/dev/null)" || return 1
-  tag_digest="$(printf '%s' "$tag_json" | tr -d '\n' | sed -n 's/.*"digest":"\([^"]*\)".*/\1/p')"
-  [[ -n "$tag_digest" ]] || return 1
-  printf '%s\n' "$tag_digest"
-}
-
-# This checks pinned versions and prints warnings without blocking a reproducible build.
-opencode_warn_if_pins_are_outdated() {
-  local latest_version latest_alpine_version current_alpine_digest
-  if latest_version="$(opencode_latest_release_version)" && [[ "$latest_version" != "$OPENCODE_VERSION" ]]; then
-    opencode_warn "newer OpenCode version available: ${latest_version}"
-  fi
-
-  if latest_alpine_version="$(opencode_latest_alpine_version)" && [[ -n "$latest_alpine_version" && "$latest_alpine_version" != "$OPENCODE_ALPINE_VERSION" ]]; then
-    opencode_warn "newer Alpine version available: ${latest_alpine_version}"
-  fi
-
-  if current_alpine_digest="$(opencode_current_alpine_digest)" && [[ "$current_alpine_digest" != "$OPENCODE_ALPINE_DIGEST" ]]; then
-    opencode_warn "newer Alpine digest available for ${OPENCODE_ALPINE_VERSION}"
-  fi
-}
 
 # This resolves the uid that should own mounted workspace paths on the host.
 opencode_host_uid() {

@@ -1,18 +1,16 @@
 # OpenCode Wrapper Usage
 
-This repo builds and runs a local OpenCode container with all repo-owned settings kept in `config/agent/shared/opencode-settings-shared.conf`.
+This repo builds and runs a thin local image derived from the official upstream container with all repo-owned settings kept in `config/agent/shared/opencode-settings-shared.conf`.
 
 The shared scripts are intended to work on both macOS and Linux hosts.
 
-The official upstream image is a minimal CLI container. The paths and lifecycle documented here are this wrapper repo's convention.
-
-For local builds, this wrapper consumes pinned public upstream musl CLI assets and stages them into local build-context paths for the Alpine `Containerfile`.
+The official upstream container is the base image. The paths and lifecycle documented here are this wrapper repo's convention.
 
 ## Commands
 
 - Build the image: `scripts/agent/shared/opencode-build`
 - Start a configured workspace: `scripts/agent/shared/opencode-run`
-- Open a shell in a running workspace container: `scripts/agent/shared/opencode-shell`
+- Open a shell in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
 
 ## Host To Container Mappings
 
@@ -26,36 +24,44 @@ The container mappings are:
 - Host home path -> `/root`
 - Host workspace path -> `/workspace/general`
 - `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/development`
+- Shared runtime host development root -> `/workspace/projects`
 - Selected project root -> `/workspace/project`
 
 The default in-container working directory is `/workspace/project`.
 
 ## Shell And Server Defaults
 
-- `opencode-shell` opens `nu` by default.
-- `opencode-run` starts `serve --hostname 0.0.0.0 --port 4096` inside the long-lived workspace container.
-- `opencode-run` then opens `opencode attach http://127.0.0.1:4096` inside that same container so the interactive session uses the long-lived server.
-- Workspace containers use the image name plus the Podman-style 12-character image id and workspace suffix, for example `opencode-1.4.3-20260418-120000-123-3a9b2af6f193-ezirius`.
-- When passed `--publish`, `opencode-run` publishes host port `4096 + workspace offset`, so workspace `ezirius:10000` maps to host port `14096`.
-- When passed `--publish`, `opencode-run` prints the published server URL and host port after creating or starting the published container.
-- When passed `--publish`, `opencode-run` also opens the published server URL in the default browser on macOS and Linux after creating or starting the published container.
+- `opencode-shell <workspace> <project>` opens `nu` by default.
+- `opencode-shell <workspace> -- <command...>` keeps the legacy workspace-plus-command shortcut when exactly one project container is running for that workspace.
+- `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname 0.0.0.0 --port 4096`.
+- That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `4096 + workspace offset`.
+- Project containers do not publish host ports; they run `opencode attach http://host.containers.internal:<published-port>` against the shared runtime.
+- `opencode-run` opens the published server URL in the default browser on macOS and Linux only when it creates or starts the shared runtime container.
 
-## Build Inputs
+## Naming
 
-Pinned public upstream musl CLI assets come from shared config, for example:
+- Built images are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`.
+- Shared runtime containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`.
+- Project containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`.
+- New shared and project containers are created directly with their final canonical names.
 
-- `opencode-linux-x64-baseline-musl.tar.gz`
-- `opencode-linux-arm64-musl.tar.gz`
+## Runtime Pin
 
-Those public asset names are staged into local build-context paths:
-
-- `dist/opencode-linux-x64-baseline-musl/bin/opencode`
-- `dist/opencode-linux-arm64-musl/bin/opencode`
+- Upstream base image: `ghcr.io/anomalyco/opencode:1.14.21`
+- Architecture: `arm64`
+- Local `Containerfile`: thin wrapper over the official upstream container
+- Added packages: `git`, `bash`, `nushell`
 
 ## Workspace Safety
 
-When `opencode-run` starts a replacement container for a workspace, it does not remove existing workspace containers until the replacement container has started successfully.
+If the selected workspace already has a shared runtime container, `opencode-run` reuses or starts it before handling the requested project container.
 
-If the selected workspace already has a matching container for the newest image, mounted project, mounted general workspace path, and publish state, the wrapper reuses it. If the exact matching container is stopped, the wrapper starts it before attaching to OpenCode.
+If the selected workspace/project already has a canonical project container, `opencode-run` keeps using that same container instead of replacing it for image drift, project drift, or port drift.
 
-When the selected project changes, the wrapper stages a staged `-next-<pid>` replacement container, waits for it to stay healthy, then renames it back to the canonical workspace container name.
+If no shared runtime or project container exists yet, the wrapper creates it directly with its canonical container name and waits for it to stay healthy before attaching.
+
+## Selection UX
+
+- Workspace and project pickers retry on invalid or out-of-range input.
+- Enter `q` to cancel selection.
+- EOF aborts selection cleanly.

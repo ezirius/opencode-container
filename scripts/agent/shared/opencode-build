@@ -17,26 +17,29 @@ fi
 # This stops the build unless the checkout satisfies the branch policy for image changes.
 opencode_require_build_ready_checkout "$ROOT"
 
-# This warns about newer pinned values before the local build stages the official binaries.
-opencode_warn_if_pins_are_outdated
+# This builds a timestamped temporary tag before renaming it with the full image id.
+timestamp="$(/bin/date +"%Y%m%d-%H%M%S")"
+temporary_image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp-$$"
 
-# This stages the official Linux release binaries into the upstream dist layout.
-opencode_stage_release_binaries "$ROOT"
+# This removes the temporary image tag after success and on post-build failures.
+cleanup_temporary_image() {
+  podman rmi "$temporary_image_name" >/dev/null 2>&1 || true
+}
 
-# This makes a unique image name so each successful build can be found later.
-printf -v build_suffix '%03d' "$(( $$ % 1000 ))"
-timestamp="$(/bin/date +"%Y%m%d-%H%M%S")-$build_suffix"
-image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp"
+trap cleanup_temporary_image EXIT
 
 podman build \
-  --build-arg OPENCODE_ALPINE_VERSION="$OPENCODE_ALPINE_VERSION" \
-  --build-arg OPENCODE_ALPINE_DIGEST="$OPENCODE_ALPINE_DIGEST" \
-  --build-arg OPENCODE_CONTAINER_HOME="$OPENCODE_CONTAINER_HOME" \
-  --build-arg OPENCODE_CONTAINER_WORKSPACE="$OPENCODE_CONTAINER_WORKSPACE" \
-  --build-arg OPENCODE_CONTAINER_DEVELOPMENT="$OPENCODE_CONTAINER_DEVELOPMENT" \
-  --build-arg OPENCODE_CONTAINER_PROJECT="$OPENCODE_CONTAINER_PROJECT" \
   -f "$ROOT/config/containers/shared/Containerfile" \
-  -t "$image_name" \
+  -t "$temporary_image_name" \
   "$ROOT"
+
+# This resolves the built image id and folds its 12-character prefix into the final local image name.
+image_id="$(podman image inspect --format '{{.Id}}' "$temporary_image_name")"
+image_short_id="${image_id#sha256:}"
+image_short_id="${image_short_id:0:12}"
+image_name="$OPENCODE_IMAGE_BASENAME-$OPENCODE_VERSION-$timestamp-$image_short_id"
+podman tag "$temporary_image_name" "$image_name"
+trap - EXIT
+cleanup_temporary_image
 
 printf 'Built image: %s\n' "$image_name"

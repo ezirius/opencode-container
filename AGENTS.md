@@ -83,7 +83,7 @@ Examples:
 ## Current Behavioral Rules
 
 - Repo-owned runtime and build settings live in `config/agent/shared/opencode-settings-shared.conf`.
-- Container build configuration lives in `config/containers/shared/Containerfile`.
+- The thin upstream-wrapper `Containerfile` lives in `config/containers/shared/Containerfile`.
 - Shared shell helpers live in `lib/shell/shared/common.sh`.
 - User-facing documentation lives in `docs/usage/shared/`.
 - Shell tests live in `tests/agent/shared/`.

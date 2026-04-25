@@ -1,10 +1,8 @@
 # OpenCode Wrapper Repo
 
-This repository builds and runs a local OpenCode container with repository-owned configuration, wrapper scripts, shell helpers, and shell tests.
+This repository builds and runs a thin local image derived from the official upstream container with repository-owned configuration, wrapper scripts, shell helpers, and shell tests.
 
-The official upstream image is a minimal CLI container. This repo adds a documented wrapper convention for stable mounts, project selection, and one long-lived container per workspace.
-
-For local builds, this wrapper consumes pinned public upstream musl CLI assets instead of inferring public download names from upstream Dockerfile internals.
+The wrapper keeps a stable mount contract, project selection, and a two-container runtime per workspace: one shared published runtime plus private project containers.
 
 ## Layout
 
@@ -35,7 +33,7 @@ tests/agent/shared/test-opencode-shell.sh
 
 - Build the image: `scripts/agent/shared/opencode-build`
 - Start a configured workspace: `scripts/agent/shared/opencode-run`
-- Open a shell in a running workspace container: `scripts/agent/shared/opencode-shell`
+- Open a shell in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
 
 ## Configuration
 
@@ -45,16 +43,13 @@ Repo-owned runtime and build settings live in:
 config/agent/shared/opencode-settings-shared.conf
 ```
 
-Container build configuration lives in:
+The thin local `Containerfile` lives in:
 
 ```text
 config/containers/shared/Containerfile
 ```
 
-Pinned public musl CLI assets live in config too, for example:
-
-- `opencode-linux-x64-baseline-musl.tar.gz`
-- `opencode-linux-arm64-musl.tar.gz`
+The wrapper pins the official upstream container base to version `1.14.21` on `arm64`.
 
 ## Runtime Contract
 
@@ -62,13 +57,19 @@ Pinned public musl CLI assets live in config too, for example:
 - Container home: `/root`
 - General workspace mount: `/workspace/general`
 - Development root mount: `/workspace/development`
+- Shared runtime projects mount: `/workspace/projects`
 - Selected project mount: `/workspace/project`
 - Default in-container working directory: `/workspace/project`
 - Default interactive shell: `nu`
 - Internal upstream server port: `4096`
-- External publish flag: `scripts/agent/shared/opencode-run --publish`
-- Published host port mapping: `4096 + workspace offset` when `--publish` is used
-- Interactive attach flow: `opencode attach http://127.0.0.1:4096`
+- Published host port mapping: shared runtime container only, using `4096 + workspace offset`
+- Interactive attach flow: project containers run `opencode attach http://host.containers.internal:<published-port>`
+- Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`
+- Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`
+- Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`
+- New container creation: created directly with the final canonical container name
+- Shared runtime container: always ports-on, reused or started before project-container handling
+- Existing project container: reused unchanged when already running, or started unchanged when stopped
 
 ## Tests
 

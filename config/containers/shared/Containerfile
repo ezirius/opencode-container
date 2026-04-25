@@ -1,31 +1,13 @@
-# This image keeps the upstream Dockerfile shape while letting config pin Alpine.
-ARG OPENCODE_ALPINE_VERSION
-ARG OPENCODE_ALPINE_DIGEST
-FROM alpine:${OPENCODE_ALPINE_VERSION}@${OPENCODE_ALPINE_DIGEST} AS base
-
-# This keeps the upstream container default of disabling Bun's transpiler cache.
-ARG BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
-ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=${BUN_RUNTIME_TRANSPILER_CACHE_PATH}
-
-# These wrapper additions keep git and the documented interactive shells available.
-RUN apk add --no-cache bash git libgcc libstdc++ nushell ripgrep
-
-FROM base AS build-amd64
-COPY dist/opencode-linux-x64-baseline-musl/bin/opencode /usr/local/bin/opencode
-
-FROM base AS build-arm64
-COPY dist/opencode-linux-arm64-musl/bin/opencode /usr/local/bin/opencode
-
-ARG TARGETARCH
-FROM build-${TARGETARCH}
+FROM ghcr.io/anomalyco/opencode:1.14.21
 
 # This wrapper keeps a stable home path for the workspace-mounted OpenCode state.
 ENV HOME=/root
 
+# These wrapper additions keep git and the documented interactive shells available.
+RUN apk add --no-cache git bash nushell
+
 # This wrapper keeps the stable project-facing working directory expected by the scripts.
 WORKDIR /workspace/project
-
-RUN opencode --version
 
 # This wrapper keeps the OpenCode entrypoint while run-time commands decide the long-lived mode.
 ENTRYPOINT ["opencode"]

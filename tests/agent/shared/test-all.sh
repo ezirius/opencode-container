@@ -9,4 +9,4 @@ bash "$ROOT/tests/agent/shared/test-opencode-build.sh"
 bash "$ROOT/tests/agent/shared/test-opencode-run.sh"
 bash "$ROOT/tests/agent/shared/test-opencode-shell.sh"
 
-echo "All Hermes-style checks passed"
+echo "All OpenCode wrapper checks passed"
