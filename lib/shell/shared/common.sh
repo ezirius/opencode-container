@@ -76,7 +76,13 @@ opencode_container_name() {
 opencode_shared_container_name() {
   local image_name="$1"
   local workspace="$2"
-  printf '%s-%s\n' "$image_name" "$workspace"
+  local development_root development_root_name
+  development_root="$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")"
+  while [[ "$development_root" != '/' && "$development_root" == */ ]]; do
+    development_root="${development_root%/}"
+  done
+  development_root_name="${development_root##*/}"
+  printf '%s-%s-%s\n' "$image_name" "$workspace" "$development_root_name"
 }
 
 # This builds the staged replacement container name from one canonical name.
