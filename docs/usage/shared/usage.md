@@ -49,7 +49,7 @@ The default in-container working directory is `/workspace/project`.
 ## Naming
 
 - Built images are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`.
-- Shared runtime containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`.
+- Shared runtime containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-infrastructure`.
 - Project containers are named `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`.
 - New shared and project containers are created directly with their final canonical names.
 

@@ -13,7 +13,6 @@ CONFIG_BACKUP="$(mktemp)"
 TMP_DIR="$(mktemp -d)"
 TEST_HOME="$TMP_DIR/home"
 DEVELOPMENT_ROOT="$TEST_HOME/development"
-DEVELOPMENT_ROOT_NAME="${DEVELOPMENT_ROOT##*/}"
 cleanup_done=0
 IMAGE_ID='1234567890ab'
 IMAGE_NAME="opencode-1.14.25-20260418-120000-${IMAGE_ID}"
@@ -61,7 +60,7 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 names_file="${OPENCODE_TEST_PODMAN_LOG}.names"
 
 # This keeps shared runtime state separate from project container state.
-shared_name="opencode-1.14.25-20260418-120000-1234567890ab-alpha-development"
+shared_name="opencode-1.14.25-20260418-120000-1234567890ab-alpha-infrastructure"
 shared_mode="${OPENCODE_TEST_SHARED_MODE:-absent}"
 shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
 
@@ -434,6 +433,7 @@ OPENCODE_CONTAINER_WORKSPACE="/workspace/general"
 OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"
 OPENCODE_CONTAINER_PROJECTS="/workspace/projects"
 OPENCODE_CONTAINER_PROJECT="/workspace/project"
+OPENCODE_SHARED_CONTAINER_SCOPE="infrastructure"
 OPENCODE_HOST_HOME_DIRNAME="opencode-home"
 OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
 OPENCODE_DEFAULT_COMMAND="opencode"
@@ -464,14 +464,14 @@ assert_equals "$IMAGE_NAME" "$latest_image" 'run helper accepts the 12-character
 nullglob_state="$(ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; shopt -s nullglob; project_names_from_development_root >/dev/null; shopt -p nullglob')"
 assert_equals 'shopt -s nullglob' "$nullglob_state" 'run helper preserves an already enabled nullglob shell option after project discovery'
 
-shared_runtime_name="${IMAGE_NAME}-alpha-${DEVELOPMENT_ROOT_NAME}"
+shared_runtime_name="${IMAGE_NAME}-alpha-infrastructure"
 
 # This checks the shared runtime helper contract before lifecycle behavior changes land.
 shared_container_name="$(ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; opencode_shared_container_name "$1" "$2"' _ "$IMAGE_NAME" alpha)"
-assert_equals "${IMAGE_NAME}-alpha-${DEVELOPMENT_ROOT_NAME}" "$shared_container_name" 'run helper derives one shared runtime container name per workspace and development root basename'
+assert_equals "${IMAGE_NAME}-alpha-infrastructure" "$shared_container_name" 'run helper derives one shared runtime container name per workspace and infrastructure scope'
 
 shared_container_name_with_trailing_root="$(ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; OPENCODE_DEVELOPMENT_ROOT="~/development/"; opencode_shared_container_name "$1" "$2"' _ "$IMAGE_NAME" alpha)"
-assert_equals "${IMAGE_NAME}-alpha-${DEVELOPMENT_ROOT_NAME}" "$shared_container_name_with_trailing_root" 'run helper still derives the shared runtime suffix when the development root ends with a slash'
+assert_equals "${IMAGE_NAME}-alpha-infrastructure" "$shared_container_name_with_trailing_root" 'run helper keeps the shared runtime infrastructure suffix when the development root ends with a slash'
 
 shared_projects_mount="$(ROOT="$ROOT" bash -c 'source "$ROOT/lib/shell/shared/common.sh"; opencode_shared_projects_mount_spec' )"
 assert_equals "$DEVELOPMENT_ROOT:/workspace/projects" "$shared_projects_mount" 'run helper mounts the expanded host development root at the shared projects path'

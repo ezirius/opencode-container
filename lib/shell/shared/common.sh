@@ -77,13 +77,7 @@ opencode_container_name() {
 opencode_shared_container_name() {
   local image_name="$1"
   local workspace="$2"
-  local development_root development_root_name
-  development_root="$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")"
-  while [[ "$development_root" != '/' && "$development_root" == */ ]]; do
-    development_root="${development_root%/}"
-  done
-  development_root_name="${development_root##*/}"
-  printf '%s-%s-%s\n' "$image_name" "$workspace" "$development_root_name"
+  printf '%s-%s-%s\n' "$image_name" "$workspace" "$OPENCODE_SHARED_CONTAINER_SCOPE"
 }
 
 # This builds the broad regex used to find OpenCode container candidates.

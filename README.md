@@ -76,7 +76,7 @@ The config records `arm64` as the target architecture; the local `Containerfile`
 - Project container role: private project session that serves locally and attaches to its own local server.
 - Interactive attach flow: project containers run `opencode attach http://127.0.0.1:4096` inside their own container
 - Image naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>`
-- Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<development-root-basename>`
+- Shared runtime naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-infrastructure`
 - Project container naming: `opencode-<version>-<YYYYMMDD-HHMMSS>-<12-character-image-id>-<workspace>-<project>`
 - New container creation: created directly with the final canonical container name
 - Shared runtime container: always ports-on, reused or started before project-container handling
