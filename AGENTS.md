@@ -1,11 +1,12 @@
 # AGENTS
 
-This file defines the repository structure, naming rules, and safe-editing rules for agents creating or reorganizing content in this repo.
+This file defines the repository structure, naming rules, and safe-editing rules for agents working in this repo.
 
 ## Standing Reminders
 
 - Always use British English.
 - Always be concise.
+- Always present responses in a clear, easy-to-read fashion.
 - Always keep all code as simple as possible.
 - Use tables where appropriate.
 - Keep external values in config files for all scripts and shared libraries.
@@ -93,6 +94,7 @@ Examples:
 - Keep `README.md` at the repository root.
 - Keep `AGENTS.md` at the repository root.
 - Keep `.dockerignore` at the repository root.
+- Keep `.gitignore` at the repository root.
 
 ## Repository Ownership Rules
 
@@ -102,7 +104,7 @@ Examples:
 - User-facing documentation lives in `docs/shared/opencode/`.
 - Shell tests live in `tests/shared/opencode/`, with generic shared test helpers allowed in `tests/shared/shared/`.
 - `scripts/shared/opencode/opencode-run` uses one shared published runtime per workspace plus private project containers.
-- Shared interactive Podman exec behavior lives in `libs/shared/opencode/common.sh`.
+- Shared interactive Podman exec behaviour lives in `libs/shared/opencode/common.sh`.
 - Config belongs in config files, not in scripts or shell libraries.
 
 ## Shared Code Rules
@@ -112,7 +114,7 @@ Examples:
 - If code is shared by both macOS and Linux, prefer `libs/shared/opencode/common.sh` first unless there is already a better-focused shared file.
 - Do not move OpenCode-specific runtime or container business rules into shared libraries unless they are clearly reused across entrypoints.
 
-## Build Behavior Rules
+## Build Behaviour Rules
 
 - `scripts/shared/opencode/opencode-build` must only build from a clean, committed checkout.
 
@@ -125,8 +127,8 @@ Examples:
 ## Development Workflow Rules
 
 - Prefer the smallest practical change.
-- Use TDD for behavior changes: write the failing test first, verify it fails for the expected reason, implement the minimal change, then verify it passes.
-- Update or add tests before changing behavior.
+- Use TDD for behaviour changes: write the failing test first, verify it fails for the expected reason, implement the minimal change, then verify it passes.
+- Update or add tests before changing behaviour.
 - Run `bash tests/shared/opencode/test-all.sh` before claiming completion or committing.
 - Run shell syntax checks on changed scripts and libraries.
 - Shell tests mutate the shared config file, so run shell tests sequentially and never in parallel.
@@ -137,10 +139,10 @@ Examples:
 ## Agent Workflow Lessons
 
 - Where documentation and implementation differ, correct documentation unless the implementation is clearly wrong.
-- Use TDD for behavior and contract changes, including shell behavior and layout/docs assertions.
-- For shell scripts, test the exact CLI contract with behavior tests and enforce documentation/static contracts with `tests/shared/opencode/test-opencode-layout.sh`.
-- Prefer fake repo tests with stubbed system commands for shared script behavior.
-- Cover interactive selection behavior, invalid input retries, EOF handling, and final command construction where relevant.
+- Use TDD for behaviour and contract changes, including shell behaviour and layout/docs assertions.
+- For shell scripts, test the exact CLI contract with behaviour tests and enforce documentation/static contracts with `tests/shared/opencode/test-opencode-layout.sh`.
+- Prefer fake repo tests with stubbed system commands for shared script behaviour.
+- Cover interactive selection behaviour, invalid input retries, EOF handling, and final command construction where relevant.
 - Negated `grep` checks under `set -e` must use explicit `if grep ...; then exit 1; fi` blocks.
 - To prove a static layout assertion catches regressions, temporarily mutate the protected file, verify the test fails for that mutation, then remove the mutation before continuing.
 - When a full verification command times out, rerun the same command with a longer timeout before reporting status.
@@ -153,7 +155,7 @@ Examples:
 - Use red for errors.
 - Keep non-interactive output plain text.
 
-## CLI Behavior Rules
+## CLI Behaviour Rules
 
 - Shared entrypoint scripts should accept only the documented arguments.
 - Unsupported argument patterns should fail clearly and direct the user to `--help`.
@@ -177,9 +179,9 @@ Examples:
 - `opencode-build` and `opencode-run` check the latest upstream OpenCode release; `opencode-shell` does not.
 - OpenCode release lookup failures must not fail build or run.
 - Version comparisons must compare numeric semver triplets, not strings.
-- Newer-version warning color and pause behavior must be TTY-gated so non-interactive tests and automation keep plain, non-blocking stderr.
+- Newer-version warning colour and pause behaviour must be TTY-gated so non-interactive tests and automation keep plain, non-blocking stderr.
 
-## Runtime Behavior Rules
+## Runtime Behaviour Rules
 
 - The wrapper uses a two-container runtime model: one shared published runtime per workspace plus private project containers.
 - Shared runtime containers own published host ports.
@@ -194,5 +196,5 @@ Examples:
 
 - Every active script, config, shared library, test file, and doc must be well documented.
 - Add short header comments to active scripts and config files when the contract is not obvious from the filename alone.
-- Add a short header comment to each active test file describing covered behaviors and the isolation approach when it is not obvious from the filename.
-- Keep active docs precise and aligned with the current file layout and behavior.
+- Add a short header comment to each active test file describing covered behaviours and the isolation approach when it is not obvious from the filename.
+- Keep active docs precise and aligned with the current file layout and behaviour.
