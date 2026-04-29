@@ -34,8 +34,8 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 
 - Config belongs in config files, not in scripts or shell libraries.
 - The wrapper mounts the workspace home at `/root` to stay aligned with the upstream root user.
-- The host workspace dirname is `opencode-general`.
-- The container workspace path is `/workspace/general`.
+- The host workspace dirname is `opencode-documents`.
+- The container workspace path is `/workspace/documents`.
 - The shared runtime mounts the development root at `/workspace/projects`.
 - Project containers mount the development root at `/workspace/development`.
 - The selected project mount is `/workspace/project`.

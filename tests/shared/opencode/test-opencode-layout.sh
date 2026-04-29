@@ -59,12 +59,12 @@ grep -q '^OPENCODE_BASE_PATH="\$HOME/Documents/Ezirius/.applications-data/.conta
 grep -q '^OPENCODE_DEVELOPMENT_ROOT="\$HOME/Documents/Ezirius/Development/OpenCode"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_WORKSPACES="ezirius:10000 nala:20000"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_HOME="/root"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
-grep -q '^OPENCODE_CONTAINER_WORKSPACE="/workspace/general"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
+grep -q '^OPENCODE_CONTAINER_WORKSPACE="/workspace/documents"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_PROJECTS="/workspace/projects"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_CONTAINER_PROJECT="/workspace/project"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_SHARED_CONTAINER_SCOPE="infrastructure"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
-grep -q '^OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
+grep -q '^OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-documents"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_DEFAULT_COMMAND="opencode"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_SHELL_COMMAND="nu"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_RELEASE_API_URL="https://api.github.com/repos/anomalyco/opencode/releases/latest"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
@@ -128,7 +128,7 @@ if grep -q 'host\.containers\.internal:<published-port>' "$ROOT/README.md"; then
   exit 1
 fi
 
-grep -q '/workspace/general' "$ROOT/docs/shared/opencode/usage.md"
+grep -q '/workspace/documents' "$ROOT/docs/shared/opencode/usage.md"
 grep -q '/workspace/development' "$ROOT/docs/shared/opencode/usage.md"
 grep -q '/workspace/projects' "$ROOT/docs/shared/opencode/usage.md"
 grep -q '/workspace/project' "$ROOT/docs/shared/opencode/usage.md"

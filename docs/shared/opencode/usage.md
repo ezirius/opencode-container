@@ -23,18 +23,18 @@ The official upstream container is the base image. The paths and lifecycle docum
 For a selected workspace named `WORKSPACE` and project `PROJECT`, the run script creates these host paths under `OPENCODE_BASE_PATH`, which defaults to `$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence`:
 
 - Host home path: `${HOME}/Documents/Ezirius/.applications-data/.containers-artificial-intelligence/WORKSPACE/opencode-home`
-- Host workspace path: `${HOME}/Documents/Ezirius/.applications-data/.containers-artificial-intelligence/WORKSPACE/opencode-general`
+- Host workspace path: `${HOME}/Documents/Ezirius/.applications-data/.containers-artificial-intelligence/WORKSPACE/opencode-documents`
 
 The shared runtime container mappings are:
 
 - Host home path -> `/root`
-- Host workspace path -> `/workspace/general`
+- Host workspace path -> `/workspace/documents`
 - `$HOME/Documents/Ezirius/Development/OpenCode` -> `/workspace/projects`
 
 The project container mappings are:
 
 - Host home path -> `/root`
-- Host workspace path -> `/workspace/general`
+- Host workspace path -> `/workspace/documents`
 - `$HOME/Documents/Ezirius/Development/OpenCode` -> `/workspace/development`
 - Selected project root -> `/workspace/project`
 

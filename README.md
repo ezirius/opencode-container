@@ -72,7 +72,7 @@ The shared defaults set `OPENCODE_BASE_PATH` to `$HOME/Documents/Ezirius/.applic
 
 - Container user: `root`
 - Container home: `/root`
-- General workspace mount: `/workspace/general`
+- Documents workspace mount: `/workspace/documents`
 - Development root mount: `/workspace/development`
 - Shared runtime projects mount: `/workspace/projects`
 - Selected project mount: `/workspace/project`
