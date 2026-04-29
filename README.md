@@ -46,6 +46,8 @@ tests/shared/opencode/test-opencode-shell.sh
 
 `opencode-shell <workspace> <project> [command...]` runs the command directly inside the project container.
 
+`opencode-shell` can still attach to an explicitly selected running project container even when the matching host project directory no longer exists.
+
 `scripts/shared/opencode/opencode-build` only runs from a clean committed checkout. It requires an attached branch HEAD. On `main`, it also requires `main` to track `origin/main` and `main` to be pushed and in sync with `origin/main`. A clean committed local branch without an upstream remains allowed.
 
 ## Configuration
