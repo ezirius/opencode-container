@@ -586,24 +586,6 @@ opencode_host_workspace_dir() {
   printf '%s/%s/%s\n' "$(opencode_expand_home_path "$OPENCODE_BASE_PATH")" "$workspace" "$OPENCODE_HOST_WORKSPACE_DIRNAME"
 }
 
-# This formats the shared projects mount from the host development root.
-opencode_shared_projects_mount_spec() {
-  printf '%s:%s\n' "$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")" "$OPENCODE_CONTAINER_PROJECTS"
-}
-
-# This formats the shared runtime published port mapping for one workspace.
-opencode_shared_container_publish_spec() {
-  local workspace="$1"
-  printf '%s:%s\n' "$(opencode_workspace_published_port "$workspace")" "$OPENCODE_SERVER_PORT"
-}
-
-# This formats the project container published port mapping, which is always empty.
-opencode_project_container_publish_spec() {
-  local workspace="${1-}"
-  : "$workspace"
-  printf '\n'
-}
-
 # This finds the newest local image that matches the saved OpenCode naming rules.
 opencode_latest_image() {
   local image_name normalized image_regex

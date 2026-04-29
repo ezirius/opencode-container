@@ -53,9 +53,7 @@ test -f "$ROOT/tests/shared/opencode/test-opencode-run.sh"
 test -f "$ROOT/tests/shared/opencode/test-opencode-shell.sh"
 
 # These checks make sure the config keeps the concrete OpenCode path contract.
-grep -q '^OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_VERSION="1.14.25"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
-grep -q '^OPENCODE_TARGET_ARCH="arm64"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_SERVER_PORT="4096"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_BASE_PATH="\$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 grep -q '^OPENCODE_DEVELOPMENT_ROOT="\$HOME/Documents/Ezirius/Development/OpenCode"$' "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
@@ -116,7 +114,6 @@ grep -q 'tests/shared/shared/test-asserts.sh' "$ROOT/README.md"
 grep -q 'tests/shared/opencode/test-all.sh' "$ROOT/README.md"
 grep -q 'docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md' "$ROOT/README.md"
 grep -q '1.14.25' "$ROOT/README.md"
-grep -q 'arm64' "$ROOT/README.md"
 grep -q 'OPENCODE_SERVER_PORT' "$ROOT/README.md"
 grep -q 'opencode attach http://\$OPENCODE_ATTACH_HOST:\$OPENCODE_SERVER_PORT' "$ROOT/README.md"
 grep -q 'clean committed checkout' "$ROOT/README.md"
@@ -144,7 +141,6 @@ if grep -q 'host\.containers\.internal:<published-port>' "$ROOT/docs/shared/open
   exit 1
 fi
 
-grep -q 'arm64' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'OPENCODE_SERVER_PORT' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'OPENCODE_SERVER_HOSTNAME' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'OPENCODE_ATTACH_HOST' "$ROOT/docs/shared/opencode/usage.md"

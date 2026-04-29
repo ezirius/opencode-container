@@ -63,7 +63,6 @@ The default in-container working directory is `/workspace/project`.
 ## Runtime Pin
 
 - Upstream base image: `ghcr.io/anomalyco/opencode:1.14.25`
-- Configured target architecture: `arm64`; the build uses the local `Containerfile` image tag without passing a separate platform flag.
 - Configured internal server port: `OPENCODE_SERVER_PORT`, currently `4096`
 - Configured in-container serve hostname: `OPENCODE_SERVER_HOSTNAME`, currently `0.0.0.0`
 - Configured in-container attach host: `OPENCODE_ATTACH_HOST`, currently `127.0.0.1`

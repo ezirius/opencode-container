@@ -64,7 +64,7 @@ configs/shared/opencode/Containerfile
 
 The wrapper pins the official upstream container base to version `1.14.25`.
 
-The config records `arm64` as the target architecture and `OPENCODE_SERVER_PORT` as the internal server port; the local `Containerfile` pins the upstream image tag, not a platform flag.
+The config records `OPENCODE_SERVER_PORT` as the internal server port, and the local `Containerfile` pins the upstream image tag directly.
 
 The shared defaults set `OPENCODE_BASE_PATH` to `$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence`, `OPENCODE_DEVELOPMENT_ROOT` to `$HOME/Documents/Ezirius/Development/OpenCode`, and `OPENCODE_WORKSPACES` to `ezirius:10000 nala:20000`.
 

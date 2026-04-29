@@ -87,9 +87,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
@@ -136,9 +134,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
@@ -180,9 +176,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"

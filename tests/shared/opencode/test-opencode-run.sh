@@ -429,9 +429,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="~/development"
@@ -494,9 +492,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
@@ -538,9 +534,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
@@ -575,21 +569,12 @@ assert_equals 'shopt -s nullglob' "$nullglob_state" 'run helper preserves an alr
 
 shared_runtime_name="${IMAGE_NAME}-alpha-infrastructure"
 
-# This checks the shared runtime helper contract before lifecycle behaviour changes land.
+# This checks the shared runtime naming helper before lifecycle behaviour changes land.
 shared_container_name="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; opencode_shared_container_name "$1" "$2"' _ "$IMAGE_NAME" alpha)"
 assert_equals "${IMAGE_NAME}-alpha-infrastructure" "$shared_container_name" 'run helper derives one shared runtime container name per workspace and infrastructure scope'
 
 shared_container_name_with_trailing_root="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; OPENCODE_DEVELOPMENT_ROOT="~/development/"; opencode_shared_container_name "$1" "$2"' _ "$IMAGE_NAME" alpha)"
 assert_equals "${IMAGE_NAME}-alpha-infrastructure" "$shared_container_name_with_trailing_root" 'run helper keeps the shared runtime infrastructure suffix when the development root ends with a slash'
-
-shared_projects_mount="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; opencode_shared_projects_mount_spec' )"
-assert_equals "$DEVELOPMENT_ROOT:/workspace/projects" "$shared_projects_mount" 'run helper mounts the expanded host development root at the shared projects path'
-
-shared_publish_spec="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; opencode_shared_container_publish_spec alpha')"
-assert_equals '14096:4096' "$shared_publish_spec" 'run helper always publishes the stable workspace port for shared runtime containers'
-
-project_publish_spec="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; opencode_project_container_publish_spec alpha')"
-assert_equals '' "$project_publish_spec" 'run helper never publishes ports for project containers'
 
 : >"$PODMAN_LOG"
 : >"$CURL_LOG"
@@ -634,9 +619,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
@@ -679,9 +662,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
@@ -809,9 +790,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
@@ -850,9 +829,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
@@ -891,9 +868,7 @@ cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
 OPENCODE_IMAGE_BASENAME="opencode"
-OPENCODE_IMAGE_REPOSITORY="ghcr.io/anomalyco/opencode"
 OPENCODE_VERSION="1.14.25"
-OPENCODE_TARGET_ARCH="arm64"
 OPENCODE_SERVER_PORT="4096"
 OPENCODE_BASE_PATH="${TMP_DIR}/base"
 OPENCODE_DEVELOPMENT_ROOT="${DEVELOPMENT_ROOT}"
