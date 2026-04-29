@@ -109,6 +109,12 @@ opencode_shared_container_name() {
   printf '%s-%s-%s\n' "$image_name" "$workspace" "$OPENCODE_SHARED_CONTAINER_SCOPE"
 }
 
+# This checks whether a container name uses the shared runtime scope suffix.
+opencode_container_has_shared_runtime_scope() {
+  local container_name="$1"
+  [[ "$container_name" == *-"$OPENCODE_SHARED_CONTAINER_SCOPE" ]]
+}
+
 # This builds the broad regex used to find OpenCode container candidates.
 opencode_container_candidate_regex() {
   local escaped_basename
@@ -612,6 +618,38 @@ opencode_workspace_containers() {
       printf '%s\n' "$container_name"
     fi
   done < <(podman ps -aq --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
+}
+
+# This finds the newest running shared runtime container for one workspace.
+opencode_running_shared_container() {
+  local workspace="$1"
+  local container_name
+
+  while IFS= read -r container_name; do
+    [[ -n "$container_name" ]] || continue
+    if opencode_container_workspace_matches "$container_name" "$workspace" && opencode_container_has_shared_runtime_scope "$container_name"; then
+      printf '%s\n' "$container_name"
+      return 0
+    fi
+  done < <(podman ps --sort created --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
+
+  printf '\n'
+}
+
+# This finds the newest existing shared runtime container for one workspace.
+opencode_existing_shared_container() {
+  local workspace="$1"
+  local container_name
+
+  while IFS= read -r container_name; do
+    [[ -n "$container_name" ]] || continue
+    if opencode_container_workspace_matches "$container_name" "$workspace" && opencode_container_has_shared_runtime_scope "$container_name"; then
+      printf '%s\n' "$container_name"
+      return 0
+    fi
+  done < <(podman ps -aq --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
+
+  printf '\n'
 }
 
 # This finds the newest running container for one workspace and project.

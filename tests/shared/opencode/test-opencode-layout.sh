@@ -118,8 +118,8 @@ grep -q 'OPENCODE_SERVER_PORT' "$ROOT/README.md"
 grep -q 'opencode attach http://\$OPENCODE_ATTACH_HOST:\$OPENCODE_SERVER_PORT' "$ROOT/README.md"
 grep -q 'clean committed checkout' "$ROOT/README.md"
 grep -q 'attached branch HEAD' "$ROOT/README.md"
-grep -q 'main to track origin/main' "$ROOT/README.md"
-grep -q 'main to be pushed and in sync with origin/main' "$ROOT/README.md"
+grep -q 'main` to track `origin/main' "$ROOT/README.md"
+grep -q 'main` to be pushed and in sync with `origin/main' "$ROOT/README.md"
 grep -q 'opencode-shell` prompts for workspace and project' "$ROOT/README.md"
 grep -q 'opencode-shell <workspace>` prompts for project' "$ROOT/README.md"
 
@@ -146,8 +146,8 @@ grep -q 'OPENCODE_SERVER_HOSTNAME' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'OPENCODE_ATTACH_HOST' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'clean committed checkout' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'attached branch HEAD' "$ROOT/docs/shared/opencode/usage.md"
-grep -q 'main to track origin/main' "$ROOT/docs/shared/opencode/usage.md"
-grep -q 'main to be pushed and in sync with origin/main' "$ROOT/docs/shared/opencode/usage.md"
+grep -q 'main` to track `origin/main' "$ROOT/docs/shared/opencode/usage.md"
+grep -q 'main` to be pushed and in sync with `origin/main' "$ROOT/docs/shared/opencode/usage.md"
 grep -q '`nu`' "$ROOT/docs/shared/opencode/usage.md"
 grep -q '`scripts/shared/opencode/opencode-build`' "$ROOT/docs/shared/opencode/usage.md"
 grep -q 'scripts/shared/opencode/opencode-shell <workspace> <project> \[command...\]`' "$ROOT/docs/shared/opencode/usage.md"
@@ -164,6 +164,13 @@ if grep -q 'host\.containers\.internal:<published-port>' "$ROOT/docs/shared/open
 fi
 
 grep -q '/workspace/projects' "$ROOT/docs/shared/opencode/architecture.md"
+grep -q '`tests/shared/shared/test-asserts.sh`' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
+grep -q '`tests/shared/opencode/test-opencode-build.sh`' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
+grep -q '`tests/shared/opencode/test-opencode-layout.sh`' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
+grep -q '`tests/shared/opencode/test-opencode-run.sh`' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
+grep -q '`tests/shared/opencode/test-opencode-shell.sh`' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
+grep -q 'private project containers' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
+grep -q 'http://\$OPENCODE_ATTACH_HOST:\$OPENCODE_SERVER_PORT' "$ROOT/docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md"
 grep -q '^IMAGE_ID=.1234567890ab.$' "$ROOT/tests/shared/opencode/test-opencode-shell.sh"
 grep -q '^OLD_IMAGE_ID=.fedcba098765.$' "$ROOT/tests/shared/opencode/test-opencode-shell.sh"
 grep -q '`scripts/shared/opencode/opencode-shell`' "$ROOT/AGENTS.md"
@@ -177,6 +184,7 @@ grep -q '^- `docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status
 grep -q '`configs/shared/opencode/Containerfile`' "$ROOT/AGENTS.md"
 grep -q '`tests/shared/opencode/test-all.sh`' "$ROOT/AGENTS.md"
 grep -q '`.dockerignore`' "$ROOT/AGENTS.md"
+grep -q 'Keep `.gitignore` at the repository root.' "$ROOT/AGENTS.md"
 
 if grep -q 'Use the cleanup worktree at `.worktrees/cleanup`' "$ROOT/AGENTS.md"; then
   printf 'AGENTS must not include local cleanup-worktree instructions\n' >&2

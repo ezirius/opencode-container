@@ -67,7 +67,7 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 names_file="${OPENCODE_TEST_PODMAN_LOG}.names"
 
 # This keeps shared runtime state separate from project container state.
-shared_name="opencode-1.14.25-20260418-120000-1234567890ab-alpha-infrastructure"
+shared_name="${OPENCODE_TEST_SHARED_NAME:-opencode-1.14.25-20260418-120000-1234567890ab-alpha-infrastructure}"
 shared_mode="${OPENCODE_TEST_SHARED_MODE:-absent}"
 shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
 
@@ -235,6 +235,8 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
       project_mount="${OPENCODE_TEST_PROJECT_MOUNT:-}"
 
       if [[ "$container_name" == "$shared_name" ]]; then
+        workspace_mount="${workspace_mount:-$OPENCODE_TEST_BASE_PATH/alpha/opencode-general}"
+        printf '%s\n' "$workspace_mount : /workspace/general"
         printf '%s\n' "$OPENCODE_TEST_DEVELOPMENT_ROOT : /workspace/projects"
       elif [[ -z "$workspace_mount" || -z "$project_mount" ]]; then
         case "$container_name" in
@@ -253,8 +255,10 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
         esac
       fi
 
-      printf '%s\n' "$workspace_mount : /workspace/general"
-      printf '%s\n' "$project_mount : /workspace/project"
+      if [[ "$container_name" != "$shared_name" ]]; then
+        printf '%s\n' "$workspace_mount : /workspace/general"
+        printf '%s\n' "$project_mount : /workspace/project"
+      fi
     elif [[ "$*" == *'.NetworkSettings.Ports'* ]]; then
       if [[ -n "${OPENCODE_TEST_PUBLISHED_PORT:-}" ]]; then
         printf '4096/tcp %s\n' "$OPENCODE_TEST_PUBLISHED_PORT"
@@ -568,6 +572,7 @@ nullglob_state="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/commo
 assert_equals 'shopt -s nullglob' "$nullglob_state" 'run helper preserves an already enabled nullglob shell option after project discovery'
 
 shared_runtime_name="${IMAGE_NAME}-alpha-infrastructure"
+old_shared_runtime_name="${OLD_IMAGE_NAME}-alpha-infrastructure"
 
 # This checks the shared runtime naming helper before lifecycle behaviour changes land.
 shared_container_name="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; opencode_shared_container_name "$1" "$2"' _ "$IMAGE_NAME" alpha)"
@@ -765,6 +770,30 @@ assert_file_not_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run does not repr
 test ! -s "$XDG_OPEN_LOG" || fail 'run does not reopen the browser when the shared runtime is already running'
 
 : >"$PODMAN_LOG"
+rm -f "${PODMAN_LOG}.names"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+: >"$XDG_OPEN_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_SHARED_NAME="$old_shared_runtime_name" OPENCODE_TEST_SHARED_MODE='running' bash "$ROOT/scripts/shared/opencode/opencode-run" alpha beta >"$TMP_DIR/shared-old-version-reuse.out" 2>"$TMP_DIR/shared-old-version-reuse.err"
+assert_file_contains "Reusing shared runtime container: ${old_shared_runtime_name}" "$TMP_DIR/shared-old-version-reuse.err" 'run reuses a running shared runtime from an older image for the same workspace'
+assert_file_not_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run does not create a second shared runtime when an older one is already running for the workspace'
+assert_file_not_contains "start ${shared_runtime_name}" "$PODMAN_LOG" 'run does not try to start a missing current-image shared runtime when an older one is already running'
+assert_file_not_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run does not reprobe the published URL when an older shared runtime is already running'
+test ! -s "$XDG_OPEN_LOG" || fail 'run does not reopen the browser when an older shared runtime is already running'
+
+: >"$PODMAN_LOG"
+rm -f "${PODMAN_LOG}.names"
+rm -f "${CURL_LOG}.attempts"
+: >"$CURL_LOG"
+: >"$XDG_OPEN_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_XDG_OPEN_LOG="$XDG_OPEN_LOG" OPENCODE_TEST_CURL_LOG="$CURL_LOG" OPENCODE_TEST_SHARED_NAME="$old_shared_runtime_name" OPENCODE_TEST_SHARED_MODE='stopped' bash "$ROOT/scripts/shared/opencode/opencode-run" alpha beta >"$TMP_DIR/shared-old-version-start.out" 2>"$TMP_DIR/shared-old-version-start.err"
+assert_file_contains "Starting shared runtime container: ${old_shared_runtime_name}" "$TMP_DIR/shared-old-version-start.err" 'run starts a stopped shared runtime from an older image for the same workspace'
+assert_file_contains "start ${old_shared_runtime_name}" "$PODMAN_LOG" 'run starts the older shared runtime instead of creating another one'
+assert_file_not_contains "run -d --name ${shared_runtime_name}" "$PODMAN_LOG" 'run does not create a new shared runtime when an older one already exists for the workspace'
+assert_file_contains 'http://127.0.0.1:14096' "$CURL_LOG" 'run probes the published URL after starting an older shared runtime for the workspace'
+assert_file_contains 'http://127.0.0.1:14096' "$XDG_OPEN_LOG" 'run reopens the browser after starting an older shared runtime for the workspace'
+
+: >"$PODMAN_LOG"
 : >"$OPEN_LOG"
 : >"$XDG_OPEN_LOG"
 : >"$GIO_LOG"
@@ -883,6 +912,19 @@ OPENCODE_HOST_HOME_DIRNAME="opencode-home"
 OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
 OPENCODE_DEFAULT_COMMAND="opencode"
 OPENCODE_SHELL_COMMAND="nu"
+OPENCODE_RELEASE_API_URL="https://api.github.com/repos/anomalyco/opencode/releases/latest"
+OPENCODE_RELEASE_CONNECT_TIMEOUT_SECONDS="2"
+OPENCODE_RELEASE_MAX_TIMEOUT_SECONDS="5"
+OPENCODE_SERVER_HOSTNAME="0.0.0.0"
+OPENCODE_ATTACH_HOST="127.0.0.1"
+OPENCODE_RUNNING_WAIT_ATTEMPTS="10"
+OPENCODE_RUNNING_WAIT_SECONDS="1"
+OPENCODE_STABLE_WAIT_ATTEMPTS="2"
+OPENCODE_STABLE_WAIT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_WAIT_ATTEMPTS="5"
+OPENCODE_PUBLISHED_URL_CONNECT_TIMEOUT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_WAIT_SECONDS="1"
 EOF
 
 : >"$PODMAN_LOG"

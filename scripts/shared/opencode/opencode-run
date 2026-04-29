@@ -74,6 +74,8 @@ project_root="$(project_root_dir "$project_name")"
 old_containers="$(opencode_workspace_containers "$workspace")"
 shared_container_name="$(opencode_shared_container_name "$image_name" "$workspace")"
 container_name="$(opencode_container_name "$image_name" "$workspace" "$project_name")"
+running_shared_container=''
+existing_shared_container=''
 reuse_existing=0
 running_canonical_container=""
 shared_runtime_created=0
@@ -123,6 +125,14 @@ fi
 if opencode_container_is_running "$shared_container_name"; then
   opencode_success "Reusing shared runtime container: $shared_container_name"
 elif opencode_container_exists "$shared_container_name"; then
+  opencode_success "Starting shared runtime container: $shared_container_name"
+  podman start "$shared_container_name" >/dev/null
+  shared_runtime_started=1
+elif running_shared_container="$(opencode_running_shared_container "$workspace")" && [[ -n "$running_shared_container" ]]; then
+  shared_container_name="$running_shared_container"
+  opencode_success "Reusing shared runtime container: $shared_container_name"
+elif existing_shared_container="$(opencode_existing_shared_container "$workspace")" && [[ -n "$existing_shared_container" ]]; then
+  shared_container_name="$existing_shared_container"
   opencode_success "Starting shared runtime container: $shared_container_name"
   podman start "$shared_container_name" >/dev/null
   shared_runtime_started=1
