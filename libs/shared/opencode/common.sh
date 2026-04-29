@@ -11,23 +11,52 @@ fi
 
 # This loads the saved repo settings so the helpers all read the same values.
 # shellcheck disable=SC1090
-source "$ROOT/config/agent/shared/opencode-settings-shared.conf"
+source "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
 
 declare -a OPENCODE_WORKSPACE_NAMES=()
 declare -a OPENCODE_WORKSPACE_OFFSETS=()
 
+# This tells us whether stderr supports coloured wrapper output.
+opencode_use_colour_terminal() {
+  [[ -t 2 && -z "${NO_COLOR:-}" ]]
+}
+
 # This stops the current command with one clear failure message.
 fail() {
+  if opencode_use_colour_terminal; then
+    printf '\033[31m%s\033[0m\n' "$*" >&2
+    exit 1
+  fi
   printf '%s\n' "$*" >&2
   exit 1
+}
+
+# This prints an active prompt in green when the terminal supports colour.
+opencode_active_prompt() {
+  local message="$1"
+  if opencode_use_colour_terminal; then
+    printf '\033[32m%b\033[0m' "$message" >&2
+    return 0
+  fi
+  printf '%b' "$message" >&2
+}
+
+# This prints a success message in green when the terminal supports colour.
+opencode_success() {
+  local message="$1"
+  if opencode_use_colour_terminal; then
+    printf '\033[32m%s\033[0m\n' "$message" >&2
+    return 0
+  fi
+  printf '%s\n' "$message" >&2
 }
 
 # This checks that a workspace name only uses safe characters.
 opencode_validate_workspace_name() {
   local name="$1"
 
-  if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ || "$name" == '.' || "$name" == '..' ]]; then
-    printf "Workspace name %s may only contain letters, numbers, dots, underscores, and hyphens, and must not be '.' or '..'.\n" "$name" >&2
+  if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ || "$name" == '-'* || "$name" == '.' || "$name" == '..' ]]; then
+    printf "Workspace name %s may only contain letters, numbers, dots, underscores, and hyphens, must not start with '-', and must not be '.' or '..'.\n" "$name" >&2
     exit 1
   fi
 }
@@ -128,7 +157,9 @@ opencode_pause_for_interactive_warning() {
 opencode_latest_upstream_version() {
   local release_json tag_regex
 
-  if ! release_json="$(curl -fsSL --connect-timeout 2 --max-time 5 'https://api.github.com/repos/anomalyco/opencode/releases/latest' 2>/dev/null)"; then
+  opencode_require_release_check_settings
+
+  if ! release_json="$(curl -fsSL --connect-timeout "$OPENCODE_RELEASE_CONNECT_TIMEOUT_SECONDS" --max-time "$OPENCODE_RELEASE_MAX_TIMEOUT_SECONDS" "$OPENCODE_RELEASE_API_URL" 2>/dev/null)"; then
     printf '\n'
     return 0
   fi
@@ -156,6 +187,56 @@ opencode_version_is_newer_than() {
   (( candidate_minor > pinned_minor )) && return 0
   (( candidate_minor < pinned_minor )) && return 1
   (( candidate_patch > pinned_patch ))
+}
+
+# This checks that the saved server port is numeric before runtime helpers use it.
+opencode_require_server_port() {
+  [[ "$OPENCODE_SERVER_PORT" =~ ^[0-9]+$ ]] || fail 'OPENCODE_SERVER_PORT must be numeric.'
+}
+
+# This checks that one saved config value is not empty before helpers use it.
+opencode_require_config_value() {
+  local value="$1"
+  local name="$2"
+  [[ -n "$value" ]] || fail "$name must not be empty."
+}
+
+# This checks that one saved config value is numeric before helpers use it.
+opencode_require_numeric_config_value() {
+  local value="$1"
+  local name="$2"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "$name must be numeric."
+}
+
+# This checks the saved release lookup settings before network helpers use them.
+opencode_require_release_check_settings() {
+  opencode_require_config_value "$OPENCODE_RELEASE_API_URL" 'OPENCODE_RELEASE_API_URL'
+  opencode_require_numeric_config_value "$OPENCODE_RELEASE_CONNECT_TIMEOUT_SECONDS" 'OPENCODE_RELEASE_CONNECT_TIMEOUT_SECONDS'
+  opencode_require_numeric_config_value "$OPENCODE_RELEASE_MAX_TIMEOUT_SECONDS" 'OPENCODE_RELEASE_MAX_TIMEOUT_SECONDS'
+}
+
+# This checks the saved runtime wait settings before readiness helpers use them.
+opencode_require_runtime_wait_settings() {
+  opencode_require_numeric_config_value "$OPENCODE_RUNNING_WAIT_ATTEMPTS" 'OPENCODE_RUNNING_WAIT_ATTEMPTS'
+  opencode_require_numeric_config_value "$OPENCODE_RUNNING_WAIT_SECONDS" 'OPENCODE_RUNNING_WAIT_SECONDS'
+  opencode_require_numeric_config_value "$OPENCODE_STABLE_WAIT_ATTEMPTS" 'OPENCODE_STABLE_WAIT_ATTEMPTS'
+  opencode_require_numeric_config_value "$OPENCODE_STABLE_WAIT_SECONDS" 'OPENCODE_STABLE_WAIT_SECONDS'
+  opencode_require_numeric_config_value "$OPENCODE_PUBLISHED_URL_WAIT_ATTEMPTS" 'OPENCODE_PUBLISHED_URL_WAIT_ATTEMPTS'
+  opencode_require_numeric_config_value "$OPENCODE_PUBLISHED_URL_CONNECT_TIMEOUT_SECONDS" 'OPENCODE_PUBLISHED_URL_CONNECT_TIMEOUT_SECONDS'
+  opencode_require_numeric_config_value "$OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS" 'OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS'
+  opencode_require_numeric_config_value "$OPENCODE_PUBLISHED_URL_WAIT_SECONDS" 'OPENCODE_PUBLISHED_URL_WAIT_SECONDS'
+}
+
+# This checks the saved attach settings before interactive attach helpers use them.
+opencode_require_attach_settings() {
+  opencode_require_config_value "$OPENCODE_ATTACH_HOST" 'OPENCODE_ATTACH_HOST'
+}
+
+# This builds the private in-container attach URL from the saved host and port.
+opencode_attach_url() {
+  opencode_require_server_port
+  opencode_require_attach_settings
+  printf 'http://%s:%s\n' "$OPENCODE_ATTACH_HOST" "$OPENCODE_SERVER_PORT"
 }
 
 # This warns when the pinned OpenCode version is not the latest upstream release.
@@ -267,7 +348,9 @@ opencode_require_build_ready_checkout() {
   local branch_name counts ahead behind upstream_ref
 
   opencode_require_clean_committed_checkout "$checkout_root"
-  branch_name="$(opencode_git_current_branch "$checkout_root")"
+  if ! branch_name="$(opencode_git_current_branch "$checkout_root" 2>/dev/null)"; then
+    fail 'Build requires an attached branch HEAD.'
+  fi
 
   if [[ "$branch_name" != 'main' ]]; then
     if opencode_git_has_upstream "$checkout_root"; then
@@ -294,9 +377,11 @@ opencode_require_build_ready_checkout() {
 
 # This reads the saved workspace list and splits it into names and offsets.
 opencode_load_workspaces() {
-  local entry name offset
+  local entry name offset index
   OPENCODE_WORKSPACE_NAMES=()
   OPENCODE_WORKSPACE_OFFSETS=()
+
+  opencode_require_server_port
 
   for entry in $OPENCODE_WORKSPACES; do
     name="${entry%%:*}"
@@ -304,6 +389,17 @@ opencode_load_workspaces() {
     [[ -n "$name" && -n "$offset" && "$name" != "$offset" ]] || fail 'Each OPENCODE_WORKSPACES entry must look like name:offset.'
     opencode_validate_workspace_name "$name"
     [[ "$offset" =~ ^[0-9]+$ ]] || fail "Workspace offset for $name must be numeric."
+
+    for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
+      if [[ "${OPENCODE_WORKSPACE_NAMES[$index]}" == "$name" ]]; then
+        fail "Workspace name $name is configured more than once."
+      fi
+
+      if [[ "${OPENCODE_WORKSPACE_OFFSETS[$index]}" == "$offset" ]]; then
+        fail "Workspace offset $offset is configured more than once."
+      fi
+    done
+
     OPENCODE_WORKSPACE_NAMES+=("$name")
     OPENCODE_WORKSPACE_OFFSETS+=("$offset")
   done
@@ -315,11 +411,11 @@ opencode_load_workspaces() {
 opencode_pick_workspace() {
   local selection index
   while true; do
-    printf 'Pick a workspace:\n' >&2
+    opencode_active_prompt 'Pick a workspace:\n'
     for index in "${!OPENCODE_WORKSPACE_NAMES[@]}"; do
       printf '%d) %s\n' "$((index + 1))" "${OPENCODE_WORKSPACE_NAMES[$index]}" >&2
     done
-    printf 'Selection: ' >&2
+    opencode_active_prompt 'Selection: '
     if ! read -r selection; then
       fail 'Selection aborted.'
     fi
@@ -367,7 +463,7 @@ opencode_workspace_published_port() {
   local workspace="$1"
   local offset
   offset="$(opencode_workspace_offset "$workspace")"
-  printf '%s\n' "$((4096 + offset))"
+  printf '%s\n' "$((OPENCODE_SERVER_PORT + offset))"
 }
 
 # This checks whether the current host shell is running on macOS.
@@ -438,11 +534,11 @@ opencode_pick_project() {
   done <<< "$project_names"
 
   while true; do
-    printf 'Pick a project:\n' >&2
+    opencode_active_prompt 'Pick a project:\n'
     for index in "${!options[@]}"; do
       printf '%d) %s\n' "$((index + 1))" "${options[$index]}" >&2
     done
-    printf 'Selection: ' >&2
+    opencode_active_prompt 'Selection: '
     if ! read -r selection; then
       fail 'Selection aborted.'
     fi
@@ -490,12 +586,6 @@ opencode_host_workspace_dir() {
   printf '%s/%s/%s\n' "$(opencode_expand_home_path "$OPENCODE_BASE_PATH")" "$workspace" "$OPENCODE_HOST_WORKSPACE_DIRNAME"
 }
 
-# This formats the fixed project mount for the selected project.
-opencode_project_mount_spec() {
-  local project_name="$1"
-  printf '%s:%s\n' "$(project_root_dir "$project_name")" "$OPENCODE_CONTAINER_PROJECT"
-}
-
 # This formats the shared projects mount from the host development root.
 opencode_shared_projects_mount_spec() {
   printf '%s:%s\n' "$(opencode_expand_home_path "$OPENCODE_DEVELOPMENT_ROOT")" "$OPENCODE_CONTAINER_PROJECTS"
@@ -504,7 +594,7 @@ opencode_shared_projects_mount_spec() {
 # This formats the shared runtime published port mapping for one workspace.
 opencode_shared_container_publish_spec() {
   local workspace="$1"
-  printf '%s:4096\n' "$(opencode_workspace_published_port "$workspace")"
+  printf '%s:%s\n' "$(opencode_workspace_published_port "$workspace")" "$OPENCODE_SERVER_PORT"
 }
 
 # This formats the project container published port mapping, which is always empty.
@@ -559,19 +649,6 @@ opencode_running_container() {
   printf '\n'
 }
 
-# This lists running containers for one workspace, newest first.
-opencode_running_containers() {
-  local workspace="$1"
-  local container_name
-
-  while IFS= read -r container_name; do
-    [[ -n "$container_name" ]] || continue
-    if opencode_container_workspace_matches "$container_name" "$workspace"; then
-      printf '%s\n' "$container_name"
-    fi
-  done < <(podman ps --sort created --format '{{.Names}}' --filter "name=$(opencode_container_candidate_regex)" 2>/dev/null || true)
-}
-
 # This checks whether one exact container is running right now.
 opencode_container_is_running() {
   local container_name="$1"
@@ -592,11 +669,12 @@ opencode_container_exists() {
 opencode_wait_for_running_container() {
   local container_name="$1"
   local attempt
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  opencode_require_runtime_wait_settings
+  for ((attempt = 1; attempt <= OPENCODE_RUNNING_WAIT_ATTEMPTS; attempt++)); do
     if opencode_container_is_running "$container_name"; then
       return 0
     fi
-    sleep 1
+    sleep "$OPENCODE_RUNNING_WAIT_SECONDS"
   done
   return 1
 }
@@ -605,11 +683,14 @@ opencode_wait_for_running_container() {
 opencode_wait_for_stable_running_container() {
   local container_name="$1"
   local attempt
-  for attempt in 1 2; do
+  opencode_require_runtime_wait_settings
+  for ((attempt = 1; attempt <= OPENCODE_STABLE_WAIT_ATTEMPTS; attempt++)); do
     if ! opencode_container_is_running "$container_name"; then
       return 1
     fi
-    sleep 1
+    if (( attempt < OPENCODE_STABLE_WAIT_ATTEMPTS )); then
+      sleep "$OPENCODE_STABLE_WAIT_SECONDS"
+    fi
   done
   opencode_container_is_running "$container_name"
 }
@@ -618,30 +699,14 @@ opencode_wait_for_stable_running_container() {
 opencode_wait_for_published_url() {
   local url="$1"
   local attempt
-  for attempt in 1 2 3 4 5; do
-    if curl -fsS --connect-timeout 1 --max-time 1 "$url" >/dev/null 2>&1; then
+  opencode_require_runtime_wait_settings
+  for ((attempt = 1; attempt <= OPENCODE_PUBLISHED_URL_WAIT_ATTEMPTS; attempt++)); do
+    if curl -fsS --connect-timeout "$OPENCODE_PUBLISHED_URL_CONNECT_TIMEOUT_SECONDS" --max-time "$OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS" "$url" >/dev/null 2>&1; then
       return 0
     fi
-    sleep 1
+    sleep "$OPENCODE_PUBLISHED_URL_WAIT_SECONDS"
   done
   return 1
-}
-
-# This opens the published host URL with the best available host browser launcher.
-opencode_open_published_url() {
-  local url="$1"
-
-  if opencode_host_is_macos; then
-    open "$url" >/dev/null 2>&1 || true
-    return 0
-  fi
-
-  if opencode_host_is_linux; then
-    if xdg-open "$url" >/dev/null 2>&1; then
-      return 0
-    fi
-    gio open "$url" >/dev/null 2>&1 || true
-  fi
 }
 
 # This detaches the browser launcher so it survives the wrapper handing control to exec.
@@ -662,6 +727,7 @@ opencode_open_published_url_detached() {
     ' _ "$url" >/dev/null 2>&1 < /dev/null &
   fi
 }
+
 # This gathers a short state summary without failing the wrapper when diagnostics break.
 opencode_container_state_summary() {
   local container_name="$1"
@@ -715,24 +781,7 @@ opencode_container_workspace_matches() {
   printf '%s\n' "$mounts" | sed 's/[[:space:]]*:[[:space:]]*/:/g' | grep -Fqx -- "$expected"
 }
 
-# This checks whether one container's published host port matches the requested publish mode.
-opencode_container_publish_matches() {
-  local container_name="$1"
-  local workspace="$2"
-  local publish_external="$3"
-  local bindings expected
-  expected="4096/tcp $(opencode_workspace_published_port "$workspace")"
-  bindings="$(podman inspect --format '{{range $container_port, $host_bindings := .NetworkSettings.Ports}}{{if $host_bindings}}{{range $host_bindings}}{{println $container_port .HostPort}}{{end}}{{end}}{{end}}' "$container_name" 2>/dev/null || true)"
-
-  if [[ "$publish_external" == '1' ]]; then
-    printf '%s\n' "$bindings" | grep -Fqx -- "$expected"
-    return
-  fi
-
-  ! printf '%s\n' "$bindings" | grep -Fq -- '4096/tcp '
-}
-
-# This prints a yellow warning when the terminal supports color.
+# This prints an amber warning when the terminal supports colour.
 opencode_warn() {
   local message="$1"
   if opencode_use_warning_terminal && [[ -z "${NO_COLOR:-}" ]]; then

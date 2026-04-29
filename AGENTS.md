@@ -2,55 +2,60 @@
 
 This file defines the repository structure, naming rules, and safe-editing rules for agents creating or reorganizing content in this repo.
 
+## Standing Reminders
+
+- Always use British English.
+- Always be concise.
+- Always keep all code as simple as possible.
+- Use tables where appropriate.
+- Keep external values in config files for all scripts and shared libraries.
+- Do not embed external values directly in scripts or shared libraries.
+- Test files are the exception and may keep test-specific values inline.
+- Always keep scripts, code, libraries, tests, configs, and docs well documented.
+
 ## Core Shape
 
 - Repo-owned non-root files use exactly three directories below the repository base:
-  `[repo base]/category/subcategory/scope/file`.
+  `[repo base]/category/os/app-or-shared/file`.
 - `category` is the top-level bucket.
-- `subcategory` is the functional family inside that category.
-- `scope` describes OS applicability, shared applicability, or the dedicated superpowers plan area.
-- Example: `[repo base]/scripts/agent/shared/opencode-run`.
+- `os` describes host applicability.
+- `app-or-shared` is the app name or `shared` when a file is reusable across apps.
+- Example: `[repo base]/scripts/shared/opencode/opencode-run`.
 
-## Allowed Scope Values
+## Allowed Category Values
+
+- `configs`
+- `scripts`
+- `tests`
+- `docs`
+- `libs`
+
+## Allowed Os Values
 
 - `shared`
 - `macos`
 - `linux`
-- `plans`
 
-## Categories
+## App Values
 
-- `config`
-- `scripts`
-- `tests`
-- `docs`
-- `lib`
-
-## Canonical Subcategories For This Repo
-
-- `config/agent/...`
-- `config/containers/...`
-- `scripts/agent/...`
-- `tests/agent/...`
-- `docs/usage/...`
-- `docs/superpowers/...`
-- `lib/shell/...`
+- `opencode`
+- `shared`
 
 ## Config Filename Rule
 
-The special filename convention applies only to files under `config/agent`.
+The special filename convention applies only to files under `configs/*/opencode`.
 
 Format:
 
 ```text
-<subcategory>-<filejob>-<host>.<ext>
+<app>-<filejob>-<host>.<ext>
 ```
 
 Examples:
 
-- `config/agent/shared/opencode-settings-shared.conf`
+- `configs/shared/opencode/opencode-settings-shared.conf`
 
-`config/containers/shared/Containerfile` is the explicit exception because container tooling expects that filename.
+`configs/shared/opencode/Containerfile` is the explicit exception because container tooling expects that filename.
 
 ## Script Naming Rule
 
@@ -60,28 +65,28 @@ Examples:
 
 ## Required Comment Rules
 
-- Shell-facing files under `scripts`, `lib`, and `tests` must explain themselves with comments.
+- Shell-facing files under `scripts`, `libs`, and `tests` must explain themselves with comments.
 - Each file must have a short header comment near the top.
 - Each function must have a short comment directly above it.
 - Each non-trivial block must have a short comment directly above it.
 
 ## Current Canonical Paths
 
-- `config/agent/shared/opencode-settings-shared.conf`
-- `config/containers/shared/Containerfile`
-- `docs/superpowers/plans/2026-04-16-opencode-project-runtime-and-status.md`
-- `docs/usage/shared/usage.md`
-- `docs/usage/shared/architecture.md`
-- `lib/shell/shared/common.sh`
-- `scripts/agent/shared/opencode-build`
-- `scripts/agent/shared/opencode-run`
-- `scripts/agent/shared/opencode-shell`
-- `tests/agent/shared/test-asserts.sh`
-- `tests/agent/shared/test-all.sh`
-- `tests/agent/shared/test-opencode-build.sh`
-- `tests/agent/shared/test-opencode-layout.sh`
-- `tests/agent/shared/test-opencode-run.sh`
-- `tests/agent/shared/test-opencode-shell.sh`
+- `configs/shared/opencode/opencode-settings-shared.conf`
+- `configs/shared/opencode/Containerfile`
+- `docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md`
+- `docs/shared/opencode/usage.md`
+- `docs/shared/opencode/architecture.md`
+- `libs/shared/opencode/common.sh`
+- `scripts/shared/opencode/opencode-build`
+- `scripts/shared/opencode/opencode-run`
+- `scripts/shared/opencode/opencode-shell`
+- `tests/shared/shared/test-asserts.sh`
+- `tests/shared/opencode/test-all.sh`
+- `tests/shared/opencode/test-opencode-build.sh`
+- `tests/shared/opencode/test-opencode-layout.sh`
+- `tests/shared/opencode/test-opencode-run.sh`
+- `tests/shared/opencode/test-opencode-shell.sh`
 
 ## Root Files
 
@@ -91,30 +96,41 @@ Examples:
 
 ## Repository Ownership Rules
 
-- Repo-owned runtime and build settings live in `config/agent/shared/opencode-settings-shared.conf`.
-- The thin upstream-wrapper `Containerfile` lives in `config/containers/shared/Containerfile`.
-- Shared shell helpers live in `lib/shell/shared/common.sh`.
-- User-facing documentation lives in `docs/usage/shared/`.
-- Shell tests live in `tests/agent/shared/`.
-- `scripts/agent/shared/opencode-run` uses one shared published runtime per workspace plus private project containers.
-- Shared interactive Podman exec behavior lives in `lib/shell/shared/common.sh`.
+- Repo-owned runtime and build settings live in `configs/shared/opencode/opencode-settings-shared.conf`.
+- The thin upstream-wrapper `Containerfile` lives in `configs/shared/opencode/Containerfile`.
+- Shared shell helpers live in `libs/shared/opencode/common.sh`.
+- User-facing documentation lives in `docs/shared/opencode/`.
+- Shell tests live in `tests/shared/opencode/`, with generic shared test helpers allowed in `tests/shared/shared/`.
+- `scripts/shared/opencode/opencode-run` uses one shared published runtime per workspace plus private project containers.
+- Shared interactive Podman exec behavior lives in `libs/shared/opencode/common.sh`.
 - Config belongs in config files, not in scripts or shell libraries.
+
+## Shared Code Rules
+
+- Put reusable shell helpers in `libs/`.
+- Keep script-specific orchestration in `scripts/<os>/<application>/`.
+- If code is shared by both macOS and Linux, prefer `libs/shared/opencode/common.sh` first unless there is already a better-focused shared file.
+- Do not move OpenCode-specific runtime or container business rules into shared libraries unless they are clearly reused across entrypoints.
 
 ## Build Behavior Rules
 
-- `scripts/agent/shared/opencode-build` must only build from a clean, committed checkout.
+- `scripts/shared/opencode/opencode-build` must only build from a clean, committed checkout.
 
 ## Build Context Rules
 
 - Keep `.dockerignore` at the repository root.
 - `.dockerignore` must exclude `.git`, `.git/`, `.worktrees/`, build/dist/temp/cache output, editor junk, and language cache files.
-- `.dockerignore` must not exclude repo-owned source, config, scripts, docs, tests, or `config/containers/shared/Containerfile`.
+- `.dockerignore` must not exclude repo-owned source, configs, scripts, docs, tests, libs, or `configs/shared/opencode/Containerfile`.
 
 ## Development Workflow Rules
 
+- Prefer the smallest practical change.
 - Use TDD for behavior changes: write the failing test first, verify it fails for the expected reason, implement the minimal change, then verify it passes.
-- Run `bash tests/agent/shared/test-all.sh` before claiming completion or committing.
+- Update or add tests before changing behavior.
+- Run `bash tests/shared/opencode/test-all.sh` before claiming completion or committing.
+- Run shell syntax checks on changed scripts and libraries.
 - Shell tests mutate the shared config file, so run shell tests sequentially and never in parallel.
+- Prefer simple portable shell patterns over newer Bash-only features when a compatible alternative exists.
 - Do not commit unless explicitly requested.
 - Do not push unless explicitly requested.
 
@@ -122,17 +138,28 @@ Examples:
 
 - Where documentation and implementation differ, correct documentation unless the implementation is clearly wrong.
 - Use TDD for behavior and contract changes, including shell behavior and layout/docs assertions.
-- For shell scripts, test the exact CLI contract with behavior tests and enforce documentation/static contracts with `test-opencode-layout.sh`.
+- For shell scripts, test the exact CLI contract with behavior tests and enforce documentation/static contracts with `tests/shared/opencode/test-opencode-layout.sh`.
+- Prefer fake repo tests with stubbed system commands for shared script behavior.
+- Cover interactive selection behavior, invalid input retries, EOF handling, and final command construction where relevant.
 - Negated `grep` checks under `set -e` must use explicit `if grep ...; then exit 1; fi` blocks.
 - To prove a static layout assertion catches regressions, temporarily mutate the protected file, verify the test fails for that mutation, then remove the mutation before continuing.
 - When a full verification command times out, rerun the same command with a longer timeout before reporting status.
 - Request review after meaningful cleanup batches and address review findings with tests first.
 
+## Output Rules
+
+- Use green for success and active selections.
+- Use amber for warnings and skips.
+- Use red for errors.
+- Keep non-interactive output plain text.
+
 ## CLI Behavior Rules
 
-- `scripts/agent/shared/opencode-run` accepts zero, one, or two arguments: `[workspace] [project]`.
-- `scripts/agent/shared/opencode-run` must reject more than two arguments before workspace validation with `This script takes zero, one, or two arguments: [workspace] [project].`.
-- `scripts/agent/shared/opencode-shell` accepts zero, one, two, or more arguments.
+- Shared entrypoint scripts should accept only the documented arguments.
+- Unsupported argument patterns should fail clearly and direct the user to `--help`.
+- `scripts/shared/opencode/opencode-run` accepts zero, one, or two arguments: `[workspace] [project]`.
+- `scripts/shared/opencode/opencode-run` must reject more than two arguments before workspace validation with `This script takes zero, one, or two arguments: [workspace] [project]. See --help.`.
+- `scripts/shared/opencode/opencode-shell` accepts zero, one, two, or more arguments.
 - For `opencode-shell`, the first argument is the workspace, the second argument is the project, and remaining arguments are run directly inside the project container.
 - `opencode-shell` opens `OPENCODE_SHELL_COMMAND` only when no command arguments remain after workspace and project parsing.
 - `opencode-shell <workspace> -- <command...>` treats `--` as the project token and must reject it as an unsafe project name.
@@ -144,8 +171,8 @@ Examples:
 
 ## Version Pin Rules
 
-- The pinned OpenCode version lives in `config/agent/shared/opencode-settings-shared.conf`.
-- Version bumps must update the config file, `config/containers/shared/Containerfile`, user docs, architecture docs, and all affected test fixtures.
+- The pinned OpenCode version lives in `configs/shared/opencode/opencode-settings-shared.conf`.
+- Version bumps must update the config file, `configs/shared/opencode/Containerfile`, user docs, architecture docs, and all affected test fixtures.
 - When bumping the pinned version, update stale-version warning fixtures so the `newer` fixture remains newer than the pin.
 - `opencode-build` and `opencode-run` check the latest upstream OpenCode release; `opencode-shell` does not.
 - OpenCode release lookup failures must not fail build or run.
@@ -162,3 +189,10 @@ Examples:
 - Containers must be created directly with canonical names; do not use staged names or `podman rename`.
 - Existing project containers are reused unchanged when already running, or started unchanged when stopped.
 - Container matching must verify mount paths to avoid workspace/project token collisions.
+
+## Documentation Rules
+
+- Every active script, config, shared library, test file, and doc must be well documented.
+- Add short header comments to active scripts and config files when the contract is not obvious from the filename alone.
+- Add a short header comment to each active test file describing covered behaviors and the isolation approach when it is not obvious from the filename.
+- Keep active docs precise and aligned with the current file layout and behavior.

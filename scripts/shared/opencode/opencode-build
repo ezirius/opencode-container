@@ -7,10 +7,24 @@ set -euo pipefail
 # This finds the repo root so the script can reach shared helpers and config.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-source "$ROOT/lib/shell/shared/common.sh"
+source "$ROOT/libs/shared/opencode/common.sh"
+
+# This prints the supported command line for the build wrapper.
+show_help() {
+  cat <<'EOF'
+Usage: scripts/shared/opencode/opencode-build
+
+Build a fresh local OpenCode image from the saved repo settings.
+EOF
+}
+
+if [[ $# -eq 1 && "$1" == '--help' ]]; then
+  show_help
+  exit 0
+fi
 
 if [[ $# -ne 0 ]]; then
-  printf 'This script takes no arguments.\n' >&2
+  printf 'This script takes no arguments. See --help.\n' >&2
   exit 1
 fi
 
@@ -32,7 +46,7 @@ cleanup_temporary_image() {
 trap cleanup_temporary_image EXIT
 
 podman build \
-  -f "$ROOT/config/containers/shared/Containerfile" \
+  -f "$ROOT/configs/shared/opencode/Containerfile" \
   -t "$temporary_image_name" \
   "$ROOT"
 

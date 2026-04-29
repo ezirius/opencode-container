@@ -2,25 +2,31 @@
 
 set -euo pipefail
 
-# This script starts one saved workspace container and opens OpenCode inside it.
+# This script starts one shared runtime plus one project container and attaches OpenCode there.
 
 # This finds the repo root so the script can reach shared helpers.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-source "$ROOT/lib/shell/shared/common.sh"
+source "$ROOT/libs/shared/opencode/common.sh"
 
-# This loads the saved workspace list before the script picks or validates a workspace.
-opencode_load_workspaces
+# This prints the supported command line for the run wrapper.
+show_help() {
+  cat <<'EOF'
+Usage: scripts/shared/opencode/opencode-run [workspace] [project]
+
+Start a configured workspace and attach OpenCode to the selected project container.
+EOF
+}
 
 # This parses the small wrapper flag surface before positional workspace arguments.
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --)
-      shift
-      break
+    --help)
+      show_help
+      exit 0
       ;;
     -*)
-      printf 'Unsupported option: %s\n' "$1" >&2
+      printf 'Unsupported option: %s. See --help.\n' "$1" >&2
       exit 1
       ;;
     *)
@@ -30,15 +36,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $# -gt 2 ]]; then
-  printf 'This script takes zero, one, or two arguments: [workspace] [project].\n' >&2
+  printf 'This script takes zero, one, or two arguments: [workspace] [project]. See --help.\n' >&2
   exit 1
 fi
+
+# This loads the saved workspace list only after help and argument checks succeed.
+opencode_load_workspaces
 
 # This warns about stale version pins before image lookup and container work begin.
 opencode_warn_if_pinned_version_is_stale
 
 image_name="$(opencode_latest_image)"
-[[ -n "$image_name" ]] || fail 'No built OpenCode image found. Run scripts/agent/shared/opencode-build first.'
+[[ -n "$image_name" ]] || fail 'No built OpenCode image found. Run scripts/shared/opencode/opencode-build first.'
 
 if [[ $# -ge 1 ]]; then
   workspace="$1"
@@ -76,15 +85,15 @@ create_shared_runtime_container() {
     --name "$shared_container_name" \
     --userns keep-id \
     -w "$OPENCODE_CONTAINER_WORKSPACE" \
-    -p "$published_port:4096" \
+    -p "$published_port:$OPENCODE_SERVER_PORT" \
     -v "$host_home:$OPENCODE_CONTAINER_HOME" \
     -v "$host_workspace:$OPENCODE_CONTAINER_WORKSPACE" \
     -v "$development_root:$OPENCODE_CONTAINER_PROJECTS" \
     "$image_name" \
-    serve --hostname 0.0.0.0 --port 4096
+    serve --hostname "$OPENCODE_SERVER_HOSTNAME" --port "$OPENCODE_SERVER_PORT"
 }
 
-# This creates the workspace container with the current image and fixed mount contract.
+# This creates the project container with the current image and fixed mount contract.
 create_workspace_container() {
   local target_container_name="$1"
 
@@ -97,8 +106,10 @@ create_workspace_container() {
     -v "$development_root:$OPENCODE_CONTAINER_DEVELOPMENT" \
     -v "$project_root:$OPENCODE_CONTAINER_PROJECT" \
     "$image_name" \
-    serve --hostname 0.0.0.0 --port 4096
+    serve --hostname "$OPENCODE_SERVER_HOSTNAME" --port "$OPENCODE_SERVER_PORT"
 }
+
+opencode_require_config_value "$OPENCODE_SERVER_HOSTNAME" 'OPENCODE_SERVER_HOSTNAME'
 
 mkdir -p "$host_home" "$host_workspace"
 
@@ -110,13 +121,13 @@ fi
 
 # This makes sure the shared runtime exists before the project container flow begins.
 if opencode_container_is_running "$shared_container_name"; then
-  printf 'Reusing shared runtime container: %s\n' "$shared_container_name" >&2
+  opencode_success "Reusing shared runtime container: $shared_container_name"
 elif opencode_container_exists "$shared_container_name"; then
-  printf 'Starting shared runtime container: %s\n' "$shared_container_name" >&2
+  opencode_success "Starting shared runtime container: $shared_container_name"
   podman start "$shared_container_name" >/dev/null
   shared_runtime_started=1
 else
-  printf 'Creating shared runtime container: %s\n' "$shared_container_name" >&2
+  opencode_success "Creating shared runtime container: $shared_container_name"
   create_shared_runtime_container
   shared_runtime_created=1
 fi
@@ -146,14 +157,14 @@ if [[ -n "$running_canonical_container" ]]; then
 fi
 
 if [[ "$reuse_existing" != '1' ]]; then
-  printf 'Creating new container: %s\n' "$container_name" >&2
+  opencode_success "Creating new container: $container_name"
   podman rm -f "$container_name" >/dev/null 2>&1 || true
   create_workspace_container "$container_name"
 elif [[ -z "$running_canonical_container" ]]; then
-  printf 'Starting existing container: %s\n' "$container_name" >&2
+  opencode_success "Starting existing container: $container_name"
   podman start "$container_name" >/dev/null 2>&1 || true
 else
-  printf 'Reusing running container: %s\n' "$container_name" >&2
+  opencode_success "Reusing running container: $container_name"
 fi
 
 while true; do
@@ -179,4 +190,4 @@ if [[ "$shared_runtime_created" == '1' || "$shared_runtime_started" == '1' ]]; t
   fi
 fi
 
-opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach http://127.0.0.1:4096
+opencode_exec_podman_interactive_command exec "$container_name" "$OPENCODE_DEFAULT_COMMAND" attach "$(opencode_attach_url)"

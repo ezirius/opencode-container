@@ -8,9 +8,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 
 # These tests run one at a time because some of them rewrite shared config.
-bash "$ROOT/tests/agent/shared/test-opencode-layout.sh"
-bash "$ROOT/tests/agent/shared/test-opencode-build.sh"
-bash "$ROOT/tests/agent/shared/test-opencode-run.sh"
-bash "$ROOT/tests/agent/shared/test-opencode-shell.sh"
+bash "$ROOT/tests/shared/opencode/test-opencode-layout.sh"
+bash "$ROOT/tests/shared/opencode/test-opencode-build.sh"
+bash "$ROOT/tests/shared/opencode/test-opencode-run.sh"
+bash "$ROOT/tests/shared/opencode/test-opencode-shell.sh"
 
 echo "All OpenCode wrapper checks passed"

@@ -1,6 +1,6 @@
 # OpenCode Wrapper Usage
 
-This repo builds and runs a thin local image derived from the official upstream container with all repo-owned settings kept in `config/agent/shared/opencode-settings-shared.conf`.
+This repo builds and runs a thin local image derived from the official upstream container with all repo-owned settings kept in `configs/shared/opencode/opencode-settings-shared.conf`.
 
 The shared scripts are intended to work on both macOS and Linux hosts.
 
@@ -8,27 +8,34 @@ The official upstream container is the base image. The paths and lifecycle docum
 
 ## Commands
 
-- Build the image: `scripts/agent/shared/opencode-build`
-- Start a configured workspace: `scripts/agent/shared/opencode-run`
-- Open a shell or run a command in a running project container: `scripts/agent/shared/opencode-shell <workspace> <project> [command...]`
+- Build the image: `scripts/shared/opencode/opencode-build`
+- Start a configured workspace: `scripts/shared/opencode/opencode-run`
+- Open a shell or run a command in a running project container: `scripts/shared/opencode/opencode-shell <workspace> <project> [command...]`
 
 `opencode-shell <workspace> <project>` opens `nu` by default.
 
 `opencode-shell <workspace> <project> [command...]` runs the command directly inside the project container.
 
+`scripts/shared/opencode/opencode-build` only runs from a clean committed checkout. It requires an attached branch HEAD. On `main`, it also requires `main` to track `origin/main` and `main` to be pushed and in sync with `origin/main`. A clean committed local branch without an upstream remains allowed.
+
 ## Host To Container Mappings
 
-For a selected workspace named `WORKSPACE` and project `PROJECT`, the run script creates these host paths under `OPENCODE_BASE_PATH`:
+For a selected workspace named `WORKSPACE` and project `PROJECT`, the run script creates these host paths under `OPENCODE_BASE_PATH`, which defaults to `$HOME/Documents/Ezirius/.applications-data/.containers-artificial-intelligence`:
 
 - Host home path: `${HOME}/Documents/Ezirius/.applications-data/.containers-artificial-intelligence/WORKSPACE/opencode-home`
 - Host workspace path: `${HOME}/Documents/Ezirius/.applications-data/.containers-artificial-intelligence/WORKSPACE/opencode-general`
 
-The container mappings are:
+The shared runtime container mappings are:
 
 - Host home path -> `/root`
 - Host workspace path -> `/workspace/general`
-- `OPENCODE_DEVELOPMENT_ROOT` -> `/workspace/development`
-- Shared runtime host development root -> `/workspace/projects`
+- `$HOME/Documents/Ezirius/Development/OpenCode` -> `/workspace/projects`
+
+The project container mappings are:
+
+- Host home path -> `/root`
+- Host workspace path -> `/workspace/general`
+- `$HOME/Documents/Ezirius/Development/OpenCode` -> `/workspace/development`
 - Selected project root -> `/workspace/project`
 
 The default in-container working directory is `/workspace/project`.
@@ -39,11 +46,11 @@ The default in-container working directory is `/workspace/project`.
 - `opencode-shell <workspace>` prompts for project, then opens `nu` by default.
 - `opencode-shell <workspace> <project>` opens `nu` by default.
 - `opencode-shell <workspace> <project> [command...]` runs the command directly inside the project container.
-- `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname 0.0.0.0 --port 4096`.
+- `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname $OPENCODE_SERVER_HOSTNAME --port $OPENCODE_SERVER_PORT`.
 - The shared runtime container is the published browser server for the workspace.
-- That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `4096 + workspace offset`.
-- Each project container runs a private local OpenCode server for its selected project and attaches to that server at `http://127.0.0.1:4096`.
-- Project containers do not publish host ports; they run their own `serve --hostname 0.0.0.0 --port 4096` process and attach to `http://127.0.0.1:4096` inside the project container.
+- That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `OPENCODE_SERVER_PORT + workspace offset`.
+- Each project container runs a private local OpenCode server for its selected project and attaches to that server at `http://$OPENCODE_ATTACH_HOST:$OPENCODE_SERVER_PORT`.
+- Project containers do not publish host ports; they run their own `serve --hostname $OPENCODE_SERVER_HOSTNAME --port $OPENCODE_SERVER_PORT` process and attach to `http://$OPENCODE_ATTACH_HOST:$OPENCODE_SERVER_PORT` inside the project container.
 - `opencode-run` opens the published server URL in the default browser on macOS and Linux only when it creates or starts the shared runtime container.
 
 ## Naming
@@ -57,6 +64,9 @@ The default in-container working directory is `/workspace/project`.
 
 - Upstream base image: `ghcr.io/anomalyco/opencode:1.14.25`
 - Configured target architecture: `arm64`; the build uses the local `Containerfile` image tag without passing a separate platform flag.
+- Configured internal server port: `OPENCODE_SERVER_PORT`, currently `4096`
+- Configured in-container serve hostname: `OPENCODE_SERVER_HOSTNAME`, currently `0.0.0.0`
+- Configured in-container attach host: `OPENCODE_ATTACH_HOST`, currently `127.0.0.1`
 - Local `Containerfile`: thin wrapper over the official upstream container
 - Added packages: `git`, `bash`, `nushell`
 - `opencode-build` and `opencode-run` check the latest upstream OpenCode release before container build or run work starts.

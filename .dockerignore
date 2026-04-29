@@ -10,6 +10,7 @@ __pycache__/
 
 .idea/
 .vscode/
+*.code-workspace
 
 .tmp/
 tmp/

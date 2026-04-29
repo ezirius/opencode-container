@@ -7,9 +7,32 @@ set -euo pipefail
 # This finds the repo root so the script can reach shared helpers.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-source "$ROOT/lib/shell/shared/common.sh"
+source "$ROOT/libs/shared/opencode/common.sh"
 
-# This loads the saved workspace list before the script picks or validates a workspace.
+# This prints the supported command line for the shell wrapper.
+show_help() {
+  cat <<'EOF'
+Usage: scripts/shared/opencode/opencode-shell [workspace] [project] [command...]
+
+Open the configured shell in a running project container, or run a command there directly.
+EOF
+}
+
+# This only accepts the documented help flag before positional parsing begins.
+if [[ $# -ge 1 ]]; then
+  case "$1" in
+    --help)
+      show_help
+      exit 0
+      ;;
+    -*)
+      printf 'Unsupported option: %s. See --help.\n' "$1" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+# This loads the saved workspace list only after help handling succeeds.
 opencode_load_workspaces
 
 # This uses the first argument as workspace and leaves any later args for project/command parsing.
@@ -39,6 +62,6 @@ fi
 
 container_name="$(opencode_running_container "$workspace" "$project_name")"
 
-[[ -n "$container_name" ]] || fail "No running OpenCode container found for $workspace. Run scripts/agent/shared/opencode-run first."
+[[ -n "$container_name" ]] || fail "No running OpenCode container found for $workspace. Run scripts/shared/opencode/opencode-run first."
 
 opencode_exec_podman_interactive_command exec "$container_name" "${command[@]}"
