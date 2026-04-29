@@ -42,3 +42,22 @@ assert_file_not_contains() {
     fail "$message: unexpected [$needle] in $file_path"
   fi
 }
+
+# This runs one command through a portable pseudo-terminal for TTY-gated tests.
+run_with_tty() {
+  local output_path="$1"
+  shift
+
+  # This picks the BSD or util-linux script form so shared tests work on both hosts.
+  if script -q /dev/null true >/dev/null 2>&1; then
+    printf 'y' | script -q /dev/null "$@" >"$output_path"
+    return 0
+  fi
+
+  if script -q -c 'true' /dev/null >/dev/null 2>&1; then
+    printf 'y' | script -q -c "$*" /dev/null >"$output_path"
+    return 0
+  fi
+
+  fail 'script command is not compatible with the shared TTY test helper'
+}

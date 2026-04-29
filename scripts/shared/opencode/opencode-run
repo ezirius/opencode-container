@@ -126,7 +126,7 @@ if opencode_container_is_running "$shared_container_name"; then
   opencode_success "Reusing shared runtime container: $shared_container_name"
 elif opencode_container_exists "$shared_container_name"; then
   opencode_success "Starting shared runtime container: $shared_container_name"
-  podman start "$shared_container_name" >/dev/null
+  podman start "$shared_container_name"
   shared_runtime_started=1
 elif running_shared_container="$(opencode_running_shared_container "$workspace")" && [[ -n "$running_shared_container" ]]; then
   shared_container_name="$running_shared_container"
@@ -134,7 +134,7 @@ elif running_shared_container="$(opencode_running_shared_container "$workspace")
 elif existing_shared_container="$(opencode_existing_shared_container "$workspace")" && [[ -n "$existing_shared_container" ]]; then
   shared_container_name="$existing_shared_container"
   opencode_success "Starting shared runtime container: $shared_container_name"
-  podman start "$shared_container_name" >/dev/null
+  podman start "$shared_container_name"
   shared_runtime_started=1
 else
   opencode_success "Creating shared runtime container: $shared_container_name"
@@ -172,7 +172,7 @@ if [[ "$reuse_existing" != '1' ]]; then
   create_workspace_container "$container_name"
 elif [[ -z "$running_canonical_container" ]]; then
   opencode_success "Starting existing container: $container_name"
-  podman start "$container_name" >/dev/null 2>&1 || true
+  podman start "$container_name"
 else
   opencode_success "Reusing running container: $container_name"
 fi

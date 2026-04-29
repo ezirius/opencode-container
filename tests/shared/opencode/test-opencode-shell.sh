@@ -37,6 +37,8 @@ printf '%s\n' "$*" >>"$OPENCODE_TEST_PODMAN_LOG"
 case "$1" in
   ps)
     case "${OPENCODE_TEST_CONTAINER_MODE:-present}" in
+      absent)
+        ;;
       multiple)
         printf 'opencode-1.14.25-20260418-120000-1234567890ab-alpha-beta\n'
         printf 'opencode-1.14.20-20260417-120000-fedcba098765-alpha-beta\n'
@@ -83,6 +85,16 @@ EOF
 
 chmod +x "$FAKE_BIN/podman"
 
+# This fake curl fails if the shell wrapper ever tries a release lookup.
+cat >"$FAKE_BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$OPENCODE_TEST_CURL_LOG"
+exit 99
+EOF
+
+chmod +x "$FAKE_BIN/curl"
+
 cat >"$CONFIG_PATH" <<EOF
 # OpenCode runtime configuration.
 # Scripts and shell helpers must read these values instead of embedding repo config.
@@ -119,10 +131,12 @@ EOF
 
 mkdir -p "$TMP_DIR/development/alpha" "$TMP_DIR/development/beta"
 PODMAN_LOG="$TMP_DIR/podman.log"
+curl_log="$TMP_DIR/curl.log"
 export OPENCODE_TEST_BASE_PATH="$TMP_DIR/base"
 export OPENCODE_TEST_DEVELOPMENT_ROOT="$TMP_DIR/development"
 
 : >"$PODMAN_LOG"
+: >"$curl_log"
 if ! PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" --help >"$TMP_DIR/help.out" 2>"$TMP_DIR/help.err"; then
   fail 'shell --help should succeed'
 fi
@@ -165,6 +179,7 @@ OPENCODE_PUBLISHED_URL_WAIT_SECONDS="1"
 EOF
 
 : >"$PODMAN_LOG"
+: >"$curl_log"
 if ! PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" --help >"$TMP_DIR/help-bad-config.out" 2>"$TMP_DIR/help-bad-config.err"; then
   fail 'shell --help should ignore invalid workspace config'
 fi
@@ -220,6 +235,22 @@ assert_file_contains 'Pick a workspace:' "$TMP_DIR/no-args.err" 'shell without a
 assert_file_contains 'Pick a project:' "$TMP_DIR/no-args.err" 'shell without arguments prompts for a project'
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta nu" "$PODMAN_LOG" 'shell without arguments opens the configured shell in the prompted project container'
 
+: >"$PODMAN_LOG"
+# This checks that q also cancels before project selection begins.
+if printf 'q\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" >"$TMP_DIR/workspace-quit.out" 2>"$TMP_DIR/workspace-quit.err"; then
+  fail 'shell should let q cancel workspace selection'
+fi
+assert_file_contains 'Selection cancelled.' "$TMP_DIR/workspace-quit.err" 'shell reports an explicit cancel when q quits workspace selection'
+assert_file_not_contains 'exec -i ' "$PODMAN_LOG" 'shell does not attach when q cancels workspace selection'
+
+: >"$PODMAN_LOG"
+# This checks that EOF during workspace selection fails with a clean message.
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" < /dev/null >"$TMP_DIR/workspace-eof.out" 2>"$TMP_DIR/workspace-eof.err"; then
+  fail 'shell should fail cleanly when workspace selection hits EOF'
+fi
+assert_file_contains 'Selection aborted.' "$TMP_DIR/workspace-eof.err" 'shell reports a clean EOF failure during workspace selection'
+assert_file_not_contains 'exec -i ' "$PODMAN_LOG" 'shell does not attach when workspace selection hits EOF'
+
 # This verifies that a workspace argument still prompts for the project.
 : >"$PODMAN_LOG"
 printf '2\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" alpha >"$TMP_DIR/workspace-only.out" 2>"$TMP_DIR/workspace-only.err"
@@ -252,6 +283,79 @@ assert_file_not_contains 'exec -i ' "$PODMAN_LOG" 'shell does not attach when pr
 
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" alpha beta >"$TMP_DIR/shell.out" 2>"$TMP_DIR/shell.err"
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta nu" "$PODMAN_LOG" 'shell opens nu in the running workspace container by default'
+test ! -s "$curl_log" || fail 'shell must not check the latest upstream release'
+
+cat >"$CONFIG_PATH" <<EOF
+# OpenCode runtime configuration.
+# Scripts and shell helpers must read these values instead of embedding repo config.
+OPENCODE_IMAGE_BASENAME="opencode"
+OPENCODE_VERSION="1.14.25"
+OPENCODE_SERVER_PORT="4096"
+OPENCODE_BASE_PATH="${TMP_DIR}/base"
+OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
+OPENCODE_WORKSPACES="alpha:10000 alpha-prod:15000 beta:20000"
+OPENCODE_CONTAINER_HOME="/root"
+OPENCODE_CONTAINER_WORKSPACE="/workspace/general"
+OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"
+OPENCODE_CONTAINER_PROJECTS="/workspace/projects"
+OPENCODE_CONTAINER_PROJECT="/workspace/project"
+OPENCODE_SHARED_CONTAINER_SCOPE="infrastructure"
+OPENCODE_HOST_HOME_DIRNAME="opencode-home"
+OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
+OPENCODE_DEFAULT_COMMAND="opencode"
+OPENCODE_SHELL_COMMAND="bash"
+OPENCODE_RELEASE_API_URL="https://api.github.com/repos/anomalyco/opencode/releases/latest"
+OPENCODE_RELEASE_CONNECT_TIMEOUT_SECONDS="2"
+OPENCODE_RELEASE_MAX_TIMEOUT_SECONDS="5"
+OPENCODE_SERVER_HOSTNAME="0.0.0.0"
+OPENCODE_ATTACH_HOST="127.0.0.1"
+OPENCODE_RUNNING_WAIT_ATTEMPTS="10"
+OPENCODE_RUNNING_WAIT_SECONDS="1"
+OPENCODE_STABLE_WAIT_ATTEMPTS="2"
+OPENCODE_STABLE_WAIT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_WAIT_ATTEMPTS="5"
+OPENCODE_PUBLISHED_URL_CONNECT_TIMEOUT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_WAIT_SECONDS="1"
+EOF
+
+: >"$PODMAN_LOG"
+PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" alpha beta >"$TMP_DIR/custom-shell.out" 2>"$TMP_DIR/custom-shell.err"
+assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta bash" "$PODMAN_LOG" 'shell opens the configured OPENCODE_SHELL_COMMAND by default'
+
+cat >"$CONFIG_PATH" <<EOF
+# OpenCode runtime configuration.
+# Scripts and shell helpers must read these values instead of embedding repo config.
+OPENCODE_IMAGE_BASENAME="opencode"
+OPENCODE_VERSION="1.14.25"
+OPENCODE_SERVER_PORT="4096"
+OPENCODE_BASE_PATH="${TMP_DIR}/base"
+OPENCODE_DEVELOPMENT_ROOT="${TMP_DIR}/development"
+OPENCODE_WORKSPACES="alpha:10000 alpha-prod:15000 beta:20000"
+OPENCODE_CONTAINER_HOME="/root"
+OPENCODE_CONTAINER_WORKSPACE="/workspace/general"
+OPENCODE_CONTAINER_DEVELOPMENT="/workspace/development"
+OPENCODE_CONTAINER_PROJECTS="/workspace/projects"
+OPENCODE_CONTAINER_PROJECT="/workspace/project"
+OPENCODE_SHARED_CONTAINER_SCOPE="infrastructure"
+OPENCODE_HOST_HOME_DIRNAME="opencode-home"
+OPENCODE_HOST_WORKSPACE_DIRNAME="opencode-general"
+OPENCODE_DEFAULT_COMMAND="opencode"
+OPENCODE_SHELL_COMMAND="nu"
+OPENCODE_RELEASE_API_URL="https://api.github.com/repos/anomalyco/opencode/releases/latest"
+OPENCODE_RELEASE_CONNECT_TIMEOUT_SECONDS="2"
+OPENCODE_RELEASE_MAX_TIMEOUT_SECONDS="5"
+OPENCODE_SERVER_HOSTNAME="0.0.0.0"
+OPENCODE_ATTACH_HOST="127.0.0.1"
+OPENCODE_RUNNING_WAIT_ATTEMPTS="10"
+OPENCODE_RUNNING_WAIT_SECONDS="1"
+OPENCODE_STABLE_WAIT_ATTEMPTS="2"
+OPENCODE_STABLE_WAIT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_WAIT_ATTEMPTS="5"
+OPENCODE_PUBLISHED_URL_CONNECT_TIMEOUT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS="1"
+OPENCODE_PUBLISHED_URL_WAIT_SECONDS="1"
+EOF
 
 : >"$PODMAN_LOG"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-shell" alpha beta env >"$TMP_DIR/command.out" 2>"$TMP_DIR/command.err"
@@ -285,9 +389,22 @@ PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" bash "$ROOT/script
 assert_file_contains "exec -i ${IMAGE_NAME}-alpha-beta nu" "$PODMAN_LOG" 'shell still attaches to a running container when the host project directory no longer exists'
 
 : >"$PODMAN_LOG"
+helper_workspace_match_with_trailing_base_path="$(PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; OPENCODE_BASE_PATH="$1/"; if opencode_container_workspace_matches "$2" alpha; then printf yes; else printf no; fi' _ "$TMP_DIR/base" "${IMAGE_NAME}-alpha-beta")"
+assert_equals 'yes' "$helper_workspace_match_with_trailing_base_path" 'shell helper still matches the workspace mount when the base path ends with a trailing slash'
+
+helper_project_match_with_trailing_development_root="$(PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; OPENCODE_DEVELOPMENT_ROOT="$1/"; if opencode_container_project_matches "$2" beta; then printf yes; else printf no; fi' _ "$TMP_DIR/development" "${IMAGE_NAME}-alpha-beta")"
+assert_equals 'yes' "$helper_project_match_with_trailing_development_root" 'shell helper still matches the project mount when the development root ends with a trailing slash'
+
+: >"$PODMAN_LOG"
 if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='project-workspace-collision' OPENCODE_TEST_WORKSPACE_MOUNT="$TMP_DIR/base/beta/opencode-general" OPENCODE_TEST_PROJECT_MOUNT="$TMP_DIR/development/alpha-prod" bash "$ROOT/scripts/shared/opencode/opencode-shell" alpha-prod alpha >"$TMP_DIR/project-workspace-collision.out" 2>"$TMP_DIR/project-workspace-collision.err"; then
   fail 'shell should reject a container whose project token collides with the requested workspace name'
 fi
 assert_file_contains 'No running OpenCode container found for alpha-prod.' "$TMP_DIR/project-workspace-collision.err" 'shell does not mistake a project token for the requested workspace name'
+
+: >"$PODMAN_LOG"
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CONTAINER_MODE='absent' bash "$ROOT/scripts/shared/opencode/opencode-shell" alpha beta >"$TMP_DIR/no-running-container.out" 2>"$TMP_DIR/no-running-container.err"; then
+  fail 'shell should fail clearly when no running container matches the requested workspace and project'
+fi
+assert_file_contains 'No running OpenCode container found for alpha. Run scripts/shared/opencode/opencode-run first.' "$TMP_DIR/no-running-container.err" 'shell explains when no running container matches the requested workspace'
 
 printf 'opencode-shell behaviour checks passed\n'

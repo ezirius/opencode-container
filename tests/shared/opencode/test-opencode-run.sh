@@ -45,13 +45,6 @@ wait_for_file_contains() {
   fail "$message: missing [$needle] in $file_path"
 }
 
-# This runs one command through a pseudo-terminal so TTY-gated warnings can be asserted.
-run_with_tty() {
-  local output_path="$1"
-  shift
-  printf 'y' | script -q /dev/null "$@" >"$output_path"
-}
-
 trap cleanup EXIT
 cp "$CONFIG_PATH" "$CONFIG_BACKUP"
 
@@ -73,6 +66,9 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
 
   case "$1" in
   images)
+    if [[ "${OPENCODE_TEST_IMAGE_MODE:-present}" == 'absent' ]]; then
+      exit 0
+    fi
     printf 'opencode-1.14.25-20260418-120000-1234567890ab\n'
     ;;
   ps)
@@ -213,6 +209,7 @@ shared_running_mode="${OPENCODE_TEST_SHARED_RUNNING_MODE:-$shared_mode}"
     ;;
   start)
     if [[ "${OPENCODE_TEST_START_FAIL:-0}" == '1' ]]; then
+      printf 'mock start failure for %s\n' "${2-}" >&2
       exit 1
     fi
     if [[ "${2-}" == "$shared_name" ]]; then
@@ -568,6 +565,13 @@ OPENCODE_PUBLISHED_URL_MAX_TIMEOUT_SECONDS="1"
 OPENCODE_PUBLISHED_URL_WAIT_SECONDS="1"
 EOF
 
+: >"$PODMAN_LOG"
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_IMAGE_MODE='absent' bash "$ROOT/scripts/shared/opencode/opencode-run" alpha beta >"$TMP_DIR/no-image.out" 2>"$TMP_DIR/no-image.err"; then
+  fail 'run should fail clearly when no built local image exists'
+fi
+assert_file_contains 'No built OpenCode image found. Run scripts/shared/opencode/opencode-build first.' "$TMP_DIR/no-image.err" 'run explains when no built local image is available'
+assert_file_not_contains 'run -d --name' "$PODMAN_LOG" 'run does not create containers when no built local image exists'
+
 nullglob_state="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; shopt -s nullglob; project_names_from_development_root >/dev/null; shopt -p nullglob')"
 assert_equals 'shopt -s nullglob' "$nullglob_state" 'run helper preserves an already enabled nullglob shell option after project discovery'
 
@@ -580,6 +584,12 @@ assert_equals "${IMAGE_NAME}-alpha-infrastructure" "$shared_container_name" 'run
 
 shared_container_name_with_trailing_root="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; OPENCODE_DEVELOPMENT_ROOT="~/development/"; opencode_shared_container_name "$1" "$2"' _ "$IMAGE_NAME" alpha)"
 assert_equals "${IMAGE_NAME}-alpha-infrastructure" "$shared_container_name_with_trailing_root" 'run helper keeps the shared runtime infrastructure suffix when the development root ends with a slash'
+
+helper_workspace_match_with_trailing_base_path="$(PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; OPENCODE_BASE_PATH="$1/"; if opencode_container_workspace_matches "$2" alpha; then printf yes; else printf no; fi' _ "$TMP_DIR/base" "${IMAGE_NAME}-alpha-beta")"
+assert_equals 'yes' "$helper_workspace_match_with_trailing_base_path" 'run helper still matches the workspace mount when the base path ends with a trailing slash'
+
+helper_project_match_with_trailing_development_root="$(PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; OPENCODE_DEVELOPMENT_ROOT="$1/"; if opencode_container_project_matches "$2" beta; then printf yes; else printf no; fi' _ "$DEVELOPMENT_ROOT" "${IMAGE_NAME}-alpha-beta")"
+assert_equals 'yes' "$helper_project_match_with_trailing_development_root" 'run helper still matches the project mount when the development root ends with a trailing slash'
 
 : >"$PODMAN_LOG"
 : >"$CURL_LOG"
@@ -746,6 +756,24 @@ assert_file_not_contains 'run -d --name' "$PODMAN_LOG" 'run does not create cont
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.names"
+# This checks that q also cancels before project selection begins.
+if printf 'q\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-run" >"$TMP_DIR/workspace-quit.out" 2>"$TMP_DIR/workspace-quit.err"; then
+  fail 'run should let q cancel workspace selection'
+fi
+assert_file_contains 'Selection cancelled.' "$TMP_DIR/workspace-quit.err" 'run reports an explicit cancel when q quits workspace selection'
+assert_file_not_contains 'run -d --name' "$PODMAN_LOG" 'run does not create containers when q cancels workspace selection'
+
+: >"$PODMAN_LOG"
+rm -f "${PODMAN_LOG}.names"
+# This checks that EOF during workspace selection fails with a clean message.
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-run" < /dev/null >"$TMP_DIR/workspace-eof.out" 2>"$TMP_DIR/workspace-eof.err"; then
+  fail 'run should fail cleanly when workspace selection hits EOF'
+fi
+assert_file_contains 'Selection aborted.' "$TMP_DIR/workspace-eof.err" 'run reports a clean EOF failure during workspace selection'
+assert_file_not_contains 'run -d --name' "$PODMAN_LOG" 'run does not create containers when workspace selection hits EOF'
+
+: >"$PODMAN_LOG"
+rm -f "${PODMAN_LOG}.names"
 # This checks that EOF during interactive selection fails with a clean message.
 if printf '1\n' | PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" bash "$ROOT/scripts/shared/opencode/opencode-run" >"$TMP_DIR/project-eof.out" 2>"$TMP_DIR/project-eof.err"; then
   fail 'run should fail cleanly when project selection hits EOF'
@@ -758,6 +786,15 @@ rm -f "${PODMAN_LOG}.names"
 PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_SHARED_MODE='stopped' bash "$ROOT/scripts/shared/opencode/opencode-run" alpha beta >"$TMP_DIR/shared-start.out" 2>"$TMP_DIR/shared-start.err"
 assert_file_contains "Starting shared runtime container: ${shared_runtime_name}" "$TMP_DIR/shared-start.err" 'run starts the existing shared runtime container when it is present but stopped'
 assert_file_contains "start ${shared_runtime_name}" "$PODMAN_LOG" 'run starts the stopped shared runtime container before attaching the project container'
+
+: >"$PODMAN_LOG"
+rm -f "${PODMAN_LOG}.names"
+if PATH="$FAKE_BIN:$PATH" OPENCODE_TEST_PODMAN_LOG="$PODMAN_LOG" OPENCODE_TEST_CHOWN_LOG="$CHOWN_LOG" OPENCODE_TEST_SHARED_MODE='stopped' OPENCODE_TEST_START_FAIL='1' bash "$ROOT/scripts/shared/opencode/opencode-run" alpha beta >"$TMP_DIR/shared-start-fail.out" 2>"$TMP_DIR/shared-start-fail.err"; then
+  fail 'run should fail clearly when starting a stopped shared runtime container fails'
+fi
+assert_file_contains "start ${shared_runtime_name}" "$PODMAN_LOG" 'run attempts to start the stopped shared runtime container before failing'
+assert_file_contains "mock start failure for ${shared_runtime_name}" "$TMP_DIR/shared-start-fail.err" 'run preserves the shared runtime start failure from Podman'
+assert_file_not_contains "run -d --name ${IMAGE_NAME}-alpha-beta" "$PODMAN_LOG" 'run does not continue into project container creation after a shared runtime start failure'
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.names"
@@ -968,7 +1005,7 @@ assert_file_not_contains "run -d --name ${IMAGE_NAME}-alpha-beta-next-" "$PODMAN
 assert_file_not_contains "rename ${IMAGE_NAME}-alpha-beta-next-" "$PODMAN_LOG" 'run does not rename a replacement into the canonical name after a failed canonical start'
 assert_file_not_contains "rm -f ${IMAGE_NAME}-alpha-beta" "$PODMAN_LOG" 'run keeps the canonical container untouched when its start fails'
 assert_file_not_contains "exec -i ${IMAGE_NAME}-alpha-beta opencode attach http://127.0.0.1:4096" "$PODMAN_LOG" 'run does not attach after a failed canonical start'
-assert_file_contains 'OpenCode container failed to stay running' "$TMP_DIR/start-fail.err" 'run reports the failed canonical startup through the existing diagnostics path'
+assert_file_contains "mock start failure for ${IMAGE_NAME}-alpha-beta" "$TMP_DIR/start-fail.err" 'run preserves the project container start failure from Podman'
 
 : >"$PODMAN_LOG"
 rm -f "${PODMAN_LOG}.names"

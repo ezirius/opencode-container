@@ -186,12 +186,27 @@ EOF
 
 chmod +x "$FAKE_BIN/podman" "$FAKE_BIN/git" "$FAKE_BIN/curl"
 
-# This runs one command through a pseudo-terminal so TTY-gated warnings can be asserted.
-run_with_tty() {
-  local output_path="$1"
-  shift
-  printf 'y' | script -q /dev/null "$@" >"$output_path"
-}
+# These checks prove version freshness uses numeric semver triplets, not strings.
+version_equal="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 1.14.25 1.14.25; then printf yes; else printf no; fi')"
+assert_equals 'no' "$version_equal" 'build helper does not treat equal semver values as newer'
+
+version_patch_newer="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 1.14.26 1.14.25; then printf yes; else printf no; fi')"
+assert_equals 'yes' "$version_patch_newer" 'build helper treats a higher patch version as newer'
+
+version_patch_older="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 1.14.24 1.14.25; then printf yes; else printf no; fi')"
+assert_equals 'no' "$version_patch_older" 'build helper rejects a lower patch version as newer'
+
+version_minor_newer="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 1.15.0 1.14.25; then printf yes; else printf no; fi')"
+assert_equals 'yes' "$version_minor_newer" 'build helper treats a higher minor version as newer'
+
+version_minor_older="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 1.13.99 1.14.25; then printf yes; else printf no; fi')"
+assert_equals 'no' "$version_minor_older" 'build helper rejects a lower minor version as newer'
+
+version_major_newer="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 2.0.0 1.99.99; then printf yes; else printf no; fi')"
+assert_equals 'yes' "$version_major_newer" 'build helper treats a higher major version as newer'
+
+version_major_older="$(ROOT="$ROOT" bash -c 'source "$ROOT/libs/shared/opencode/common.sh"; if opencode_version_is_newer_than 0.99.99 1.0.0; then printf yes; else printf no; fi')"
+assert_equals 'no' "$version_major_older" 'build helper rejects a lower major version as newer'
 
 PODMAN_LOG="$TMP_DIR/podman.log"
 CURL_LOG="$TMP_DIR/curl.log"

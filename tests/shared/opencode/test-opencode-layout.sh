@@ -208,6 +208,11 @@ grep -q '^temp/$' "$ROOT/.dockerignore"
 grep -q '^cache/$' "$ROOT/.dockerignore"
 grep -q '^__pycache__/$' "$ROOT/.dockerignore"
 grep -q '^\*.pyc$' "$ROOT/.dockerignore"
+grep -q '^\.mypy_cache/$' "$ROOT/.dockerignore"
+grep -q '^\.pytest_cache/$' "$ROOT/.dockerignore"
+grep -q '^\.ruff_cache/$' "$ROOT/.dockerignore"
+grep -q '^\.tox/$' "$ROOT/.dockerignore"
+grep -q '^\.nox/$' "$ROOT/.dockerignore"
 grep -q '^\.DS_Store$' "$ROOT/.dockerignore"
 
 # These keep repo-owned source and container build inputs inside the build context.

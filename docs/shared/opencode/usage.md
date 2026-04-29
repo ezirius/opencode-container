@@ -1,6 +1,6 @@
 # OpenCode Wrapper Usage
 
-This repo builds and runs a thin local image derived from the official upstream container with all repo-owned settings kept in `configs/shared/opencode/opencode-settings-shared.conf`.
+This repo builds and runs a thin local image derived from the official upstream container with repo-owned runtime settings in `configs/shared/opencode/opencode-settings-shared.conf` and the thin wrapper image contract in `configs/shared/opencode/Containerfile`.
 
 The shared scripts are intended to work on both macOS and Linux hosts.
 
@@ -46,6 +46,7 @@ The default in-container working directory is `/workspace/project`.
 - `opencode-shell <workspace>` prompts for project, then opens `nu` by default.
 - `opencode-shell <workspace> <project>` opens `nu` by default.
 - `opencode-shell <workspace> <project> [command...]` runs the command directly inside the project container.
+- `opencode-shell` can still attach to an explicitly selected running project container even when the matching host project directory no longer exists.
 - `opencode-run` first ensures a shared per-workspace runtime container is running `serve --hostname $OPENCODE_SERVER_HOSTNAME --port $OPENCODE_SERVER_PORT`.
 - The shared runtime container is the published browser server for the workspace.
 - That shared runtime container mounts the host development root at `/workspace/projects` and owns the published host port `OPENCODE_SERVER_PORT + workspace offset`.

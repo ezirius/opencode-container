@@ -125,11 +125,19 @@ opencode_container_candidate_regex() {
 # This expands a leading tilde so saved host paths work as expected in config.
 opencode_expand_home_path() {
   local raw="$1"
+  local expanded
   case "$raw" in
-    '~') printf '%s\n' "$HOME" ;;
-    '~/'*) printf '%s\n' "$HOME/${raw#\~/}" ;;
-    *) printf '%s\n' "$raw" ;;
+    '~') expanded="$HOME" ;;
+    '~/'*) expanded="$HOME/${raw#\~/}" ;;
+    *) expanded="$raw" ;;
   esac
+
+  # This keeps config paths stable when people include one or more trailing slashes.
+  while [[ "$expanded" == */ && "$expanded" != '/' ]]; do
+    expanded="${expanded%/}"
+  done
+
+  printf '%s\n' "$expanded"
 }
 
 # This matches one exact container name and nothing else.
