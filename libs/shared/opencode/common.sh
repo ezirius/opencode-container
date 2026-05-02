@@ -11,7 +11,7 @@ fi
 
 # This loads the saved repo settings so the helpers all read the same values.
 # shellcheck disable=SC1090
-source "$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
+source "$ROOT/configs/shared/opencode/opencode-settings.conf"
 
 declare -a OPENCODE_WORKSPACE_NAMES=()
 declare -a OPENCODE_WORKSPACE_OFFSETS=()

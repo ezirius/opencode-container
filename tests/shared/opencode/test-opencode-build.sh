@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 source "$ROOT/tests/shared/shared/test-asserts.sh"
 
 TMP_DIR="$(mktemp -d)"
-CONFIG_PATH="$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
+CONFIG_PATH="$ROOT/configs/shared/opencode/opencode-settings.conf"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # This loads the saved config values so test expectations track the real naming inputs.

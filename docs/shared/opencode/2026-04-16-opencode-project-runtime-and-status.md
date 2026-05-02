@@ -4,7 +4,7 @@ This document is a retained project note for the current OpenCode wrapper layout
 
 ## Current Canonical Paths
 
-- `configs/shared/opencode/opencode-settings-shared.conf`
+- `configs/shared/opencode/opencode-settings.conf`
 - `configs/shared/opencode/Containerfile`
 - `docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md`
 - `docs/shared/opencode/usage.md`
@@ -27,7 +27,7 @@ This document is a retained project note for the current OpenCode wrapper layout
 - Project containers do not publish host ports.
 - Shared runtime containers are created or started before project-container handling.
 - Project containers attach to `http://$OPENCODE_ATTACH_HOST:$OPENCODE_SERVER_PORT` inside the container.
-- The pinned OpenCode version lives in `configs/shared/opencode/opencode-settings-shared.conf`.
+- The pinned OpenCode version lives in `configs/shared/opencode/opencode-settings.conf`.
 
 ## Maintenance Notes
 

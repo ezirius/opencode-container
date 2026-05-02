@@ -1,6 +1,6 @@
 # OpenCode Wrapper Usage
 
-This repo builds and runs a thin local image derived from the official upstream container with repo-owned runtime settings in `configs/shared/opencode/opencode-settings-shared.conf` and the thin wrapper image contract in `configs/shared/opencode/Containerfile`.
+This repo builds and runs a thin local image derived from the official upstream container with repo-owned runtime settings in `configs/shared/opencode/opencode-settings.conf` and the thin wrapper image contract in `configs/shared/opencode/Containerfile`.
 
 The shared scripts are intended to work on both macOS and Linux hosts.
 

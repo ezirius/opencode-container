@@ -49,12 +49,12 @@ The special filename convention applies only to files under `configs/*/opencode`
 Format:
 
 ```text
-<app>-<filejob>-<host>.<ext>
+<app>-<filejob>.<ext>
 ```
 
 Examples:
 
-- `configs/shared/opencode/opencode-settings-shared.conf`
+- `configs/shared/opencode/opencode-settings.conf`
 
 `configs/shared/opencode/Containerfile` is the explicit exception because container tooling expects that filename.
 
@@ -73,7 +73,7 @@ Examples:
 
 ## Current Canonical Paths
 
-- `configs/shared/opencode/opencode-settings-shared.conf`
+- `configs/shared/opencode/opencode-settings.conf`
 - `configs/shared/opencode/Containerfile`
 - `docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md`
 - `docs/shared/opencode/usage.md`
@@ -98,7 +98,7 @@ Examples:
 
 ## Repository Ownership Rules
 
-- Repo-owned runtime and build settings live in `configs/shared/opencode/opencode-settings-shared.conf`.
+- Repo-owned runtime and build settings live in `configs/shared/opencode/opencode-settings.conf`.
 - The thin upstream-wrapper `Containerfile` lives in `configs/shared/opencode/Containerfile`.
 - Shared shell helpers live in `libs/shared/opencode/common.sh`.
 - User-facing documentation lives in `docs/shared/opencode/`.
@@ -173,7 +173,7 @@ Examples:
 
 ## Version Pin Rules
 
-- The pinned OpenCode version lives in `configs/shared/opencode/opencode-settings-shared.conf`.
+- The pinned OpenCode version lives in `configs/shared/opencode/opencode-settings.conf`.
 - Version bumps must update the config file, `configs/shared/opencode/Containerfile`, user docs, architecture docs, and all affected test fixtures.
 - When bumping the pinned version, update stale-version warning fixtures so the `newer` fixture remains newer than the pin.
 - `opencode-build` and `opencode-run` check the latest upstream OpenCode release; `opencode-shell` does not.

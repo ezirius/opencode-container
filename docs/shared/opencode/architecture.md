@@ -2,7 +2,7 @@
 
 This repo keeps a small wrapper around an OpenCode container with three responsibility layers:
 
-- `configs/shared/opencode/opencode-settings-shared.conf` owns runtime and build configuration.
+- `configs/shared/opencode/opencode-settings.conf` owns runtime and build configuration.
 - `libs/shared/opencode/common.sh` owns shared shell helpers for config loading, workspace parsing, project lookup, and container lookup.
 - `scripts/shared/opencode/*` are thin entrypoints for build, run, and shell flows.
 
@@ -28,7 +28,7 @@ This repo keeps a small wrapper around an OpenCode container with three responsi
 - `opencode-build` and `opencode-run` share a best-effort pinned-version freshness check before expensive or interactive container work.
 - OpenCode release lookup failures never fail build or run.
 - Freshness warning colour and pause behaviour are TTY-gated so non-interactive tests and automation keep plain, non-blocking stderr.
-- Release lookup URL and timeout values are repo-owned config in `configs/shared/opencode/opencode-settings-shared.conf`.
+- Release lookup URL and timeout values are repo-owned config in `configs/shared/opencode/opencode-settings.conf`.
 
 ## Design Constraints
 

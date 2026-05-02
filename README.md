@@ -15,7 +15,7 @@ The repository uses a normalized path shape:
 Current layout:
 
 ```text
-configs/shared/opencode/opencode-settings-shared.conf
+configs/shared/opencode/opencode-settings.conf
 configs/shared/opencode/Containerfile
 docs/shared/opencode/2026-04-16-opencode-project-runtime-and-status.md
 docs/shared/opencode/usage.md
@@ -55,7 +55,7 @@ tests/shared/opencode/test-opencode-shell.sh
 Repo-owned runtime and build settings live in:
 
 ```text
-configs/shared/opencode/opencode-settings-shared.conf
+configs/shared/opencode/opencode-settings.conf
 ```
 
 The thin local `Containerfile` lives in:

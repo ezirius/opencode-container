@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 source "$ROOT/tests/shared/shared/test-asserts.sh"
 
-CONFIG_PATH="$ROOT/configs/shared/opencode/opencode-settings-shared.conf"
+CONFIG_PATH="$ROOT/configs/shared/opencode/opencode-settings.conf"
 CONFIG_BACKUP="$(mktemp)"
 TMP_DIR="$(mktemp -d)"
 IMAGE_ID='1234567890ab'
